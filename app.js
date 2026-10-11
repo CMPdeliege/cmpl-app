@@ -139,13 +139,18 @@ const summaryLine = a => a.motif||a.texte||a.medicament||a.examen||"";
 const qText = s => typeof s.q==="function" ? s.q() : s.q;
 const optsOf = s => typeof s.options==="function" ? s.options(S.answers) : s.options;
 
-/* ---------- médicaments (liste d'exemple, en attendant la base officielle SAM) ---------- */
-const DRUGS=(window.DRUGS_DATA||[]).map(([name,dose,form,packs,aliases],i)=>({id:i,name,dose,form,packs,aliases}));
+/* ---------- médicaments : liste officielle CBIP (table medicine_packs) ---------- */
 const norm=s=>s.normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase();
-function searchDrugs(q){ q=norm(q.trim()); if(q.length<2) return [];
-  const out=[]; for(const d of DRUGS){ const hit=[d.name,...d.aliases].find(w=>norm(w).split(/[\s-]+/).some(p=>p.startsWith(q))||(q.length>=3&&norm(w).includes(q)));
-    if(hit) out.push({d,hit,score:norm(d.name).startsWith(q)?0:1}); }
-  return out.sort((a,b)=>a.score-b.score||a.d.name.localeCompare(b.d.name)).slice(0,8); }
+let drugSeq=0;
+async function searchDrugs(q){
+  const words=norm(q).replace(/[%_,()*\\]/g," ").split(/\s+/).filter(Boolean);
+  if(!words.join("").length||words.join("").length<2) return [];
+  const {data,error}=await sb.from("medicine_packs").select("id,brand,label,generic").ilike("search",`%${words.join("%")}%`).order("brand").limit(60);
+  if(error){ console.error(error); return null; }
+  const w0=words[0];
+  const score=r=>(norm(r.brand).startsWith(w0)?0:norm(r.generic).startsWith(w0)?1:2)*10+(/^[^(]*\(/.test(r.label.slice(r.brand.length,r.brand.length+3))?1:0);
+  return (data||[]).sort((a,b)=>score(a)-score(b)||a.brand.localeCompare(b.brand)||a.label.length-b.label.length||a.label.localeCompare(b.label)).slice(0,15);
+}
 function hlite(text,q){const n=norm(text),i=n.indexOf(norm(q.trim()));if(i<0)return esc(text);const L=q.trim().length;return esc(text.slice(0,i))+"<b>"+esc(text.slice(i,i+L))+"</b>"+esc(text.slice(i+L))}
 
 /* ---------- statut d'une demande ---------- */
@@ -413,7 +418,7 @@ function patientAccount(a){
 }
 
 /* ----- formulaire guidé ----- */
-function startFlow(k, preset){ S.flow=k; S.answers={}; S.drug={q:"",picked:null,basket:preset?[...preset]:[],manual:false}; S.screen="flow"; render(); scrollTo(0,0); }
+function startFlow(k, preset){ S.flow=k; S.answers={}; S.drug={q:"",basket:preset?[...preset]:[],manual:false}; S.screen="flow"; render(); scrollTo(0,0); }
 const activeSteps = () => FLOWS[S.flow].filter(s=>!s.when||s.when(S.answers));
 function patientFlow(a){
   const steps=activeSteps();
@@ -453,22 +458,19 @@ function bindAnswer(s){
 }
 function drugUI(){
   const D=S.drug; let h=`<div class="answer"><div class="drugbox">`;
-  if(S.meds.length&&!D.manual&&D.picked==null){
+  if(S.meds.length&&!D.manual){
     h+=`<p class="hint" style="margin:0">Vos médicaments</p><div class="mymeds">${S.meds.map(m=>`<button class="opt" aria-pressed="${D.basket.includes(m.label)}" data-my="${esc(m.label)}"><span class="box"></span>${esc(m.label)}</button>`).join("")}</div><div class="divider">ou un autre médicament</div>`;
   }
   const extra=D.basket.filter(b=>!S.meds.some(m=>m.label===b));
   if(extra.length) h+=`<div class="basket">${extra.map(b=>`<div class="chip"><span>${esc(b)}</span><button data-rm="${esc(b)}">Retirer</button></div>`).join("")}</div>`;
   if(D.manual){
     h+=`<label for="dman" class="hint">Écrivez le nom tel qu'il figure sur la boîte</label><input type="text" id="dman" maxlength="120" placeholder="Ex. nom, dosage, nombre de comprimés"><div class="btnrow"><button class="btn ghost" id="dmadd" disabled>Ajouter</button><button class="linkbtn" id="dsearch">Revenir à la recherche</button></div>`;
-  } else if(D.picked!=null){ const d=DRUGS[D.picked];
-    h+=`<div class="picked"><div><b>${esc(d.name+" "+d.dose)}</b><small>${esc(d.form)}${d.aliases.length?" · aussi : "+esc(d.aliases.join(", ")):""}</small></div><button class="linkbtn" id="dchange">Changer</button></div>
-    <p class="hint" style="margin:0">Quelle boîte ?</p><div class="opts">${d.packs.map(p=>`<button class="opt" data-pack="${esc(p)}">${esc(p)}</button>`).join("")}</div>`;
   } else {
-    h+=`<label for="dq" class="hint">${D.basket.length?"Ajouter un autre médicament":"Rechercher un médicament"}</label>
-    <div class="search">${IC.search}<input type="text" id="dq" autocomplete="off" placeholder="Ex. colch, amlo, Asaflow…" value="${esc(D.q)}"></div>
+    h+=`<label for="dq" class="hint">${D.basket.length?"Ajouter un autre médicament":"Rechercher un médicament"} (nom de la boîte ou molécule)</label>
+    <div class="search">${IC.search}<input type="text" id="dq" autocomplete="off" placeholder="Ex. colch, amlo 5, Asaflow…" value="${esc(D.q)}"></div>
     <ul class="sugg" id="sugg" hidden></ul><button class="linkbtn" id="dmanual">Je ne trouve pas mon médicament</button>`;
   }
-  h+=`</div><div class="btnrow"><button class="btn" id="dnext" ${D.basket.length?"":"disabled"}>Continuer${D.basket.length>1?` avec ${D.basket.length} médicaments`:""}</button></div></div>`;
+  h+=`<p class="src">Liste officielle des médicaments disponibles en Belgique (CBIP).</p></div><div class="btnrow"><button class="btn" id="dnext" ${D.basket.length?"":"disabled"}>Continuer${D.basket.length>1?` avec ${D.basket.length} médicaments`:""}</button></div></div>`;
   return h;
 }
 function bindDrug(s){
@@ -479,17 +481,22 @@ function bindDrug(s){
   if(D.manual){ const i=$("#dman"), ad=$("#dmadd"); i.oninput=()=>ad.disabled=!i.value.trim();
     const add=()=>{ if(!i.value.trim()) return; D.basket.push(i.value.trim()+" (saisi par le patient)"); D.manual=false; again(); };
     ad.onclick=add; i.onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); add(); } }; $("#dsearch").onclick=()=>{ D.manual=false; again(); }; return; }
-  if(D.picked!=null){ $("#dchange").onclick=()=>{ D.picked=null; again(); };
-    $$("[data-pack]").forEach(b=>b.onclick=()=>{ const d=DRUGS[D.picked]; D.basket.push(`${d.name} ${d.dose} · ${b.dataset.pack}`); D.picked=null; D.q=""; again(); }); return; }
-  const inp=$("#dq"), ul=$("#sugg"); let hl=-1, res=[];
-  const draw=()=>{ D.q=inp.value; res=searchDrugs(inp.value); hl=res.length?0:-1;
-    if(inp.value.trim().length<2){ ul.hidden=true; return; } ul.hidden=false;
-    ul.innerHTML=res.length?res.map((r,i)=>`<li><button data-pick="${r.d.id}" class="${i===hl?"hl":""}"><span class="nm">${hlite(r.d.name,inp.value)} ${esc(r.d.dose)}</span><span class="fm">${esc(r.d.form)}${r.hit!==r.d.name?" · "+hlite(r.hit,inp.value):""}</span></button></li>`).join(""):`<li class="empty">Aucun résultat. Vérifiez l'orthographe ou utilisez « Je ne trouve pas mon médicament ».</li>`;
-    ul.querySelectorAll("[data-pick]").forEach(b=>b.onclick=()=>{ D.picked=+b.dataset.pick; render(); }); };
-  inp.oninput=draw;
+  const inp=$("#dq"), ul=$("#sugg"); let hl=-1, res=[], timer;
+  const pick=r=>{ if(!D.basket.includes(r.label)) D.basket.push(r.label); D.q=""; again(); };
+  const paint=()=>{ ul.querySelectorAll("button").forEach((b,i)=>b.classList.toggle("hl",i===hl)); };
+  const draw=async()=>{ D.q=inp.value; const q=inp.value, my=++drugSeq;
+    if(norm(q).replace(/\s/g,"").length<2){ ul.hidden=true; res=[]; return; }
+    ul.hidden=false; ul.innerHTML=`<li class="empty">Recherche…</li>`;
+    const r=await searchDrugs(q); if(my!==drugSeq) return;
+    if(r===null){ ul.innerHTML=`<li class="empty">La recherche n'est pas disponible pour l'instant. Utilisez « Je ne trouve pas mon médicament ».</li>`; return; }
+    res=r; hl=res.length?0:-1;
+    const w0=norm(q).trim().split(/\s+/)[0];
+    ul.innerHTML=res.length?res.map((x,i)=>`<li><button data-i="${i}" class="${i===hl?"hl":""}"><span class="nm">${hlite(x.label,w0)}</span><span class="fm">${hlite(x.generic,w0)}</span></button></li>`).join(""):`<li class="empty">Aucun résultat. Vérifiez l'orthographe ou utilisez « Je ne trouve pas mon médicament ».</li>`;
+    ul.querySelectorAll("[data-i]").forEach(b=>b.onclick=()=>pick(res[+b.dataset.i])); };
+  inp.oninput=()=>{ clearTimeout(timer); timer=setTimeout(draw,250); };
   inp.onkeydown=e=>{ if(!res.length) return;
-    if(e.key==="ArrowDown"||e.key==="ArrowUp"){ e.preventDefault(); hl=(hl+(e.key==="ArrowDown"?1:-1)+res.length)%res.length; ul.querySelectorAll("button").forEach((b,i)=>b.classList.toggle("hl",i===hl)); }
-    if(e.key==="Enter"&&hl>=0){ e.preventDefault(); D.picked=res[hl].d.id; render(); } };
+    if(e.key==="ArrowDown"||e.key==="ArrowUp"){ e.preventDefault(); hl=(hl+(e.key==="ArrowDown"?1:-1)+res.length)%res.length; paint(); }
+    if(e.key==="Enter"&&hl>=0){ e.preventDefault(); pick(res[hl]); } };
   $("#dmanual").onclick=()=>{ D.manual=true; again(); };
   if(D.q) draw();
 }
