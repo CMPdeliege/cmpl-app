@@ -99,7 +99,7 @@ const TYPES={
  prescription:{label:"Prescription",title:"Renouveler un médicament",desc:"Pour un traitement habituel"},
  resultats:{label:"Résultats",title:"Mes résultats",desc:"Signaler un examen dont vous attendez le résultat"}
 };
-const GP_MOTIFS=["Maladie aiguë (fièvre, toux, douleur…)","Suivi d'une maladie chronique","Certificat ou document","Bilan ou prévention","Vaccination","Autre"];
+const GP_MOTIFS=["Maladie aiguë (fièvre, toux, douleur…)","Suivi d'une maladie chronique","Prise de sang","Certificat ou document","Bilan ou prévention","Vaccination","Autre"];
 const OTHER_MOTIFS=["Première consultation","Consultation de suivi","Contrôle ou soin de routine","Douleur ou problème récent","Autre"];
 const FLOWS={
  rdv:[
@@ -378,7 +378,7 @@ async function loadMe(){
   const { data } = await sb.from("profiles").select("*").eq("id", S.session.user.id).maybeSingle();
   S.me = data;
 }
-const REQ_SELECT = "*, messages(id,from_patient,author_label,body,created_at,attachments(id,kind,mime,name,size,duration_s)), request_items(id,label,decision)";
+const REQ_SELECT = "*, messages(id,from_patient,author_label,body,created_at,attachments(id,kind,mime,name,size,duration_s)), request_items(id,label,decision,quantity)";
 async function loadPatient(){
   const uid=S.session.user.id;
   const [rq, md, nt] = await Promise.all([
@@ -691,7 +691,7 @@ async function exportMyData(){
   await loadPatient();
   const strip=r=>({ demande:r.id, type:TYPES[r.type]?.label||r.type, envoyee_le:r.created_at, statut:stLabelP(r), cloturee_le:r.closed_at, effacee_le:r.purged_at,
     destinataire:provName(r.provider_id)||"Secrétariat", reponses:Object.fromEntries(Object.entries(r.answers||{}).filter(([k])=>!HIDDEN_KEYS.has(k)).map(([k,v])=>[LABELS[k]||k,v])),
-    medicaments:(r.request_items||[]).map(i=>({medicament:i.label,decision:i.decision})),
+    medicaments:(r.request_items||[]).map(i=>({medicament:i.label,boites:i.quantity||1,decision:i.decision})),
     messages:msgsOf(r).map(m=>({de:m.from_patient?"Vous":m.author_label,le:m.created_at,texte:m.body,pieces_jointes:(m.attachments||[]).map(a=>({type:a.kind,nom:a.name,taille_octets:a.size}))})) });
   const data={ exporte_le:new Date().toISOString(), source:"Application du Centre Médical Prince de Liège (app.cmpl.be)",
     compte:{ email:S.session.user.email, prenom:S.me.first_name, nom:S.me.last_name, date_de_naissance:S.me.birth_date, telephone:S.me.phone, cree_le:S.me.created_at, valide_le:S.me.approved_at,
@@ -746,6 +746,10 @@ function bindAnswer(s){
   if(s.kind==="text"){ const ta=$("#ta"), n=$("#tnext"); ta.focus({preventScroll:true});
     ta.oninput=()=>{ if(!s.optional) n.disabled=!ta.value.trim(); }; n.onclick=()=>{ S.answers[s.id]=ta.value.trim(); render(); }; }
 }
+const MAXBOX=6;
+const boxes = l => Math.min(MAXBOX, Math.max(1, (S.drug.qty||{})[l]||1));
+const boxLine = l => `${l} · ${boxes(l)} boîte${boxes(l)>1?"s":""}`;
+const qtyText = n => n>1?` · ${n} boîtes`:` · 1 boîte`;
 function drugUI(){
   const D=S.drug; let h=`<div class="answer"><div class="drugbox">`;
   if(S.meds.length&&!D.manual){
@@ -760,6 +764,7 @@ function drugUI(){
     <div class="search">${IC.search}<input type="text" id="dq" autocomplete="off" placeholder="Ex. colch, amlo 5, Asaflow…" value="${esc(D.q)}"></div>
     <ul class="sugg" id="sugg" hidden></ul><button class="linkbtn" id="dmanual">Je ne trouve pas mon médicament</button>`;
   }
+  if(D.basket.length) h+=`<div class="qtys"><p class="hint" style="margin:0">Nombre de boîtes souhaité</p>${D.basket.map((b,i)=>{ const n=boxes(b); return `<div class="qrow"><span>${esc(b)}</span><div class="stepper" role="group" aria-label="Nombre de boîtes"><button type="button" data-qm="${i}" aria-label="Une boîte de moins" ${n<=1?"disabled":""}>−</button><b aria-live="polite">${n} boîte${n>1?"s":""}</b><button type="button" data-qp="${i}" aria-label="Une boîte de plus" ${n>=MAXBOX?"disabled":""}>+</button></div></div>`; }).join("")}<p class="hint" style="margin:0">Le médecin décide du nombre de boîtes prescrites.</p></div>`;
   h+=`<p class="src">Liste officielle des médicaments disponibles en Belgique (CBIP).</p></div><div class="btnrow"><button class="btn" id="dnext" ${D.basket.length?"":"disabled"}>Continuer${D.basket.length>1?` avec ${D.basket.length} médicaments`:""}</button></div></div>`;
   return h;
 }
@@ -767,7 +772,10 @@ function bindDrug(s){
   const D=S.drug, again=()=>{ render(); const f=$("#dq")||$("#dman"); if(f) f.focus({preventScroll:true}); };
   $$("[data-rm]").forEach(b=>b.onclick=()=>{ D.basket=D.basket.filter(x=>x!==b.dataset.rm); again(); });
   $$("[data-my]").forEach(b=>b.onclick=()=>{ const l=b.dataset.my; D.basket=D.basket.includes(l)?D.basket.filter(x=>x!==l):[...D.basket,l]; render(); });
-  $("#dnext").onclick=()=>{ S.answers[s.id]=D.basket.join(" ; "); render(); };
+  $("#dnext").onclick=()=>{ S.answers[s.id]=D.basket.map(boxLine).join(" ; "); render(); };
+  D.qty=D.qty||{};
+  $$("[data-qm]").forEach(b=>b.onclick=()=>{ const l=D.basket[+b.dataset.qm]; D.qty[l]=Math.max(1,boxes(l)-1); render(); });
+  $$("[data-qp]").forEach(b=>b.onclick=()=>{ const l=D.basket[+b.dataset.qp]; D.qty[l]=Math.min(MAXBOX,boxes(l)+1); render(); });
   if(D.manual){ const i=$("#dman"), ad=$("#dmadd"); i.oninput=()=>ad.disabled=!i.value.trim();
     const add=()=>{ if(!i.value.trim()) return; D.basket.push(i.value.trim()+" (saisi par le patient)"); D.manual=false; again(); };
     ad.onclick=add; i.onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); add(); } }; $("#dsearch").onclick=()=>{ D.manual=false; again(); }; return; }
@@ -804,7 +812,7 @@ function bindSummary(){
     let prov = ans.medecin ? P.fromLabel(ans.medecin) : null;
     if(!prov && ans.specialite && P.of(ans.specialite).length===1) prov=P.of(ans.specialite)[0];
     if(prov) ans.provider_id=prov.id;
-    if(S.flow==="prescription") ans.medicaments=[...S.drug.basket];
+    if(S.flow==="prescription") ans.medicaments=S.drug.basket.map(l=>({label:l,boites:boxes(l)}));
     const r = await run(()=>sb.from("requests").insert({type:S.flow, answers:ans}).select(REQ_SELECT).single());
     if(!r){ e.target.disabled=false; return; }
     S.lastSent=r.data; S.reqs.unshift(r.data); toast("Demande envoyée"); openRequest(r.data.id);
@@ -814,7 +822,7 @@ function bindSummary(){
 function patientReq(a){
   const r=S.reqs.find(x=>x.id===S.openReq); if(!r){ S.screen="home"; return draw(); }
   const items=(r.request_items||[]), key="p"+r.id;
-  const itemsHTML = r.type==="prescription"&&items.some(i=>i.decision) ? `<div class="itemlist">${items.map(i=>`<div><span>${esc(i.label)}</span><span class="dtag ${i.decision==="accorde"?"ok":"no"}">${i.decision==="accorde"?"Prescrit":i.decision?"Non renouvelé":"En attente"}</span></div>`).join("")}</div>` : "";
+  const itemsHTML = r.type==="prescription"&&items.some(i=>i.decision) ? `<div class="itemlist">${items.map(i=>`<div><span>${esc(i.label)}<small class="qty">${qtyText(i.quantity||1)}</small></span><span class="dtag ${i.decision==="accorde"?"ok":"no"}">${i.decision==="accorde"?"Prescrit":i.decision?"Non renouvelé":"En attente"}</span></div>`).join("")}</div>` : "";
   a.className="wrap chatpage";
   a.innerHTML=`<div class="convhead sticky"><button class="back" id="back" aria-label="Retour">${IC.back}</button><div class="ic avatar">${IC[r.type]}</div><div style="min-width:0"><h2>${esc(provName(r.provider_id)||"Secrétariat")}</h2><small>${TYPES[r.type].label} · ${stLabelP(r)}</small></div></div>
   ${chatHTML(r,"patient")}${itemsHTML}
@@ -900,9 +908,9 @@ function detailHTML(){
     <div class="meta" style="margin-top:6px"><span class="tag">${TYPES[r.type].label}</span><span class="pill st-${stClass(r)}">${stLabel(r)}</span><span>Reçue ${fmt(r.created_at)} · ${esc(provName(r.provider_id)||"Secrétariat")}</span></div></div>
    ${open?`<div class="prioedit"><span class="hint">Priorité</span>${["haute","normale"].map(k=>`<button class="dec p-${k}" aria-pressed="${r.priority===k}" data-prio="${k}">${PRIO_LABEL[k]}</button>`).join("")}</div><div>${dueHTML(r)}</div>`:""}
    ${r.purged_at?"":`<dl class="qa">${Object.entries(r.answers||{}).filter(([k])=>!HIDDEN_KEYS.has(k)).map(([k,v])=>`<div><dt>${esc(LABELS[k]||k)}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>`}
-   ${items.some(i=>i.decision)?`<div class="itemlist">${items.filter(i=>i.decision).map(i=>`<div><span>${esc(i.label)}</span><span class="dtag ${i.decision==="accorde"?"ok":"no"}">${i.decision==="accorde"?"Accordé":"Refusé"}</span></div>`).join("")}</div>`:""}
+   ${items.some(i=>i.decision)?`<div class="itemlist">${items.filter(i=>i.decision).map(i=>`<div><span>${esc(i.label)}<small class="qty">${qtyText(i.quantity||1)}</small></span><span class="dtag ${i.decision==="accorde"?"ok":"no"}">${i.decision==="accorde"?"Accordé":"Refusé"}</span></div>`).join("")}</div>`:""}
    ${msgsOf(r).length||r.purged_at||!open?chatHTML(r,"centre"):""}
-   ${open?`${isRx?`<div class="rx"><p class="hint" style="margin:0">Décision par médicament</p>${todo.map(it=>`<div class="rxrow"><span>${esc(it.label)}</span><div class="decs"><button class="dec ok" aria-pressed="${dec[it.id]==="accorde"}" data-dec="${it.id}:accorde">Accorder</button><button class="dec no" aria-pressed="${dec[it.id]==="refuse"}" data-dec="${it.id}:refuse">Refuser</button></div></div>`).join("")}</div>`:""}
+   ${open?`${isRx?`<div class="rx"><p class="hint" style="margin:0">Décision par médicament</p>${todo.map(it=>`<div class="rxrow"><span>${esc(it.label)}<b class="qty">${qtyText(it.quantity||1)}</b></span><div class="decs"><button class="dec ok" aria-pressed="${dec[it.id]==="accorde"}" data-dec="${it.id}:accorde">Accorder</button><button class="dec no" aria-pressed="${dec[it.id]==="refuse"}" data-dec="${it.id}:refuse">Refuser</button></div></div>`).join("")}</div>`:""}
    ${composerHTML("s"+r.id)}
    <div class="btnrow"><button class="btn" id="close" ${canClose?"":"disabled"}>${closeBtn}</button></div>
    <p class="hint">Le message écrit ci-dessus est envoyé avec la clôture. <b>Avant de classer, reportez dans CareConnect ce qui doit rester au dossier</b> : la conversation et ses pièces jointes sont effacées ${PURGE_DAYS} jours après la clôture.</p>
@@ -1067,5 +1075,5 @@ async function autoRefresh(){ if(busy||!S.session||S.loading||document.hidden) r
 setInterval(autoRefresh, 60000);
 document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) autoRefresh(); });
 if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
-console.log("CMPL app version 20261012i");
+console.log("CMPL app version 20261012j");
 })();

@@ -393,3 +393,12 @@ details.summary{margin-bottom:12px}
 .btn.danger{background:var(--danger);color:#fff}
 .btn.ghost.danger{background:var(--danger-soft);color:var(--danger)}
 .mydata .fld input{font:inherit;color:var(--ink);background:var(--surface);border:1.5px solid var(--line);border-radius:10px;padding:10px 12px;width:100%}
+.qtys{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--line);padding-top:10px}
+.qrow{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:14px}
+.qrow>span{min-width:0;overflow-wrap:anywhere}
+.stepper{display:inline-flex;align-items:center;gap:8px;flex:none}
+.stepper button{width:34px;height:34px;border-radius:50%;border:1.5px solid var(--accent);background:var(--surface);color:var(--accent);font-size:18px;font-weight:700;line-height:1;display:grid;place-items:center;padding:0}
+.stepper button:disabled{opacity:.35}
+.stepper b{min-width:62px;text-align:center;font-variant-numeric:tabular-nums}
+.qty{font-weight:700;white-space:nowrap}
+small.qty{font-size:inherit;color:var(--muted)}
