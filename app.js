@@ -228,8 +228,65 @@ async function refresh(){
   if(!S.session){ S.me=null; render(); return; }
   await loadMe();
   if(!S.me){ render(); return; }
+  S.mfa=null;
+  if(S.me.status==="active"&&S.me.role!=="patient"){
+    if(idleTooLong()){ await logout("Vous avez été déconnecté après 30 minutes d'inactivité."); return; }
+    const {data:aal}=await sb.auth.mfa.getAuthenticatorAssuranceLevel();
+    if(!aal||aal.currentLevel!=="aal2"){ S.mfa={hasFactor:aal&&aal.nextLevel==="aal2"}; render(); return; }
+    markActive();
+  }
   if(S.me.status==="active"){ if(S.me.role==="patient") await loadPatient(); else await loadStaff(); }
   render();
+}
+
+/* ---------- équipe : déconnexion après 30 minutes d'inactivité ---------- */
+const IDLE_MS=30*60*1000;
+function markActive(){ try{ localStorage.setItem("cmpl_last_active", String(Date.now())); }catch(e){} }
+function idleTooLong(){ try{ const t=+localStorage.getItem("cmpl_last_active"); return t>0 && Date.now()-t>IDLE_MS; }catch(e){ return false; } }
+let lastAct=Date.now(), lastSaved=0;
+["pointerdown","keydown","touchstart","scroll"].forEach(ev=>addEventListener(ev,()=>{ lastAct=Date.now(); if(lastAct-lastSaved>60000){ lastSaved=lastAct; markActive(); } },{passive:true}));
+setInterval(()=>{ if(S.me&&S.me.role!=="patient"&&S.session&&Date.now()-lastAct>IDLE_MS) logout("Vous avez été déconnecté après 30 minutes d'inactivité."); },60000);
+
+/* ---------- équipe : double authentification ---------- */
+function renderMfa(a){
+  a.className="wrap";
+  const enroll=!S.mfa.hasFactor;
+  a.innerHTML=`<div class="top">${BRAND}<button class="iconbtn" id="logout" aria-label="Se déconnecter">${IC.user}</button></div>
+  <div class="auth"><h1>${enroll?"Activer la double authentification":"Code de sécurité"}</h1>
+  <p class="sub" style="margin:0">${enroll?"Les comptes de l'équipe donnent accès à des données de santé. Une étape de sécurité supplémentaire est obligatoire, une seule fois par appareil et par connexion.":"Ouvrez votre application d'authentification et entrez le code à 6 chiffres affiché pour « Centre Médical Prince de Liège »."}</p>
+  <div class="form">
+   ${enroll?`<ol class="legal" style="margin:0;padding-left:18px"><li>Installez sur votre téléphone une application d'authentification : <b>Google Authenticator</b> ou <b>Microsoft Authenticator</b> (gratuites).</li><li>Dans l'application, choisissez « Ajouter un compte », puis « Scanner un code QR ».</li><li>Scannez le code ci-dessous, puis entrez le code à 6 chiffres affiché.</li></ol>
+   <div id="qr" style="display:grid;place-items:center;min-height:200px"><span class="hint">Préparation du code…</span></div>`:""}
+   <label class="fld" for="mfa-code">Code à 6 chiffres<input id="mfa-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456"></label>
+   <div id="mfa-msg"></div>
+   <button class="btn full" id="mfa-go">${enroll?"Activer":"Valider"}</button>
+  </div>
+  <p class="hint">Téléphone perdu ou changé ? L'administrateur peut réinitialiser votre double authentification.</p></div>`;
+  $("#logout").onclick=()=>logout();
+  const msg=t=>$("#mfa-msg").innerHTML=`<div class="err">${esc(t)}</div>`;
+  let factorId=null;
+  (async()=>{
+    const {data:lf}=await sb.auth.mfa.listFactors();
+    if(enroll){
+      for(const f of (lf?.all||[])) if(f.status!=="verified") await sb.auth.mfa.unenroll({factorId:f.id});
+      const {data,error}=await sb.auth.mfa.enroll({factorType:"totp",friendlyName:"CMPL "+new Date().toISOString().slice(0,16)});
+      if(error){ msg(frError(error)+" — vérifiez que la double authentification (TOTP) est activée dans Supabase."); return; }
+      factorId=data.id;
+      $("#qr").innerHTML=`<img src="${esc(data.totp.qr_code)}" alt="Code QR à scanner" style="width:200px;height:200px;background:#fff;padding:8px;border-radius:12px"><p class="hint" style="text-align:center;word-break:break-all">Impossible de scanner ? Entrez cette clé : <b>${esc(data.totp.secret)}</b></p>`;
+    } else {
+      factorId=(lf?.totp||[]).find(f=>f.status==="verified")?.id;
+    }
+  })();
+  $("#mfa-code").focus();
+  $("#mfa-go").onclick=async e=>{
+    const code=$("#mfa-code").value.replace(/\D/g,"");
+    if(code.length!==6) return msg("Entrez les 6 chiffres du code.");
+    if(!factorId) return msg("Un instant, la préparation n'est pas terminée. Réessayez dans quelques secondes.");
+    e.target.disabled=true;
+    const {error}=await sb.auth.mfa.challengeAndVerify({factorId,code});
+    if(error){ e.target.disabled=false; return msg(/invalid|expired/i.test(error.message)?"Code incorrect ou expiré. Entrez le code actuellement affiché.":frError(error)); }
+    markActive(); lastAct=Date.now(); toast("Accès sécurisé activé"); await refresh();
+  };
 }
 
 /* =====================================================================
@@ -243,6 +300,7 @@ function render(){
   if(!S.me) { a.className="wrap"; a.innerHTML=`<div class="loading">Préparation de votre compte…</div>`; setTimeout(refresh,1500); return; }
   if(S.me.status==="pending") return renderPending(a);
   if(S.me.status==="blocked") return renderBlocked(a);
+  if(S.mfa) return renderMfa(a);
   if(S.me.role==="patient") return renderPatient(a);
   return renderStaff(a);
 }
@@ -334,7 +392,7 @@ function renderBlocked(a){
   <div class="closed"><b>Compte non validé</b><span>Ce compte n'a pas pu être validé. Contactez le secrétariat au 02 781 18 75.</span></div>`;
   $("#logout").onclick=logout;
 }
-async function logout(){ await sb.auth.signOut(); S.session=null; S.me=null; S.screen="home"; render(); }
+async function logout(reason){ await sb.auth.signOut(); S.session=null; S.me=null; S.mfa=null; S.screen="home"; S.cscreen="inbox"; try{ localStorage.removeItem("cmpl_last_active"); }catch(e){} render(); if(typeof reason==="string") toast(reason); }
 
 /* =====================================================================
    PATIENT
@@ -779,5 +837,5 @@ async function autoRefresh(){ if(busy||!S.session||S.loading||document.hidden) r
 setInterval(autoRefresh, 60000);
 document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) autoRefresh(); });
 if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
-console.log("CMPL app version 20261011c");
+console.log("CMPL app version 20261012a");
 })();
