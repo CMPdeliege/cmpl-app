@@ -781,11 +781,10 @@ function patientReq(a){
   a.className="wrap chatpage";
   a.innerHTML=`<div class="convhead sticky"><button class="back" id="back" aria-label="Retour">${IC.back}</button><div class="ic avatar">${IC[r.type]}</div><div style="min-width:0"><h2>${esc(provName(r.provider_id)||"Secrétariat")}</h2><small>${TYPES[r.type].label} · ${stLabelP(r)}</small></div></div>
   ${chatHTML(r,"patient")}${itemsHTML}
-  ${r.purged_at?`<div class="closed"><b>Conversation effacée</b><span>Pour une nouvelle question, ouvrez une nouvelle demande.</span><button class="btn ghost" id="newq">Poser une nouvelle question</button></div>`
-  :`${r.status==="traite"?`<p class="hint center">Vous pouvez encore répondre jusqu'au ${fmtDate(purgeDate(r))} : la conversation sera alors rouverte.</p>`:""}
-  ${composerHTML(key)}<p class="hint center small">Lu pendant les heures d'ouverture. Urgence vitale : appelez le 112.</p>`}`;
+  ${r.purged_at||r.status==="traite"?`<div class="closed"><b>${r.purged_at?"Conversation effacée":"Conversation clôturée par le centre"}</b><span>${r.purged_at?"":`Vous pouvez la relire jusqu'au ${fmtDate(purgeDate(r))}, date à laquelle elle sera effacée. `}Pour une suite ou une autre question, ouvrez une nouvelle demande.</span><div class="btnrow"><button class="btn" id="newq">Nouvelle question</button><button class="btn ghost" id="newr">Demander un rendez-vous</button></div></div>`
+  :`${composerHTML(key)}<p class="hint center small">Lu pendant les heures d'ouverture. Urgence vitale : appelez le 112.</p>`}`;
   $("#back").onclick=()=>{ clearPend(); S.screen="home"; render(); scrollTo(0,0); };
-  if(r.purged_at){ $("#newq").onclick=()=>startFlow("question"); return; }
+  if(r.purged_at||r.status==="traite"){ $("#newq").onclick=()=>startFlow("question"); $("#newr").onclick=()=>startFlow("rdv"); return; }
   bindComposer(key, async (text,pend)=>{
     const ok = pend ? await uploadAtt(r.id,pend,text) : await run(()=>sb.from("messages").insert({request_id:r.id, body:text}),"Message envoyé");
     if(!ok) return false;
@@ -873,7 +872,7 @@ function detailHTML(){
    <div class="transfer">${r.status==="nouveau"?'<button class="linkbtn" id="take">Je m\'en occupe</button>':""}<label class="hint" for="tr">Transférer à</label><select id="tr">${transferOpts}</select><button class="linkbtn" id="dotr">Transférer</button></div>
    <p class="hint">Envoyer garde la conversation ouverte. Pas de diagnostic ni de résultat détaillé par message : pour un problème médical, proposez un rendez-vous.</p>`
    :r.purged_at?`<div class="closed"><b>Contenu effacé le ${fmtDate(r.purged_at)}</b><span>Effacement automatique ${PURGE_DAYS} jours après la clôture.</span></div>`
-   :`<div class="closed"><b>Classée ${r.closed_at?fmt(r.closed_at):""}</b><span>Effacement automatique le ${fmtDate(purgeDate(r))}. Le patient peut encore répondre jusque-là (la conversation se rouvre).</span><button class="btn ghost" id="reopen">Rouvrir</button></div>`}
+   :`<div class="closed"><b>Classée ${r.closed_at?fmt(r.closed_at):""}</b><span>Le patient peut la relire mais plus y écrire. Effacement automatique le ${fmtDate(purgeDate(r))}.</span><button class="btn ghost" id="reopen">Rouvrir</button></div>`}
   </div>`;
 }
 const opened=new Set();
@@ -1031,5 +1030,5 @@ async function autoRefresh(){ if(busy||!S.session||S.loading||document.hidden) r
 setInterval(autoRefresh, 60000);
 document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) autoRefresh(); });
 if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
-console.log("CMPL app version 20261012g");
+console.log("CMPL app version 20261012h");
 })();
