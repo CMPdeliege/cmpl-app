@@ -109,7 +109,7 @@ const FLOWS={
   {id:"motif",kind:"choice",q:"Quel est le motif principal ?",options:a=>a.specialite==="Médecine générale"?GP_MOTIFS:OTHER_MOTIFS},
   {id:"delai",kind:"choice",q:"Pour quand ?",options:["Aujourd'hui","Dans les prochains jours","Pas pressé (cette semaine ou plus tard)"]},
   {id:"details",kind:"text",q:"Décrivez en quelques mots ce qui vous amène.",placeholder:"Ex. toux depuis 5 jours, un peu de fièvre le soir",optional:true},
-  {id:"moment",kind:"multi",q:"Quels moments vous conviennent ?",options:["Matin","Midi","Après-midi","Fin de journée"]},
+  {id:"moment",kind:"multi",q:"Quels moments vous conviennent ? Vous pouvez en choisir plusieurs.",options:["Matin","Midi","Après-midi","Fin de journée","Peu importe"],exclusive:"Peu importe"},
   {id:"lieu",kind:"choice",q:"Vous préférez :",options:["Consultation au centre","Visite à domicile","Téléconsultation"]}
  ],
  question:[
@@ -692,7 +692,7 @@ function patientFlow(a){
 function answerUI(s){
   if(s.kind==="drug") return drugUI();
   if(s.kind==="choice") return `<div class="answer"><div class="opts">${optsOf(s).map(o=>`<button class="opt" data-o="${esc(o)}">${esc(o)}</button>`).join("")}</div></div>`;
-  if(s.kind==="multi") return `<div class="answer"><div class="opts">${optsOf(s).map(o=>`<button class="opt" aria-pressed="false" data-m="${esc(o)}">${esc(o)}</button>`).join("")}</div><div class="btnrow"><button class="btn" id="mnext" disabled>Continuer</button></div></div>`;
+  if(s.kind==="multi") return `<div class="answer"><p class="hint" style="margin:0 0 8px">Plusieurs choix possibles</p><div class="opts">${optsOf(s).map(o=>`<button class="opt multi" aria-pressed="false" data-m="${esc(o)}"><span class="box" aria-hidden="true"></span>${esc(o)}</button>`).join("")}</div><div class="btnrow"><button class="btn" id="mnext" disabled>Continuer</button></div></div>`;
   return `<div class="answer"><label for="ta" class="hint">${s.optional?"Facultatif":"Votre réponse"}</label><textarea id="ta" rows="3" maxlength="2000" placeholder="${esc(s.placeholder||"")}"></textarea><div class="btnrow"><button class="btn" id="tnext" ${s.optional?"":"disabled"}>Continuer</button></div></div>`;
 }
 function bindAnswer(s){
@@ -701,7 +701,10 @@ function bindAnswer(s){
     if(s.jump&&s.jump[v]){ toast("On passe à la demande de rendez-vous"); startFlow(s.jump[v]); return; }
     S.answers[s.id]=v; render(); });
   if(s.kind==="multi"){ const btns=$$("[data-m]"), next=$("#mnext");
-    btns.forEach(b=>b.onclick=()=>{ b.setAttribute("aria-pressed", b.getAttribute("aria-pressed")!=="true"); next.disabled=!btns.some(x=>x.getAttribute("aria-pressed")==="true"); });
+    btns.forEach(b=>b.onclick=()=>{ const on=b.getAttribute("aria-pressed")!=="true"; b.setAttribute("aria-pressed", on);
+      // « Peu importe » exclut les autres choix, et inversement
+      if(on&&s.exclusive) btns.forEach(x=>{ if(x!==b&&(b.dataset.m===s.exclusive||x.dataset.m===s.exclusive)) x.setAttribute("aria-pressed","false"); });
+      next.disabled=!btns.some(x=>x.getAttribute("aria-pressed")==="true"); });
     next.onclick=()=>{ S.answers[s.id]=btns.filter(b=>b.getAttribute("aria-pressed")==="true").map(b=>b.dataset.m).join(", "); render(); }; }
   if(s.kind==="text"){ const ta=$("#ta"), n=$("#tnext"); ta.focus({preventScroll:true});
     ta.oninput=()=>{ if(!s.optional) n.disabled=!ta.value.trim(); }; n.onclick=()=>{ S.answers[s.id]=ta.value.trim(); render(); }; }
@@ -1028,5 +1031,5 @@ async function autoRefresh(){ if(busy||!S.session||S.loading||document.hidden) r
 setInterval(autoRefresh, 60000);
 document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) autoRefresh(); });
 if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
-console.log("CMPL app version 20261012f");
+console.log("CMPL app version 20261012g");
 })();

@@ -382,3 +382,6 @@ details.summary{margin-bottom:12px}
 .consent{background:var(--gold-soft);border-radius:var(--r);padding:14px 16px;margin:0 0 18px;display:flex;flex-direction:column;gap:8px}
 .consent h2{font-size:18px;color:var(--accent)}
 .consent p{margin:0}
+.opt.multi{display:inline-flex;align-items:center;gap:8px}
+.opt.multi .box{width:16px;height:16px;border-radius:4px;border:2px solid currentColor;flex:none;display:grid;place-items:center}
+.opt.multi[aria-pressed="true"] .box::after{content:"";width:7px;height:7px;border-radius:2px;background:currentColor}
