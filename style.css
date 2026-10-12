@@ -1,10 +1,13 @@
+@font-face{font-family:"Inter";font-style:normal;font-weight:400;font-display:swap;src:url(fonts/inter-regular.woff) format("woff")}
+@font-face{font-family:"Inter";font-style:normal;font-weight:600;font-display:swap;src:url(fonts/inter-semibold.woff) format("woff")}
+@font-face{font-family:"Inter";font-style:normal;font-weight:700;font-display:swap;src:url(fonts/inter-bold.woff) format("woff")}
 /* Layout: phone-width patient app with a guided conversation; wider two-pane inbox for the centre. */
 :root{
   --bg:#f8f5f0; --surface:#ffffff; --surface-2:#f0e9e1; --ink:#2b1b1c; --muted:#6e5f5b; --line:#e4d9ce;
   --accent:#702629; --accent-ink:#ffffff; --accent-soft:#f5e7e5; --gold:#8a6d33; --gold-bright:#9f8248; --gold-soft:#f3ecdd;
   --warn:#9a5b00; --warn-soft:#fbecd2; --danger:#c0241b; --danger-soft:#fde3df; --ok:#2e6b2f; --ok-soft:#dcefdb; --info:#1d5a8a; --info-soft:#dbe9f5;
-  --font-display:"Source Sans 3", "Segoe UI", system-ui, sans-serif;
-  --font-body:"Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  --font-display:"Inter", "Segoe UI", system-ui, sans-serif;
+  --font-body:"Inter", "Segoe UI", system-ui, sans-serif;
   --r:14px;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
@@ -373,8 +376,8 @@ details.summary{margin-bottom:12px}
 .news.pinned{background:var(--gold-soft)}
 .sechead h2::after{content:"";display:block;width:28px;height:3px;border-radius:2px;background:var(--gold-bright);margin-top:5px}
 /* Mode sombre : surfaces pleines en bordeaux profond (texte blanc), liens et titres en rose clair */
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) :is(.bub.me,.btn:not(.ghost),.cbtn.go,.st-reply,.opt[aria-pressed="true"],.opt[aria-pressed="true"]:hover){background:#8b3338;color:#fff}}
-:root[data-theme="dark"] :is(.bub.me,.btn:not(.ghost),.cbtn.go,.st-reply,.opt[aria-pressed="true"],.opt[aria-pressed="true"]:hover){background:#8b3338;color:#fff}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) :is(.bub.me,.btn:not(.ghost):not(.danger),.cbtn.go,.st-reply,.opt[aria-pressed="true"],.opt[aria-pressed="true"]:hover){background:#8b3338;color:#fff}}
+:root[data-theme="dark"] :is(.bub.me,.btn:not(.ghost):not(.danger),.cbtn.go,.st-reply,.opt[aria-pressed="true"],.opt[aria-pressed="true"]:hover){background:#8b3338;color:#fff}
 
 .lvl{width:70px;height:6px;border-radius:3px;background:var(--surface-2);overflow:hidden;flex:none}
 .lvl i{display:block;height:100%;background:var(--ok);transform-origin:left;transform:scaleX(.08);transition:transform .1s linear}
@@ -385,3 +388,8 @@ details.summary{margin-bottom:12px}
 .opt.multi{display:inline-flex;align-items:center;gap:8px}
 .opt.multi .box{width:16px;height:16px;border-radius:4px;border:2px solid currentColor;flex:none;display:grid;place-items:center}
 .opt.multi[aria-pressed="true"] .box::after{content:"";width:7px;height:7px;border-radius:2px;background:currentColor}
+.mydata{margin-top:14px;display:flex;flex-direction:column;gap:10px}
+.mydata p{margin:0}
+.btn.danger{background:var(--danger);color:#fff}
+.btn.ghost.danger{background:var(--danger-soft);color:var(--danger)}
+.mydata .fld input{font:inherit;color:var(--ink);background:var(--surface);border:1.5px solid var(--line);border-radius:10px;padding:10px 12px;width:100%}

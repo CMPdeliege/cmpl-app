@@ -494,9 +494,14 @@ function draw(){
 
 /* ---------- connexion / inscription ---------- */
 const PRIVACY = `<details class="legal"><summary>Protection de vos données</summary>
-<p>Vos données (identité, coordonnées, demandes, messages, photos, documents et messages vocaux) servent uniquement à votre communication avec le Centre Médical Prince de Liège. Elles sont hébergées dans l'Union européenne (Irlande). Vos conversations ne sont lisibles que par vous et par les membres de l'équipe concernés par votre demande ; chaque ouverture d'une conversation ou d'une pièce jointe par l'équipe est enregistrée.</p>
-<p>Une conversation est effacée automatiquement 15 jours après sa clôture. Ce qui est utile à votre suivi médical est reporté par le prestataire dans votre dossier au centre. Vous pouvez demander à consulter, corriger ou supprimer vos données en écrivant à info@cmpl.be.</p>
-<p><i>Texte provisoire, à valider par le centre avant l'ouverture aux patients.</i></p></details>`;
+<p><b>Qui est responsable ?</b> La société qui exploite le Centre Médical Prince de Liège, 21-23 rue du Potaerdenberg, 1070 Anderlecht. Contact pour vos données : <b>admin@cmpl.be</b>.</p>
+<p><b>Quelles données ?</b> Votre identité (nom, prénom, date de naissance), vos coordonnées (e-mail, téléphone), vos demandes et messages, les photos, documents et messages vocaux que vous envoyez, les médicaments renouvelés, et un journal technique de sécurité.</p>
+<p><b>Pourquoi ?</b> Uniquement pour communiquer avec le centre : rendez-vous, questions, renouvellements de prescription, résultats. Base légale : la relation de soins (RGPD, art. 6.1.b et 9.2.h). Les notifications d'annonces du centre reposent sur votre accord, que vous pouvez retirer à tout moment (art. 6.1.a).</p>
+<p><b>Qui les voit ?</b> Vous, et seulement les membres de l'équipe concernés par votre demande, tenus au secret professionnel. Chaque ouverture d'une conversation ou d'une pièce jointe par l'équipe est enregistrée. Aucune publicité, aucun traceur, aucune revente.</p>
+<p><b>Où ?</b> Les données sont hébergées par Supabase dans l'Union européenne (Irlande), sous contrat de protection des données. Les pages de l'app sont fournies par GitHub, qui enregistre l'adresse IP des visiteurs à des fins de sécurité.</p>
+<p><b>Combien de temps ?</b> Une conversation est effacée 15 jours après sa clôture ; ce qui est utile à votre suivi est reporté par le prestataire dans votre dossier médical au centre, conservé selon la loi. Notifications : 90 jours. Compte non validé : 60 jours. Compte sans connexion pendant 3 ans : supprimé. Journal de sécurité : 5 ans.</p>
+<p><b>Vos droits.</b> Accès, rectification, effacement, limitation, opposition, portabilité, retrait de votre accord. Dans « Mon compte », vous pouvez télécharger vos données et supprimer votre compte. Pour toute autre demande : admin@cmpl.be (réponse dans un délai d'un mois). Vous pouvez aussi introduire une plainte auprès de l'Autorité de protection des données (autoriteprotectiondonnees.be, rue de la Presse 35, 1000 Bruxelles).</p>
+<p><small>Version du 12 octobre 2026.</small></p></details>`;
 function renderAuth(a){
   a.className="wrap";
   const m=S.authMode;
@@ -523,6 +528,7 @@ function renderAuth(a){
     ${m==="login"?`<button type="button" class="linkbtn" id="m-forgot">Mot de passe oublié ?</button>`:""}
     ${m==="forgot"?`<button type="button" class="linkbtn" id="m-back">Retour à la connexion</button>`:""}
    </form>
+   ${m!=="signup"?PRIVACY:""}
    ${BANNER112}
   </div>`;
   $("#m-login").onclick=()=>{S.authMode="login";render()};
@@ -659,12 +665,43 @@ function patientAccount(a){
    <button class="btn" type="submit">Enregistrer</button>
   </form>
   <div style="margin-top:14px">${PRIVACY}</div>
+  <section class="card mydata"><h3>Mes données</h3>
+   <p class="hint">Téléchargez une copie de vos données (compte, demandes, messages, médicaments), ou supprimez votre compte et tout son contenu.</p>
+   <div class="btnrow"><button class="btn ghost" id="export">Télécharger mes données</button><button class="btn ghost danger" id="delask">Supprimer mon compte</button></div>
+   <div id="delbox" hidden><p><b>Suppression définitive.</b> Votre compte, vos demandes, messages, pièces jointes et médicaments enregistrés dans l'app seront effacés. Cela ne supprime pas votre dossier médical au centre, conservé selon la loi.</p>
+    <label class="fld" for="delconf">Pour confirmer, tapez SUPPRIMER<input id="delconf" autocomplete="off"></label>
+    <div class="btnrow"><button class="btn danger" id="delgo" disabled>Supprimer définitivement</button><button class="linkbtn" id="delno">Annuler</button></div></div>
+  </section>
   <div class="btnrow" style="margin-top:18px"><button class="btn ghost" id="logout">Se déconnecter</button></div>`;
   $("#back").onclick=()=>{S.screen="home";render()};
   $("#logout").onclick=logout;
+  $("#export").onclick=exportMyData;
+  $("#delask").onclick=()=>{ $("#delbox").hidden=false; $("#delconf").focus(); };
+  $("#delno").onclick=()=>{ $("#delbox").hidden=true; $("#delconf").value=""; $("#delgo").disabled=true; };
+  $("#delconf").oninput=e=>{ $("#delgo").disabled=e.target.value.trim().toUpperCase()!=="SUPPRIMER"; };
+  $("#delgo").onclick=async e=>{ e.target.disabled=true;
+    if(await run(()=>sb.rpc("delete_my_account"))){ await logout("Votre compte et ses données ont été supprimés."); } else e.target.disabled=false; };
   $("#acctform").onsubmit=async e=>{ e.preventDefault();
     const upd={first_name:$("#a-first").value.trim(),last_name:$("#a-last").value.trim(),birth_date:$("#a-birth").value||null,phone:$("#a-phone").value.trim()};
     if(await run(()=>sb.from("profiles").update(upd).eq("id",m.id),"Enregistré")) Object.assign(S.me,upd); };
+}
+
+// Droit d'accès et de portabilité : copie lisible de toutes les données du compte
+async function exportMyData(){
+  await loadPatient();
+  const strip=r=>({ demande:r.id, type:TYPES[r.type]?.label||r.type, envoyee_le:r.created_at, statut:stLabelP(r), cloturee_le:r.closed_at, effacee_le:r.purged_at,
+    destinataire:provName(r.provider_id)||"Secrétariat", reponses:Object.fromEntries(Object.entries(r.answers||{}).filter(([k])=>!HIDDEN_KEYS.has(k)).map(([k,v])=>[LABELS[k]||k,v])),
+    medicaments:(r.request_items||[]).map(i=>({medicament:i.label,decision:i.decision})),
+    messages:msgsOf(r).map(m=>({de:m.from_patient?"Vous":m.author_label,le:m.created_at,texte:m.body,pieces_jointes:(m.attachments||[]).map(a=>({type:a.kind,nom:a.name,taille_octets:a.size}))})) });
+  const data={ exporte_le:new Date().toISOString(), source:"Application du Centre Médical Prince de Liège (app.cmpl.be)",
+    compte:{ email:S.session.user.email, prenom:S.me.first_name, nom:S.me.last_name, date_de_naissance:S.me.birth_date, telephone:S.me.phone, cree_le:S.me.created_at, valide_le:S.me.approved_at,
+      notifications_annonces:S.me.news_push, choix_annonces_le:S.me.news_choice_at },
+    demandes:S.reqs.map(strip), mes_medicaments:S.meds.map(m=>({medicament:m.label,derniere_prescription:m.last_granted_at,fois:m.times_granted})),
+    notifications:S.notifs.map(n=>({titre:n.title,texte:n.body,le:n.created_at,lue_le:n.read_at})),
+    note:"Le contenu des photos, documents et messages vocaux peut être ouvert dans l'app et enregistré depuis chaque conversation." };
+  const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:"application/json"}));
+  const a=document.createElement("a"); a.href=url; a.download=`mes-donnees-cmpl-${new Date().toISOString().slice(0,10)}.json`; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),5000); toast("Vos données ont été téléchargées");
 }
 
 /* ----- formulaire guidé ----- */
@@ -1030,5 +1067,5 @@ async function autoRefresh(){ if(busy||!S.session||S.loading||document.hidden) r
 setInterval(autoRefresh, 60000);
 document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) autoRefresh(); });
 if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
-console.log("CMPL app version 20261012h");
+console.log("CMPL app version 20261012i");
 })();
