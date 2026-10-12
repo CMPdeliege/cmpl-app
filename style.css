@@ -379,3 +379,6 @@ details.summary{margin-bottom:12px}
 .lvl{width:70px;height:6px;border-radius:3px;background:var(--surface-2);overflow:hidden;flex:none}
 .lvl i{display:block;height:100%;background:var(--ok);transform-origin:left;transform:scaleX(.08);transition:transform .1s linear}
 .attfail{color:inherit}
+.consent{background:var(--gold-soft);border-radius:var(--r);padding:14px 16px;margin:0 0 18px;display:flex;flex-direction:column;gap:8px}
+.consent h2{font-size:18px;color:var(--accent)}
+.consent p{margin:0}
