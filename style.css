@@ -1,20 +1,20 @@
 /* Layout: phone-width patient app with a guided conversation; wider two-pane inbox for the centre. */
 :root{
-  --bg:#f1f4f3; --surface:#ffffff; --surface-2:#e6ecea; --ink:#15211d; --muted:#57665f; --line:#d3dcd8;
-  --accent:#17695a; --accent-ink:#ffffff; --accent-soft:#d8ebe5;
-  --warn:#9a5b00; --warn-soft:#fbecd2; --danger:#b3261e; --danger-soft:#fbe0dd; --ok:#2e6b2f; --ok-soft:#dcefdb; --info:#1d5a8a; --info-soft:#dbe9f5;
-  --font-display:"Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --bg:#f8f5f0; --surface:#ffffff; --surface-2:#f0e9e1; --ink:#2b1b1c; --muted:#6e5f5b; --line:#e4d9ce;
+  --accent:#702629; --accent-ink:#ffffff; --accent-soft:#f5e7e5; --gold:#8a6d33; --gold-bright:#9f8248; --gold-soft:#f3ecdd;
+  --warn:#9a5b00; --warn-soft:#fbecd2; --danger:#c0241b; --danger-soft:#fde3df; --ok:#2e6b2f; --ok-soft:#dcefdb; --info:#1d5a8a; --info-soft:#dbe9f5;
+  --font-display:"Source Sans 3", "Segoe UI", system-ui, sans-serif;
   --font-body:"Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
   --r:14px;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
-  --bg:#0f1714; --surface:#16211d; --surface-2:#1e2c27; --ink:#e4ece8; --muted:#9db0a8; --line:#2b3b35;
-  --accent:#5fc2a9; --accent-ink:#06231c; --accent-soft:#1c3a32;
+  --bg:#181112; --surface:#231a1b; --surface-2:#2e2324; --ink:#f2eae7; --muted:#bcaaa6; --line:#3f3031;
+  --accent:#e7a9ab; --accent-ink:#2a0c0e; --accent-soft:#45272a; --gold:#d8bb80; --gold-bright:#d8bb80; --gold-soft:#3a301f;
   --warn:#f0b65a; --warn-soft:#3a2b12; --danger:#ff8a80; --danger-soft:#3d1a17; --ok:#8fd18f; --ok-soft:#1b331c; --info:#8cc3ef; --info-soft:#16293a;
   color-scheme:dark}}
 :root[data-theme="dark"]{
-  --bg:#0f1714; --surface:#16211d; --surface-2:#1e2c27; --ink:#e4ece8; --muted:#9db0a8; --line:#2b3b35;
-  --accent:#5fc2a9; --accent-ink:#06231c; --accent-soft:#1c3a32;
+  --bg:#181112; --surface:#231a1b; --surface-2:#2e2324; --ink:#f2eae7; --muted:#bcaaa6; --line:#3f3031;
+  --accent:#e7a9ab; --accent-ink:#2a0c0e; --accent-soft:#45272a; --gold:#d8bb80; --gold-bright:#d8bb80; --gold-soft:#3a301f;
   --warn:#f0b65a; --warn-soft:#3a2b12; --danger:#ff8a80; --danger-soft:#3d1a17; --ok:#8fd18f; --ok-soft:#1b331c; --info:#8cc3ef; --info-soft:#16293a;
   color-scheme:dark}
 *{box-sizing:border-box}
@@ -285,3 +285,93 @@ details.summary{margin-bottom:12px}
 .chkline input{margin-top:3px;width:18px;height:18px;accent-color:var(--accent);flex:none}
 .transfer{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .transfer select{max-width:100%}
+
+/* ---------- conversations façon messagerie ---------- */
+.wrap.chatpage{display:flex;flex-direction:column;min-height:calc(100dvh - 52px)}
+.wrap.chatpage .chat{flex:1}
+.convhead.sticky{position:sticky;top:0;z-index:3;background:var(--bg);margin:-12px -16px 8px;padding:12px 16px 10px}
+.convhead h2{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.avatar{width:40px;height:40px;border-radius:50%;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;flex:none}
+.chat{display:flex;flex-direction:column;gap:5px;padding-block:2px 10px}
+.detail .chat{max-height:52vh;overflow:auto;background:var(--surface-2);border-radius:var(--r);padding:10px}
+.chat .day{align-self:center;margin-block:10px 4px}
+.chat .day span{display:inline-block;font-size:12px;font-weight:700;color:var(--muted);background:var(--surface-2);padding:3px 11px;border-radius:999px}
+.detail .chat .day span{background:var(--surface)}
+.chat .sys{align-self:center;max-width:92%;text-align:center;font-size:13px;line-height:1.4;color:var(--ink);background:var(--info-soft);padding:8px 12px;border-radius:12px;margin-block:4px}
+.chat .msg{display:flex;flex-direction:column;max-width:84%;background:none;color:var(--ink);padding:0;border-radius:0}
+.chat .msg.me{align-self:flex-end;align-items:flex-end}
+.chat .msg.them{align-self:flex-start;align-items:flex-start}
+.chat .who{font-size:12px;font-weight:700;color:var(--accent);padding:4px 8px 2px}
+.chat .bub{max-width:100%;padding:8px 12px 5px;border-radius:16px;overflow-wrap:anywhere;font-size:15.5px;line-height:1.4}
+.chat .bub .txt{white-space:pre-wrap}
+.chat .bub .t{display:block;text-align:right;font-size:11px;opacity:.75;margin-top:2px;font-variant-numeric:tabular-nums}
+.chat .bub.hasatt{padding:4px 4px 5px}
+.chat .bub.hasatt .txt{padding:6px 8px 0}
+.chat .bub.hasatt .t{padding-right:8px}
+.chat .bub.reqcard b{font-family:var(--font-display);font-size:15px}
+.chat .bub.reqcard dl{margin:6px 0 0;display:grid;grid-template-columns:auto 1fr;gap:2px 10px;font-size:14px}
+.chat .bub.reqcard dt{opacity:.8}
+.chat .bub.reqcard dd{margin:0}
+.att{display:block;border:0;padding:0;background:transparent;border-radius:12px;overflow:hidden;color:inherit;text-decoration:none;font:inherit;text-align:left}
+.att.img img{display:block;max-width:min(260px,100%);max-height:320px;min-width:140px;min-height:100px;object-fit:cover;border-radius:12px;background:rgb(0 0 0 / .08)}
+.att.loading{opacity:.55}
+.att.pdf{display:flex;gap:10px;align-items:center;padding:10px 12px;background:rgb(0 0 0 / .1);min-width:210px;max-width:270px}
+.bub.bot .att.pdf{background:var(--surface-2)}
+.att.pdf span{min-width:0}
+.att.pdf b{display:block;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.att.pdf small{display:block;font-size:12px;opacity:.8}
+.att.aud{display:flex;flex-direction:column;gap:2px;padding:4px 4px 0}
+.att.aud audio{width:250px;max-width:100%;height:42px}
+.att.aud small{font-size:11px;opacity:.75;padding-left:8px}
+.attfail{display:block;font-size:12px;padding:6px 8px}
+.att + .att{margin-top:4px}
+.chatbar{position:sticky;bottom:0;z-index:3;background:var(--bg);margin-inline:-16px;padding:8px 16px calc(8px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:6px}
+.detail .chatbar{position:static;background:transparent;margin:0;padding:0}
+.cbrow{display:flex;align-items:flex-end;gap:6px}
+.cbrow textarea{flex:1;min-width:0;resize:none;border:1.5px solid var(--line);background:var(--surface);color:var(--ink);border-radius:22px;padding:10px 14px;font-size:16px;line-height:1.35;max-height:150px;min-height:44px}
+.cbrow textarea:focus{outline:none;border-color:var(--accent)}
+.cbtn{flex:none;width:44px;height:44px;border-radius:50%;border:0;background:var(--surface-2);color:var(--ink);display:grid;place-items:center;padding:0}
+.cbtn.go{background:var(--accent);color:var(--accent-ink)}
+.cbtn:disabled{opacity:.45;cursor:default}
+.cbtn.sm{width:32px;height:32px;font-size:14px}
+.recbar{display:flex;align-items:center;gap:10px;background:var(--surface);border:1.5px solid var(--line);border-radius:26px;padding:4px}
+.recdot{width:10px;height:10px;border-radius:50%;background:var(--danger);flex:none}
+@media (prefers-reduced-motion:no-preference){.recdot{animation:blink 1s infinite}}
+@keyframes blink{50%{opacity:.2}}
+.rtime{font-variant-numeric:tabular-nums;font-weight:700}
+.rech{flex:1;font-size:13px;color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.attprev{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:8px;color:var(--accent)}
+.attprev img{width:52px;height:52px;object-fit:cover;border-radius:8px}
+.attprev span{flex:1;min-width:0;color:var(--ink)}
+.attprev b{display:block;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.attprev small{font-size:12px;color:var(--muted)}
+.viewer{position:fixed;inset:0;z-index:20;background:rgb(0 0 0 / .92);display:grid;place-items:center;padding:16px}
+.viewer img{max-width:100%;max-height:100%;object-fit:contain}
+.viewer .cbtn{position:absolute;top:calc(12px + env(safe-area-inset-top,0px));right:12px;font-size:18px}
+.hint.center{text-align:center}
+.hint.small{font-size:12px;margin:0}
+.chatrow .rside{display:flex;flex-direction:column;align-items:flex-end;gap:5px}
+.chatrow .rside small{white-space:nowrap}
+.chatrow.unread b{color:var(--accent)}
+.chatrow.unread small{color:var(--ink)}
+.dot{width:12px;height:12px;border-radius:50%;background:var(--accent)}
+
+/* ---------- identité du Centre Médical Prince de Liège ---------- */
+.brand .logo{width:46px;height:46px;flex:none;border-radius:50%}
+.brand b{font-family:var(--font-display);font-weight:700;font-size:16px;letter-spacing:.04em;text-transform:uppercase;color:var(--accent);line-height:1.05}
+.brand span{font-family:var(--font-display);font-weight:700;font-size:16px;letter-spacing:.04em;text-transform:uppercase;color:var(--gold-bright);line-height:1.1}
+.top{border-bottom:2px solid var(--gold-soft);margin-bottom:14px}
+.authlogo{display:flex;flex-direction:column;align-items:center;gap:8px;margin:6px 0 2px;text-align:center}
+.authlogo img{width:104px;height:104px;border-radius:50%}
+.authlogo b{font-family:var(--font-display);font-size:22px;letter-spacing:.05em;text-transform:uppercase;color:var(--accent);line-height:1}
+.authlogo span{font-family:var(--font-display);font-weight:700;font-size:22px;letter-spacing:.05em;text-transform:uppercase;color:var(--gold-bright);line-height:1}
+.hello{color:var(--accent)}
+.chat .sys{background:var(--gold-soft)}
+.chat .who{color:var(--gold)}
+.ncat{color:var(--gold)}
+.act .ic,.medrow .ic,.avatar{background:var(--accent-soft);color:var(--accent)}
+.news.pinned{background:var(--gold-soft)}
+.sechead h2::after{content:"";display:block;width:28px;height:3px;border-radius:2px;background:var(--gold-bright);margin-top:5px}
+/* Mode sombre : surfaces pleines en bordeaux profond (texte blanc), liens et titres en rose clair */
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) :is(.bub.me,.btn:not(.ghost),.cbtn.go,.st-reply,.opt[aria-pressed="true"],.opt[aria-pressed="true"]:hover){background:#8b3338;color:#fff}}
+:root[data-theme="dark"] :is(.bub.me,.btn:not(.ghost),.cbtn.go,.st-reply,.opt[aria-pressed="true"],.opt[aria-pressed="true"]:hover){background:#8b3338;color:#fff}

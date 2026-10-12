@@ -54,9 +54,15 @@ const IC={
  check:'<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg>',
  alert:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" style="flex:none;color:var(--danger)"><path d="M12 3l9.5 17h-19z"/><path d="M12 10v4M12 17.5v.01"/></svg>',
  news:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11v3a1 1 0 0 0 1 1h2l5 4V6L7 10H5a1 1 0 0 0-1 1z"/><path d="M16 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/></svg>',
- search:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>'
+ search:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>',
+ clip:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 11.5l-8.2 8.2a5 5 0 0 1-7.1-7.1l8.6-8.6a3.4 3.4 0 0 1 4.8 4.8l-8.6 8.6a1.7 1.7 0 0 1-2.4-2.4l7.9-7.9"/></svg>',
+ mic:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>',
+ send:'<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M3.4 20.4l17.5-7.5a1 1 0 0 0 0-1.8L3.4 3.6a.9.9 0 0 0-1.3 1l1.8 6.4 9 1-9 1-1.8 6.4a.9.9 0 0 0 1.3 1z"/></svg>',
+ trash:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
+ doc:'<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg>'
 };
-const BRAND = `<div class="brand"><div class="mark">CM</div><div><b>Centre Médical Prince de Liège</b><span>Anderlecht</span></div></div>`;
+const BRAND = `<div class="brand"><img class="logo" src="logo.png?v=1" alt="" width="46" height="46"><div><b>Centre Médical</b><span>Prince de Liège</span></div></div>`;
+const AUTHLOGO = `<div class="authlogo"><img src="logo.png?v=1" alt="Logo du Centre Médical Prince de Liège" width="104" height="104"><b>Centre Médical</b><span>Prince de Liège</span></div>`;
 const BANNER112 = `<div class="urgent">${IC.alert}<div><strong>Urgence vitale :</strong> appelez le <span class="nums">112</span>.<br>Les demandes envoyées ici sont lues pendant les heures d'ouverture, pas en urgence.</div></div>`;
 
 /* ---------- état ---------- */
@@ -158,7 +164,7 @@ const lastFrom = r => r.last_from;
 const msgsOf = r => (r.messages||[]).slice().sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
 const awaitingStaff = r => r.status!=="traite" && r.last_from==="patient";
 const newPatientMsg = r => awaitingStaff(r) && msgsOf(r).some(m=>!m.from_patient);
-const closedLabel = r => (r.request_items||[]).some(i=>i.decision==="accorde") ? "Prescription faite" : "Classée";
+const closedLabel = r => r.purged_at ? "Effacée" : (r.request_items||[]).some(i=>i.decision==="accorde") ? "Prescription faite" : "Classée";
 function stLabel(r){ if(r.status==="traite") return closedLabel(r); if(newPatientMsg(r)) return "Nouveau message"; if(!awaitingStaff(r)) return "En attente du patient"; return r.status==="nouveau"?"Nouveau":"En cours"; }
 function stClass(r){ if(r.status==="traite") return "traite"; if(newPatientMsg(r)) return "nouveau"; if(!awaitingStaff(r)) return "wait"; return r.status; }
 function stLabelP(r){ if(r.status==="traite") return closedLabel(r); if(r.last_from==="staff") return "Réponse reçue"; return r.status==="encours"?"En cours":"Envoyée"; }
@@ -167,9 +173,168 @@ const PRIO_LABEL={haute:"Haute priorité",normale:"Pas pressé"};
 function dueHTML(r){ if(r.status==="traite") return ""; if(!awaitingStaff(r)) return `<span class="due wait">En attente de la réponse du patient</span>`;
   const late = r.due_at && new Date(r.due_at) < new Date();
   return late ? `<span class="due late">En retard · prévu ${fmtWhen(r.due_at)}</span>` : `<span class="due ${r.priority}">${PRIO_LABEL[r.priority]} · à voir avant ${r.due_at?fmtWhen(r.due_at):"—"}</span>`; }
-function threadHTML(r, viewer){
+/* =====================================================================
+   CONVERSATIONS (façon messagerie) : bulles, photos, PDF, messages vocaux
+   ===================================================================== */
+const PURGE_DAYS=15;
+const purgeDate = r => r.closed_at ? new Date(new Date(r.closed_at).getTime()+PURGE_DAYS*864e5) : null;
+const longDate = d => new Date(d).toLocaleDateString("fr-BE",{weekday:"long",day:"numeric",month:"long"});
+const hm = d => new Date(d).toLocaleTimeString("fr-BE",{hour:"2-digit",minute:"2-digit"});
+const dur = s => `${Math.floor((s||0)/60)}:${String((s||0)%60).padStart(2,"0")}`;
+const kb = n => n>=1048576 ? (n/1048576).toFixed(1).replace(".",",")+" Mo" : Math.max(1,Math.round(n/1024))+" ko";
+const AUTO_BODY = /^(📷 Photo|📄 .*|🎤 Message vocal)$/u;
+function dayLabel(d){ d=new Date(d); const k=x=>new Date(x.getFullYear(),x.getMonth(),x.getDate()).getTime(), diff=Math.round((k(new Date())-k(d))/864e5);
+  return diff===0?"Aujourd'hui":diff===1?"Hier":longDate(d); }
+function msgPreview(m){ if(!m) return ""; const a=(m.attachments||[])[0]; return a&&AUTO_BODY.test(m.body)?m.body:(a?(a.kind==="image"?"📷 ":a.kind==="pdf"?"📄 ":"🎤 ")+m.body:m.body); }
+function attHTML(a){
+  if(a.kind==="image") return `<button type="button" class="att img loading" data-att="${a.id}" data-kind="image" aria-label="Agrandir la photo"><img alt="Photo envoyée"></button>`;
+  if(a.kind==="audio") return `<div class="att aud loading" data-att="${a.id}" data-kind="audio"><audio controls preload="metadata"></audio>${a.duration_s?`<small>${dur(a.duration_s)}</small>`:""}</div>`;
+  return `<a class="att pdf loading" data-att="${a.id}" data-kind="pdf" href="#" download="${esc(a.name)}">${IC.doc}<span><b>${esc(a.name)}</b><small>PDF · ${kb(a.size)} · toucher pour ouvrir</small></span></a>`;
+}
+function chatHTML(r, viewer){
   const mine = m => viewer==="patient" ? m.from_patient : !m.from_patient;
-  return `<div class="thread">${msgsOf(r).map(m=>`<div class="msg ${mine(m)?"me":"them"}"><small>${esc(m.from_patient&&viewer==="patient"?"Vous":m.author_label)} · ${fmt(m.created_at)}</small><div class="bub ${mine(m)?"me":"bot"}">${esc(m.body)}</div></div>`).join("")}</div>`;
+  const dest = provName(r.provider_id)||"Secrétariat";
+  let h=`<div class="chat" id="chat">`, day="", who="";
+  const sep = d => { const l=dayLabel(d); if(l!==day){ day=l; who=""; h+=`<div class="day"><span>${esc(l)}</span></div>`; } };
+  if(viewer==="patient" && !r.purged_at){
+    sep(r.created_at);
+    const dl=answersDL(r.answers);
+    h+=`<div class="msg me"><div class="bub me reqcard"><b>${TYPES[r.type].title}</b>${dl?`<dl>${dl}</dl>`:""}<span class="t">${hm(r.created_at)}</span></div></div>`;
+    if(r.status!=="traite") h+=`<div class="sys">Envoyée à <b>${esc(dest)}</b>. Elle sera vue ${r.priority==="haute"?"dans les 24 heures":"dans les 72 heures"} (heures d'ouverture). Le délai de réponse est ensuite décidé par ${r.provider_id?"le prestataire":"le centre"}. Urgence vitale : 112.</div>`;
+  }
+  for(const m of msgsOf(r)){
+    sep(m.created_at);
+    const me=mine(m), atts=m.attachments||[];
+    const name = viewer==="patient" ? (m.from_patient?"":m.author_label) : (m.from_patient?"":m.author_label);
+    const showName = !me && name && name!==who; who = me ? "" : name;
+    const showBody = !(atts.length && AUTO_BODY.test(m.body));
+    h+=`<div class="msg ${me?"me":"them"}">${showName?`<small class="who">${esc(name)}</small>`:""}<div class="bub ${me?"me":"bot"}${atts.length?" hasatt":""}">${atts.map(attHTML).join("")}${showBody?`<div class="txt">${esc(m.body)}</div>`:""}<span class="t">${hm(m.created_at)}</span></div></div>`;
+  }
+  if(r.purged_at) h+=`<div class="sys">Le contenu de cette conversation a été effacé le ${fmtDate(r.purged_at)} pour protéger les données${viewer==="patient"?" de santé":" du patient"}.</div>`;
+  else if(r.status==="traite"&&r.closed_at) h+=`<div class="sys">Conversation classée le ${fmtDate(r.closed_at)}. Elle sera effacée le ${fmtDate(purgeDate(r))}.</div>`;
+  return h+`</div>`;
+}
+
+/* ----- pièces jointes : chargement à la demande (jamais stockées sur l'appareil) ----- */
+const ATT=new Map();
+function attLoad(id){
+  if(ATT.has(id)) return ATT.get(id);
+  const p=(async()=>{ const {data,error}=await sb.rpc("get_attachment",{p_id:id}); if(error) throw error;
+    const bin=atob(data.data), u8=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u8[i]=bin.charCodeAt(i);
+    return {url:URL.createObjectURL(new Blob([u8],{type:data.mime})), mime:data.mime, name:data.name}; })();
+  ATT.set(id,p); p.catch(()=>ATT.delete(id)); return p;
+}
+function hydrateAtt(){
+  $$("[data-att]:not([data-ready])").forEach(async el=>{
+    el.dataset.ready="1";
+    try{ const a=await attLoad(+el.dataset.att); el.classList.remove("loading");
+      if(el.dataset.kind==="image"){ const img=el.querySelector("img"); img.onload=scrollChat; img.src=a.url; el.onclick=()=>openViewer(a.url); }
+      else if(el.dataset.kind==="audio"){ el.querySelector("audio").src=a.url; }
+      else { el.href=a.url; el.target="_blank"; el.rel="noopener"; }
+    }catch(e){ console.error(e); el.classList.remove("loading"); el.classList.add("failed"); el.insertAdjacentHTML("beforeend",`<small class="attfail">Pièce jointe indisponible</small>`); }
+  });
+}
+function openViewer(url){
+  const v=document.createElement("div"); v.className="viewer"; v.setAttribute("role","dialog"); v.setAttribute("aria-label","Photo");
+  v.innerHTML=`<img alt="Photo agrandie"><button class="cbtn" aria-label="Fermer">✕</button>`; v.querySelector("img").src=url;
+  const close=()=>{ v.remove(); removeEventListener("keydown",esc_); }; const esc_=e=>{ if(e.key==="Escape") close(); };
+  v.onclick=close; addEventListener("keydown",esc_); document.body.appendChild(v); v.querySelector("button").focus();
+}
+function scrollChat(){
+  const c=$("#chat"); if(!c) return;
+  if(c.closest(".detail")) c.scrollTop=c.scrollHeight; else scrollTo(0,document.body.scrollHeight);
+}
+
+/* ----- barre d'écriture : texte, pièce jointe, message vocal ----- */
+function composerHTML(key){
+  const draft=S.drafts[key]||"", pf=S.pend&&S.pend.key===key?S.pend:null;
+  return `<div class="chatbar" id="chatbar">
+   ${pf?`<div class="attprev">${pf.kind==="image"?`<img src="${pf.url}" alt="">`:IC.doc}<span><b>${esc(pf.name)}</b><small>${kb(pf.blob.size)} · prêt à envoyer</small></span><button type="button" class="cbtn sm" id="c-unatt" aria-label="Retirer la pièce jointe">✕</button></div>`:""}
+   <div class="cbrow" id="cbrow">
+    <button type="button" class="cbtn" id="c-att" aria-label="Joindre une photo ou un PDF" title="Photo ou PDF">${IC.clip}</button>
+    <input type="file" id="c-file" accept="image/*,application/pdf" hidden>
+    <textarea id="c-text" rows="1" maxlength="4000" placeholder="${pf?"Ajouter un message (facultatif)":"Écrire un message"}" aria-label="Message">${esc(draft)}</textarea>
+    <button type="button" class="cbtn go" id="c-go"></button>
+   </div>
+   <div class="recbar" id="recbar" hidden>
+    <button type="button" class="cbtn" id="r-cancel" aria-label="Annuler le message vocal">${IC.trash}</button>
+    <span class="recdot" aria-hidden="true"></span><span id="r-time" class="rtime">0:00</span><span class="rech">Enregistrement… (3 min max.)</span>
+    <button type="button" class="cbtn go" id="r-send" aria-label="Envoyer le message vocal">${IC.send}</button>
+   </div>
+  </div>`;
+}
+const canRecord = () => !!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia&&window.MediaRecorder);
+function bindComposer(key, send, onInput){
+  const ta=$("#c-text"), go=$("#c-go"), file=$("#c-file"); if(!ta) return;
+  const upd=()=>{ const has=!!(ta.value.trim()||(S.pend&&S.pend.key===key)), mic=!has&&canRecord();
+    go.innerHTML=mic?IC.mic:IC.send; go.dataset.mode=mic?"mic":"send"; go.disabled=!has&&!mic;
+    go.setAttribute("aria-label",mic?"Enregistrer un message vocal":"Envoyer"); go.title=mic?"Message vocal":"Envoyer"; };
+  const grow=()=>{ ta.style.height="auto"; ta.style.height=Math.min(ta.scrollHeight,150)+"px"; };
+  ta.oninput=()=>{ S.drafts[key]=ta.value; grow(); upd(); if(onInput) onInput(ta.value); };
+  grow(); upd();
+  $("#c-att").onclick=()=>file.click();
+  file.onchange=async()=>{ const f=file.files[0]; file.value=""; if(!f) return;
+    try{ clearPend(); S.pend=await prepFile(f,key); render(); $("#c-text")?.focus({preventScroll:true}); }catch(e){ toast(e.message); } };
+  const un=$("#c-unatt"); if(un) un.onclick=()=>{ clearPend(); render(); };
+  go.onclick=async()=>{
+    if(go.dataset.mode==="mic") return startRec(key, send);
+    go.disabled=true; const pend=S.pend&&S.pend.key===key?S.pend:null;
+    const ok=await send(ta.value.trim(), pend); if(!ok&&document.body.contains(go)) go.disabled=false; };
+  ta.onkeydown=e=>{ if(e.key==="Enter"&&!e.shiftKey&&matchMedia("(pointer:fine)").matches){ e.preventDefault(); if(go.dataset.mode==="send"&&!go.disabled) go.click(); } };
+}
+function clearPend(){ if(S.pend&&S.pend.url) URL.revokeObjectURL(S.pend.url); S.pend=null; }
+async function prepFile(f,key){
+  const isPdf=f.type==="application/pdf"||/\.pdf$/i.test(f.name);
+  if(isPdf){ if(f.size>5*1048576) throw new Error("Ce PDF est trop lourd (5 Mo maximum).");
+    return {key,kind:"pdf",mime:"application/pdf",name:(f.name||"document.pdf").slice(0,80),blob:f}; }
+  if(!(f.type||"").startsWith("image/")&&!/\.(jpe?g|png|heic|heif|webp)$/i.test(f.name)) throw new Error("Vous pouvez joindre une photo ou un PDF.");
+  let blob; try{ blob=await shrinkImage(f); }catch(e){ throw new Error("Cette photo n'a pas pu être lue. Essayez une autre photo (format JPEG)."); }
+  if(blob.size>5*1048576) throw new Error("Cette photo est trop lourde.");
+  return {key,kind:"image",mime:"image/jpeg",name:"photo.jpg",blob,url:URL.createObjectURL(blob)};
+}
+// Photo réduite (1600 px) et réenregistrée : plus légère, et sans les données cachées (position GPS…)
+async function shrinkImage(file){
+  const url=URL.createObjectURL(file);
+  try{
+    const img=await new Promise((ok,ko)=>{ const i=new Image(); i.onload=()=>ok(i); i.onerror=ko; i.src=url; });
+    const k=Math.min(1,1600/Math.max(img.naturalWidth,img.naturalHeight)), c=document.createElement("canvas");
+    c.width=Math.max(1,Math.round(img.naturalWidth*k)); c.height=Math.max(1,Math.round(img.naturalHeight*k));
+    const g=c.getContext("2d"); g.fillStyle="#fff"; g.fillRect(0,0,c.width,c.height); g.drawImage(img,0,0,c.width,c.height);
+    const blob=await new Promise(ok=>c.toBlob(ok,"image/jpeg",0.82)); if(!blob) throw new Error("conversion"); return blob;
+  } finally { URL.revokeObjectURL(url); }
+}
+const blobToB64 = b => new Promise((ok,ko)=>{ const fr=new FileReader(); fr.onload=()=>ok(String(fr.result).split(",")[1]||""); fr.onerror=ko; fr.readAsDataURL(b); });
+async function uploadAtt(reqId, pend, caption){
+  toast(pend.kind==="audio"?"Envoi du message vocal…":"Envoi en cours…");
+  const data=await blobToB64(pend.blob);
+  return run(()=>sb.rpc("send_attachment",{p_request:reqId,p_mime:pend.mime,p_name:pend.name,p_data:data,p_caption:caption||null,p_duration:pend.duration||null}),"Envoyé");
+}
+// Message vocal : un appui pour commencer, un appui pour envoyer (ou la corbeille pour annuler)
+let REC=null;
+function recType(){ for(const t of ["audio/mp4","audio/webm;codecs=opus","audio/webm","audio/ogg;codecs=opus"]) if(MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(t)) return t; return ""; }
+function stopRec(){ if(!REC) return; try{ REC.mr.onstop=null; if(REC.mr.state!=="inactive") REC.mr.stop(); }catch(e){} REC.stream.getTracks().forEach(t=>t.stop()); clearInterval(REC.tick); REC=null; S.rec=false; }
+async function startRec(key, send){
+  let stream; try{ stream=await navigator.mediaDevices.getUserMedia({audio:true}); }
+  catch(e){ return toast("Le micro n'est pas autorisé. Autorisez-le dans les réglages du navigateur."); }
+  const type=recType(); let mr;
+  try{ mr=new MediaRecorder(stream, type?{mimeType:type,audioBitsPerSecond:32000}:{audioBitsPerSecond:32000}); }
+  catch(e){ stream.getTracks().forEach(t=>t.stop()); return toast("L'enregistrement vocal n'est pas disponible sur cet appareil."); }
+  const chunks=[], t0=Date.now(); mr.ondataavailable=e=>{ if(e.data&&e.data.size) chunks.push(e.data); };
+  REC={mr,stream,tick:null}; S.rec=true;
+  $("#cbrow").hidden=true; $("#recbar").hidden=false; const at=$("#chatbar .attprev"); if(at) at.hidden=true;
+  const finish=doSend=>{ if(!REC||REC.mr!==mr) return; clearInterval(REC.tick);
+    mr.onstop=async()=>{ stream.getTracks().forEach(t=>t.stop()); REC=null; S.rec=false;
+      const secs=Math.round((Date.now()-t0)/1000);
+      if(!doSend) return render();
+      if(secs<1||!chunks.length){ toast("Message vocal trop court."); return render(); }
+      const mime=((mr.mimeType||type||"audio/webm").split(";")[0]).replace("audio/x-m4a","audio/mp4").replace("audio/aac","audio/mp4");
+      const ok=await send($("#c-text")?.value.trim()||"", {key,kind:"audio",mime,name:"Message vocal",blob:new Blob(chunks,{type:mime}),duration:secs});
+      if(!ok) render(); };
+    mr.stop(); };
+  REC.tick=setInterval(()=>{ const s=Math.floor((Date.now()-t0)/1000), el=$("#r-time"); if(el) el.textContent=dur(s); if(s>=180) finish(true); },250);
+  $("#r-cancel").onclick=()=>finish(false);
+  $("#r-send").onclick=()=>finish(true);
+  mr.start(1000);
 }
 const patientName = id => { const p=S.profiles[id]; return p ? `${p.first_name||""} ${p.last_name||""}`.trim() || "Patient" : "Patient"; };
 
@@ -198,7 +363,7 @@ async function loadMe(){
   const { data } = await sb.from("profiles").select("*").eq("id", S.session.user.id).maybeSingle();
   S.me = data;
 }
-const REQ_SELECT = "*, messages(id,from_patient,author_label,body,created_at), request_items(id,label,decision)";
+const REQ_SELECT = "*, messages(id,from_patient,author_label,body,created_at,attachments(id,kind,mime,name,size,duration_s)), request_items(id,label,decision)";
 async function loadPatient(){
   const uid=S.session.user.id;
   const [rq, md, nt] = await Promise.all([
@@ -294,6 +459,11 @@ function renderMfa(a){
    RENDU
    ===================================================================== */
 function render(){
+  if(REC) stopRec();
+  draw(); hydrateAtt();
+  if($("#chat")) requestAnimationFrame(scrollChat);
+}
+function draw(){
   const a=app();
   if(S.loading){ a.className="wrap"; a.innerHTML=`<div class="loading">Chargement…</div>`; return; }
   if(S.recovery) return renderRecovery(a);
@@ -308,13 +478,14 @@ function render(){
 
 /* ---------- connexion / inscription ---------- */
 const PRIVACY = `<details class="legal"><summary>Protection de vos données</summary>
-<p>Vos données (identité, coordonnées, demandes et messages) servent uniquement à votre communication avec le Centre Médical Prince de Liège. Elles sont hébergées dans l'Union européenne (Francfort) et ne sont lisibles que par vous et par les membres de l'équipe concernés par votre demande. Chaque accès de l'équipe est enregistré. Vous pouvez demander à consulter, corriger ou supprimer vos données en écrivant à info@cmpl.be.</p>
+<p>Vos données (identité, coordonnées, demandes, messages, photos, documents et messages vocaux) servent uniquement à votre communication avec le Centre Médical Prince de Liège. Elles sont hébergées dans l'Union européenne (Irlande). Vos conversations ne sont lisibles que par vous et par les membres de l'équipe concernés par votre demande ; chaque ouverture d'une conversation ou d'une pièce jointe par l'équipe est enregistrée.</p>
+<p>Une conversation est effacée automatiquement 15 jours après sa clôture. Ce qui est utile à votre suivi médical est reporté par le prestataire dans votre dossier au centre. Vous pouvez demander à consulter, corriger ou supprimer vos données en écrivant à info@cmpl.be.</p>
 <p><i>Texte provisoire, à valider par le centre avant l'ouverture aux patients.</i></p></details>`;
 function renderAuth(a){
   a.className="wrap";
   const m=S.authMode;
   const pinned=S.news.filter(n=>n.pinned);
-  a.innerHTML=`<div class="top">${BRAND}</div>
+  a.innerHTML=`${AUTHLOGO}
   ${pinned.map(n=>`<div style="margin-bottom:12px">${newsCard(n,true)}</div>`).join("")}
   <div class="auth">
    <h1>${m==="signup"?"Créer mon compte":m==="forgot"?"Mot de passe oublié":"Connexion"}</h1>
@@ -402,7 +573,6 @@ function renderPatient(a){
   a.className="wrap";
   const sc=S.screen;
   if(sc==="flow") return patientFlow(a);
-  if(sc==="sent") return patientSent(a);
   if(sc==="req") return patientReq(a);
   if(sc==="notifs") return patientNotifs(a);
   if(sc==="news") return patientNews(a);
@@ -428,7 +598,9 @@ function patientHome(a){
   <div class="sechead"><h2>Mes médicaments</h2><small class="hint">Accordés par votre médecin</small></div>
   <div class="list" style="margin-bottom:26px">${S.meds.length?S.meds.map(m=>`<div class="medrow"><div class="ic">${IC.prescription}</div><div><b>${esc(m.label)}</b><small>Dernière prescription ${fmt(m.last_granted_at)} · ${m.times_granted} fois</small></div><div class="acts"><button class="mini" data-renew="${esc(m.label)}">Renouveler</button><button class="linkbtn" style="font-size:12px;color:var(--muted)" data-forget="${m.id}">Retirer</button></div></div>`).join(""):`<div class="empty">Vos médicaments apparaîtront ici après votre première prescription accordée.</div>`}</div>
   <div class="sechead"><h2>Mes demandes</h2></div>
-  <div class="list">${mine.length?mine.map(r=>{const ms=msgsOf(r),last=ms[ms.length-1];return `<button class="row" data-req="${r.id}"><div class="ic">${IC[r.type]}</div><div><b>${TYPES[r.type].label}</b><small>${esc(summaryLine(r.answers))} · ${fmt(last?last.created_at:r.created_at)}</small></div><span class="pill st-${stClassP(r)}">${stLabelP(r)}</span></button>`}).join(""):`<div class="empty">Aucune demande pour l'instant.</div>`}</div>`;
+  <div class="list">${mine.length?mine.map(r=>{const ms=msgsOf(r),last=ms[ms.length-1],unread=S.notifs.some(n=>n.request_id===r.id&&!n.read_at&&n.title!=="Demande bien reçue");
+    const prev=r.purged_at?"Contenu effacé":last?(last.from_patient?"Vous : ":"")+msgPreview(last):summaryLine(r.answers);
+    return `<button class="row chatrow ${unread?"unread":""}" data-req="${r.id}"><div class="ic">${IC[r.type]}</div><div><b>${esc(provName(r.provider_id)||"Secrétariat")} · ${TYPES[r.type].label}</b><small>${esc(prev)}</small></div><div class="rside"><small>${fmt(last?last.created_at:r.created_at)}</small>${unread?`<span class="dot" aria-label="Nouveau message"></span>`:`<span class="pill st-${stClassP(r)}">${stLabelP(r)}</span>`}</div></button>`}).join(""):`<div class="empty">Aucune demande pour l'instant.</div>`}</div>`;
   bindTop();
   $$("[data-start]").forEach(b=>b.onclick=()=>startFlow(b.dataset.start));
   $$("[data-news]").forEach(b=>b.onclick=()=>{S.openNews=+b.dataset.news;S.screen="news";render();scrollTo(0,0)});
@@ -438,7 +610,7 @@ function patientHome(a){
   $$("[data-req]").forEach(b=>b.onclick=()=>openRequest(+b.dataset.req));
 }
 async function openRequest(id){
-  S.openReq=id; S.screen="req"; render(); scrollTo(0,0);
+  S.openReq=id; S.screen="req"; render();
   const unread=S.notifs.filter(n=>n.request_id===id&&!n.read_at);
   if(unread.length){ await sb.from("notifications").update({read_at:new Date().toISOString()}).in("id",unread.map(n=>n.id)); unread.forEach(n=>n.read_at=new Date().toISOString()); }
 }
@@ -576,35 +748,27 @@ function bindSummary(){
     if(S.flow==="prescription") ans.medicaments=[...S.drug.basket];
     const r = await run(()=>sb.from("requests").insert({type:S.flow, answers:ans}).select(REQ_SELECT).single());
     if(!r){ e.target.disabled=false; return; }
-    S.lastSent=r.data; S.reqs.unshift(r.data); S.screen="sent"; render(); scrollTo(0,0);
-    loadPatient().then(()=>{ if(S.screen!=="flow") render(); });
+    S.lastSent=r.data; S.reqs.unshift(r.data); toast("Demande envoyée"); openRequest(r.data.id);
+    loadPatient().then(()=>{ if(S.screen==="req") render(); });
   };
 }
-function patientSent(a){
-  const r=S.lastSent, prov=provName(r.provider_id);
-  a.innerHTML=`<div class="done"><div class="ok">${IC.check}</div><h2>Demande envoyée</h2><p>Transmise à : <b>${esc(prov||"Secrétariat")}</b>.</p>
-  <div class="promise"><b>Votre demande sera vue ${r.priority==="haute"?"dans les 24 heures":"dans les 72 heures"}</b><span>${isOpen(new Date())?"":"Le centre est fermé : le délai démarre à l'ouverture. "}Le délai de réponse est ensuite décidé par ${prov?"le prestataire":"le centre"}, selon votre demande.</span><span>Urgence vitale : appelez le 112.</span></div>
-  <div class="btnrow" style="justify-content:center"><button class="btn" id="home">Retour à l'accueil</button></div></div>`;
-  $("#home").onclick=()=>{S.screen="home";render()};
-}
 function patientReq(a){
-  const r=S.reqs.find(x=>x.id===S.openReq); if(!r){ S.screen="home"; return render(); }
-  const open=r.status!=="traite", items=(r.request_items||[]);
-  const itemsHTML = r.type==="prescription"&&r.status==="traite" ? `<div class="itemlist">${items.map(i=>`<div><span>${esc(i.label)}</span><span class="dtag ${i.decision==="accorde"?"ok":"no"}">${i.decision==="accorde"?"Prescrit":"Non renouvelé"}</span></div>`).join("")}</div>` : "";
-  const ms=msgsOf(r), draft=S.drafts["p"+r.id]||"";
-  a.innerHTML=`<div class="convhead"><button class="back" id="back" aria-label="Retour">${IC.back}</button><div><h2>${TYPES[r.type].label}</h2><small>Envoyée ${fmt(r.created_at)} · à ${esc(provName(r.provider_id)||"Secrétariat")}</small></div><span class="pill st-${stClassP(r)}" style="margin-left:auto">${stLabelP(r)}</span></div>
-  <details class="summary" ${ms.length?"":"open"}><summary>Votre demande</summary><dl style="margin-top:10px">${answersDL(r.answers)}</dl></details>
-  ${itemsHTML}${threadHTML(r,"patient")}
-  ${!ms.length?`<p class="hint" style="margin-top:12px">Pas encore de réponse. Vous recevrez une notification.</p>`:""}
-  ${open?`<div class="composer"><label for="pmsg" class="hint">Écrire au centre</label><textarea id="pmsg" rows="3" maxlength="4000" placeholder="Votre message">${esc(draft)}</textarea><div class="btnrow"><button class="btn" id="psend" ${draft.trim()?"":"disabled"}>Envoyer</button></div><p class="hint">Lu pendant les heures d'ouverture. Urgence vitale : appelez le 112.</p></div>`
-  :`<div class="closed"><b>Conversation classée</b><span>Pour une nouvelle question, ouvrez une nouvelle demande.</span><button class="btn ghost" id="newq">Poser une nouvelle question</button></div>`}`;
-  $("#back").onclick=()=>{S.screen="home";render()};
-  if(open){ const ta=$("#pmsg"), b=$("#psend");
-    ta.oninput=()=>{ S.drafts["p"+r.id]=ta.value; b.disabled=!ta.value.trim(); };
-    b.onclick=async()=>{ b.disabled=true; const body=ta.value.trim();
-      const res=await run(()=>sb.from("messages").insert({request_id:r.id, body}),"Message envoyé");
-      if(res){ S.drafts["p"+r.id]=""; await loadPatient(); } else b.disabled=false; render(); };
-  } else $("#newq").onclick=()=>startFlow("question");
+  const r=S.reqs.find(x=>x.id===S.openReq); if(!r){ S.screen="home"; return draw(); }
+  const items=(r.request_items||[]), key="p"+r.id;
+  const itemsHTML = r.type==="prescription"&&items.some(i=>i.decision) ? `<div class="itemlist">${items.map(i=>`<div><span>${esc(i.label)}</span><span class="dtag ${i.decision==="accorde"?"ok":"no"}">${i.decision==="accorde"?"Prescrit":i.decision?"Non renouvelé":"En attente"}</span></div>`).join("")}</div>` : "";
+  a.className="wrap chatpage";
+  a.innerHTML=`<div class="convhead sticky"><button class="back" id="back" aria-label="Retour">${IC.back}</button><div class="ic avatar">${IC[r.type]}</div><div style="min-width:0"><h2>${esc(provName(r.provider_id)||"Secrétariat")}</h2><small>${TYPES[r.type].label} · ${stLabelP(r)}</small></div></div>
+  ${chatHTML(r,"patient")}${itemsHTML}
+  ${r.purged_at?`<div class="closed"><b>Conversation effacée</b><span>Pour une nouvelle question, ouvrez une nouvelle demande.</span><button class="btn ghost" id="newq">Poser une nouvelle question</button></div>`
+  :`${r.status==="traite"?`<p class="hint center">Vous pouvez encore répondre jusqu'au ${fmtDate(purgeDate(r))} : la conversation sera alors rouverte.</p>`:""}
+  ${composerHTML(key)}<p class="hint center small">Lu pendant les heures d'ouverture. Urgence vitale : appelez le 112.</p>`}`;
+  $("#back").onclick=()=>{ clearPend(); S.screen="home"; render(); scrollTo(0,0); };
+  if(r.purged_at){ $("#newq").onclick=()=>startFlow("question"); return; }
+  bindComposer(key, async (text,pend)=>{
+    const ok = pend ? await uploadAtt(r.id,pend,text) : await run(()=>sb.from("messages").insert({request_id:r.id, body:text}),"Message envoyé");
+    if(!ok) return false;
+    S.drafts[key]=""; clearPend(); await loadPatient(); render(); return true;
+  });
 }
 
 /* =====================================================================
@@ -664,27 +828,30 @@ function inboxHTML(){
 function detailHTML(){
   const r=S.reqs.find(x=>x.id===S.sel); if(!r) return "";
   const p=S.profiles[r.patient_id]||{}, open=r.status!=="traite", items=r.request_items||[];
-  const isRx=r.type==="prescription"&&open&&items.length;
-  const dec=S.drafts["d"+r.id]||{}; const allDecided=isRx&&items.every(i=>dec[i.id]);
+  const isRx=r.type==="prescription"&&open&&items.some(i=>!i.decision);
+  const dec=S.drafts["d"+r.id]||{}; const allDecided=isRx&&items.filter(i=>!i.decision).every(i=>dec[i.id]);
   const draft=S.drafts["s"+r.id]||"";
   const staffWrote=msgsOf(r).some(m=>!m.from_patient);
   const canClose=isRx?allDecided:(staffWrote||!!draft.trim());
-  const closeBtn=!isRx?"Clôturer et classer":!allDecided?`Décidez pour chaque médicament (${items.filter(i=>dec[i.id]).length}/${items.length})`:items.some(i=>dec[i.id]==="accorde")?"Valider la prescription et classer":"Envoyer le refus et classer";
+  const todo=items.filter(i=>!i.decision);
+  const closeBtn=!isRx?"Clôturer et classer":!allDecided?`Décidez pour chaque médicament (${todo.filter(i=>dec[i.id]).length}/${todo.length})`:todo.some(i=>dec[i.id]==="accorde")?"Valider la prescription et classer":"Envoyer le refus et classer";
   const transferOpts=[`<option value="">Secrétariat</option>`,...S.providers.map(pv=>`<option value="${pv.id}" ${pv.id===r.provider_id?"selected":""}>${esc(P.label(pv))}</option>`)].join("");
   return `<div class="detail">
    <div><h2>${esc(patientName(r.patient_id))}</h2>
     <div class="pinfo"><span>Né(e) le <b>${fmtDate(p.birth_date)}</b></span><span>Tél. <b>${esc(p.phone||"—")}</b></span></div>
     <div class="meta" style="margin-top:6px"><span class="tag">${TYPES[r.type].label}</span><span class="pill st-${stClass(r)}">${stLabel(r)}</span><span>Reçue ${fmt(r.created_at)} · ${esc(provName(r.provider_id)||"Secrétariat")}</span></div></div>
    ${open?`<div class="prioedit"><span class="hint">Priorité</span>${["haute","normale"].map(k=>`<button class="dec p-${k}" aria-pressed="${r.priority===k}" data-prio="${k}">${PRIO_LABEL[k]}</button>`).join("")}</div><div>${dueHTML(r)}</div>`:""}
-   <dl class="qa">${Object.entries(r.answers||{}).filter(([k])=>!HIDDEN_KEYS.has(k)).map(([k,v])=>`<div><dt>${esc(LABELS[k]||k)}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>
-   ${msgsOf(r).length?`<p class="hint" style="margin:0">Conversation</p>${threadHTML(r,"centre")}`:""}
-   ${open?`${isRx?`<div class="rx"><p class="hint" style="margin:0">Décision par médicament</p>${items.map(it=>`<div class="rxrow"><span>${esc(it.label)}</span><div class="decs"><button class="dec ok" aria-pressed="${dec[it.id]==="accorde"}" data-dec="${it.id}:accorde">Accorder</button><button class="dec no" aria-pressed="${dec[it.id]==="refuse"}" data-dec="${it.id}:refuse">Refuser</button></div></div>`).join("")}</div>`:""}
-   <label for="rep" class="hint">${isRx?"Message au patient (facultatif)":"Message au patient"}</label>
-   <textarea id="rep" rows="3" maxlength="4000" placeholder="Votre réponse, une question pour préciser, ou une proposition de rendez-vous">${esc(draft)}</textarea>
-   <div class="btnrow"><button class="btn ghost" id="sendmsg" ${draft.trim()?"":"disabled"}>Envoyer</button><button class="btn" id="close" ${canClose?"":"disabled"}>${closeBtn}</button></div>
+   ${r.purged_at?"":`<dl class="qa">${Object.entries(r.answers||{}).filter(([k])=>!HIDDEN_KEYS.has(k)).map(([k,v])=>`<div><dt>${esc(LABELS[k]||k)}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>`}
+   ${items.some(i=>i.decision)?`<div class="itemlist">${items.filter(i=>i.decision).map(i=>`<div><span>${esc(i.label)}</span><span class="dtag ${i.decision==="accorde"?"ok":"no"}">${i.decision==="accorde"?"Accordé":"Refusé"}</span></div>`).join("")}</div>`:""}
+   ${msgsOf(r).length||r.purged_at||!open?chatHTML(r,"centre"):""}
+   ${open?`${isRx?`<div class="rx"><p class="hint" style="margin:0">Décision par médicament</p>${todo.map(it=>`<div class="rxrow"><span>${esc(it.label)}</span><div class="decs"><button class="dec ok" aria-pressed="${dec[it.id]==="accorde"}" data-dec="${it.id}:accorde">Accorder</button><button class="dec no" aria-pressed="${dec[it.id]==="refuse"}" data-dec="${it.id}:refuse">Refuser</button></div></div>`).join("")}</div>`:""}
+   ${composerHTML("s"+r.id)}
+   <div class="btnrow"><button class="btn" id="close" ${canClose?"":"disabled"}>${closeBtn}</button></div>
+   <p class="hint">Le message écrit ci-dessus est envoyé avec la clôture. <b>Avant de classer, reportez dans CareConnect ce qui doit rester au dossier</b> : la conversation et ses pièces jointes sont effacées ${PURGE_DAYS} jours après la clôture.</p>
    <div class="transfer">${r.status==="nouveau"?'<button class="linkbtn" id="take">Je m\'en occupe</button>':""}<label class="hint" for="tr">Transférer à</label><select id="tr">${transferOpts}</select><button class="linkbtn" id="dotr">Transférer</button></div>
-   <p class="hint">« Envoyer » garde la conversation ouverte. « Clôturer et classer » la termine. Pas de diagnostic ni de résultat détaillé par message : pour un problème médical, proposez un rendez-vous.</p>`
-   :`<div class="closed"><b>Classée ${r.closed_at?fmt(r.closed_at):""}</b><span>Le patient ne peut plus écrire dans cette conversation.</span><button class="btn ghost" id="reopen">Rouvrir</button></div>`}
+   <p class="hint">Envoyer garde la conversation ouverte. Pas de diagnostic ni de résultat détaillé par message : pour un problème médical, proposez un rendez-vous.</p>`
+   :r.purged_at?`<div class="closed"><b>Contenu effacé le ${fmtDate(r.purged_at)}</b><span>Effacement automatique ${PURGE_DAYS} jours après la clôture.</span></div>`
+   :`<div class="closed"><b>Classée ${r.closed_at?fmt(r.closed_at):""}</b><span>Effacement automatique le ${fmtDate(purgeDate(r))}. Le patient peut encore répondre jusque-là (la conversation se rouvre).</span><button class="btn ghost" id="reopen">Rouvrir</button></div>`}
   </div>`;
 }
 const opened=new Set();
@@ -693,23 +860,27 @@ function bindInbox(){
   $$("[data-pf]").forEach(b=>b.onclick=()=>{ S.provFilter=b.dataset.pf; S.sel=null; render(); });
   $("#f-open").onclick=()=>{ S.archive=false; S.sel=null; render(); };
   $("#f-arch").onclick=()=>{ S.archive=true; S.sel=null; render(); };
-  $$("[data-sel]").forEach(b=>b.onclick=()=>{ S.sel=+b.dataset.sel; render(); if(innerWidth<760) $("#detail").scrollIntoView({behavior:"smooth"}); });
+  $$("[data-sel]").forEach(b=>b.onclick=()=>{ clearPend(); S.sel=+b.dataset.sel; render(); if(innerWidth<760) $("#detail").scrollIntoView({behavior:"smooth"}); });
   bindDetail();
 }
 function bindDetail(){
   const r=S.reqs.find(x=>x.id===S.sel); if(!r) return;
   if(!opened.has(r.id)){ opened.add(r.id); sb.rpc("mark_request_opened",{p_id:r.id}).then(()=>{}); }
   const ro=$("#reopen"); if(ro){ ro.onclick=async()=>{ if(await run(()=>sb.rpc("reopen_request",{p_id:r.id}),"Conversation rouverte")){ S.archive=false; await refresh(); } }; return; }
-  const ta=$("#rep"), send=$("#sendmsg"), close=$("#close");
+  if(r.status==="traite") return;
+  const close=$("#close"), key="s"+r.id;
+  const isRx=r.type==="prescription"&&(r.request_items||[]).some(i=>!i.decision);
   const dec=S.drafts["d"+r.id]||(S.drafts["d"+r.id]={});
-  ta.oninput=()=>{ S.drafts["s"+r.id]=ta.value; send.disabled=!ta.value.trim();
-    if(!(r.type==="prescription"&&(r.request_items||[]).length)) close.disabled=!(msgsOf(r).some(m=>!m.from_patient)||ta.value.trim()); };
+  bindComposer(key, async (text,pend)=>{
+    const ok = pend ? await uploadAtt(r.id,pend,text) : await run(()=>sb.rpc("staff_message",{p_id:r.id,p_body:text}),"Message envoyé · patient notifié");
+    if(!ok) return false;
+    S.drafts[key]=""; clearPend(); await refresh(); return true;
+  }, v=>{ if(!isRx) close.disabled=!(msgsOf(r).some(m=>!m.from_patient)||v.trim()); });
   $$("[data-prio]").forEach(b=>b.onclick=async()=>{ if(await run(()=>sb.rpc("set_request_priority",{p_id:r.id,p_priority:b.dataset.prio}),`Priorité : ${PRIO_LABEL[b.dataset.prio]}`)) await refresh(); });
   $$("[data-dec]").forEach(b=>b.onclick=()=>{ const [id,d]=b.dataset.dec.split(":"); dec[id]=dec[id]===d?undefined:d; if(!dec[id]) delete dec[id]; render(); });
-  send.onclick=async()=>{ send.disabled=true; if(await run(()=>sb.rpc("staff_message",{p_id:r.id,p_body:ta.value.trim()}),"Message envoyé · patient notifié")){ S.drafts["s"+r.id]=""; await refresh(); } else send.disabled=false; };
-  close.onclick=async()=>{ close.disabled=true;
+  close.onclick=async()=>{ close.disabled=true; const text=($("#c-text")?.value||"").trim();
     const decisions={}; for(const [k,v] of Object.entries(dec)) decisions[k]=v;
-    if(await run(()=>sb.rpc("close_request",{p_id:r.id,p_body:ta.value.trim()||null,p_decisions:decisions}),"Conversation classée")){ S.drafts["s"+r.id]=""; delete S.drafts["d"+r.id]; await refresh(); } else close.disabled=false; };
+    if(await run(()=>sb.rpc("close_request",{p_id:r.id,p_body:text||null,p_decisions:decisions}),"Conversation classée")){ S.drafts[key]=""; delete S.drafts["d"+r.id]; clearPend(); await refresh(); } else close.disabled=false; };
   const tk=$("#take"); if(tk) tk.onclick=async()=>{ if(await run(()=>sb.rpc("take_request",{p_id:r.id}),"Demande prise en charge")) await refresh(); };
   $("#dotr").onclick=async()=>{ const v=$("#tr").value||null;
     if(await run(()=>sb.rpc("transfer_request",{p_id:r.id,p_provider:v}),`Transférée : ${v?provName(v):"Secrétariat"}`)){ S.sel=null; await refresh(); } };
@@ -834,9 +1005,9 @@ sb.auth.onAuthStateChange((event, session)=>{
 let busy=false;
 async function autoRefresh(){ if(busy||!S.session||S.loading||document.hidden) return; const el=document.activeElement;
   if(el&&(el.tagName==="TEXTAREA"||el.tagName==="INPUT"||el.tagName==="SELECT")) return;
-  if(S.screen==="flow") return; busy=true; try{ await refresh(); } finally{ busy=false; } }
+  if(S.screen==="flow"||S.rec||S.pend||document.querySelector(".viewer")) return; busy=true; try{ await refresh(); } finally{ busy=false; } }
 setInterval(autoRefresh, 60000);
 document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) autoRefresh(); });
 if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
-console.log("CMPL app version 20261012b");
+console.log("CMPL app version 20261012d");
 })();
