@@ -229,7 +229,7 @@ function hydrateAtt(){
     el.dataset.ready="1";
     try{ const a=await attLoad(+el.dataset.att); el.classList.remove("loading");
       if(el.dataset.kind==="image"){ const img=el.querySelector("img"); img.onload=scrollChat; img.src=a.url; el.onclick=()=>openViewer(a.url); }
-      else if(el.dataset.kind==="audio"){ el.querySelector("audio").src=a.url; }
+      else if(el.dataset.kind==="audio"){ const au=el.querySelector("audio"); au.onerror=()=>{ if(!el.querySelector(".attfail")) el.insertAdjacentHTML("beforeend",`<a class="attfail" href="${a.url}" download="message-vocal.${a.mime.includes("webm")?"webm":a.mime.includes("ogg")?"ogg":"m4a"}">Lecture impossible ici : télécharger le message vocal</a>`); }; au.src=a.url; }
       else { el.href=a.url; el.target="_blank"; el.rel="noopener"; }
     }catch(e){ console.error(e); el.classList.remove("loading"); el.classList.add("failed"); el.insertAdjacentHTML("beforeend",`<small class="attfail">Pièce jointe indisponible</small>`); }
   });
@@ -258,7 +258,7 @@ function composerHTML(key){
    </div>
    <div class="recbar" id="recbar" hidden>
     <button type="button" class="cbtn" id="r-cancel" aria-label="Annuler le message vocal">${IC.trash}</button>
-    <span class="recdot" aria-hidden="true"></span><span id="r-time" class="rtime">0:00</span><span class="rech">Enregistrement… (3 min max.)</span>
+    <span class="recdot" aria-hidden="true"></span><span id="r-time" class="rtime">0:00</span><span class="lvl" aria-hidden="true"><i id="r-lvl"></i></span><span class="rech">Parlez… (3 min max.)</span>
     <button type="button" class="cbtn go" id="r-send" aria-label="Envoyer le message vocal">${IC.send}</button>
    </div>
   </div>`;
@@ -311,30 +311,45 @@ async function uploadAtt(reqId, pend, caption){
 }
 // Message vocal : un appui pour commencer, un appui pour envoyer (ou la corbeille pour annuler)
 let REC=null;
-function recType(){ for(const t of ["audio/mp4","audio/webm;codecs=opus","audio/webm","audio/ogg;codecs=opus"]) if(MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(t)) return t; return ""; }
-function stopRec(){ if(!REC) return; try{ REC.mr.onstop=null; if(REC.mr.state!=="inactive") REC.mr.stop(); }catch(e){} REC.stream.getTracks().forEach(t=>t.stop()); clearInterval(REC.tick); REC=null; S.rec=false; }
+// Format choisi pour être lisible partout : AAC (mp4) d'abord, sinon Opus (webm/ogg)
+function recType(){
+  const ok=t=>{ try{ return MediaRecorder.isTypeSupported(t); }catch(e){ return false; } };
+  const safari=/^((?!chrome|android|crios|fxios).)*safari/i.test(navigator.userAgent);
+  const list=["audio/mp4;codecs=mp4a.40.2", ...(safari?["audio/mp4"]:[]), "audio/webm;codecs=opus","audio/ogg;codecs=opus","audio/webm","audio/mp4"];
+  for(const t of list) if(ok(t)) return t; return "";
+}
+function stopRec(){ if(!REC) return; try{ REC.mr.onstop=null; if(REC.mr.state!=="inactive") REC.mr.stop(); }catch(e){} REC.stream.getTracks().forEach(t=>t.stop()); clearInterval(REC.tick); try{ REC.ac&&REC.ac.close(); }catch(e){} REC=null; S.rec=false; }
 async function startRec(key, send){
-  let stream; try{ stream=await navigator.mediaDevices.getUserMedia({audio:true}); }
+  let stream; try{ stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}}); }
   catch(e){ return toast("Le micro n'est pas autorisé. Autorisez-le dans les réglages du navigateur."); }
   const type=recType(); let mr;
-  try{ mr=new MediaRecorder(stream, type?{mimeType:type,audioBitsPerSecond:32000}:{audioBitsPerSecond:32000}); }
-  catch(e){ stream.getTracks().forEach(t=>t.stop()); return toast("L'enregistrement vocal n'est pas disponible sur cet appareil."); }
+  try{ mr=new MediaRecorder(stream, type?{mimeType:type}:undefined); }
+  catch(e){ try{ mr=new MediaRecorder(stream); }catch(e2){ stream.getTracks().forEach(t=>t.stop()); return toast("L'enregistrement vocal n'est pas disponible sur cet appareil."); } }
+  // Niveau du micro : montre que le son est bien capté, et évite d'envoyer un message muet
+  let ac=null, an=null, buf=null, peak=0;
+  try{ ac=new (window.AudioContext||window.webkitAudioContext)(); if(ac.state==="suspended") await ac.resume();
+    an=ac.createAnalyser(); an.fftSize=512; ac.createMediaStreamSource(stream).connect(an); buf=new Uint8Array(an.fftSize); }catch(e){ ac=null; }
   const chunks=[], t0=Date.now(); mr.ondataavailable=e=>{ if(e.data&&e.data.size) chunks.push(e.data); };
-  REC={mr,stream,tick:null}; S.rec=true;
+  REC={mr,stream,tick:null,ac}; S.rec=true;
   $("#cbrow").hidden=true; $("#recbar").hidden=false; const at=$("#chatbar .attprev"); if(at) at.hidden=true;
   const finish=doSend=>{ if(!REC||REC.mr!==mr) return; clearInterval(REC.tick);
-    mr.onstop=async()=>{ stream.getTracks().forEach(t=>t.stop()); REC=null; S.rec=false;
+    mr.onstop=async()=>{ stream.getTracks().forEach(t=>t.stop()); const measured=!!(ac&&ac.state==="running"); try{ ac&&ac.close(); }catch(e){} REC=null; S.rec=false;
       const secs=Math.round((Date.now()-t0)/1000);
       if(!doSend) return render();
       if(secs<1||!chunks.length){ toast("Message vocal trop court."); return render(); }
+      if(measured&&peak<0.02){ toast("Aucun son n'a été capté. Vérifiez que le micro est autorisé et non coupé, puis réessayez."); return render(); }
       const mime=((mr.mimeType||type||"audio/webm").split(";")[0]).replace("audio/x-m4a","audio/mp4").replace("audio/aac","audio/mp4");
       const ok=await send($("#c-text")?.value.trim()||"", {key,kind:"audio",mime,name:"Message vocal",blob:new Blob(chunks,{type:mime}),duration:secs});
       if(!ok) render(); };
+    try{ mr.requestData(); }catch(e){}
     mr.stop(); };
-  REC.tick=setInterval(()=>{ const s=Math.floor((Date.now()-t0)/1000), el=$("#r-time"); if(el) el.textContent=dur(s); if(s>=180) finish(true); },250);
+  REC.tick=setInterval(()=>{ const s=Math.floor((Date.now()-t0)/1000), el=$("#r-time"); if(el) el.textContent=dur(s);
+    if(an){ an.getByteTimeDomainData(buf); let m=0; for(const v of buf){ const d=Math.abs(v-128)/128; if(d>m) m=d; } peak=Math.max(peak,m);
+      const lv=$("#r-lvl"); if(lv) lv.style.transform=`scaleX(${Math.min(1,0.08+m*2.5)})`; }
+    if(s>=180) finish(true); },100);
   $("#r-cancel").onclick=()=>finish(false);
   $("#r-send").onclick=()=>finish(true);
-  mr.start(1000);
+  mr.start();
 }
 const patientName = id => { const p=S.profiles[id]; return p ? `${p.first_name||""} ${p.last_name||""}`.trim() || "Patient" : "Patient"; };
 
@@ -1009,5 +1024,5 @@ async function autoRefresh(){ if(busy||!S.session||S.loading||document.hidden) r
 setInterval(autoRefresh, 60000);
 document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) autoRefresh(); });
 if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
-console.log("CMPL app version 20261012d");
+console.log("CMPL app version 20261012e");
 })();

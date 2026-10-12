@@ -375,3 +375,7 @@ details.summary{margin-bottom:12px}
 /* Mode sombre : surfaces pleines en bordeaux profond (texte blanc), liens et titres en rose clair */
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) :is(.bub.me,.btn:not(.ghost),.cbtn.go,.st-reply,.opt[aria-pressed="true"],.opt[aria-pressed="true"]:hover){background:#8b3338;color:#fff}}
 :root[data-theme="dark"] :is(.bub.me,.btn:not(.ghost),.cbtn.go,.st-reply,.opt[aria-pressed="true"],.opt[aria-pressed="true"]:hover){background:#8b3338;color:#fff}
+
+.lvl{width:70px;height:6px;border-radius:3px;background:var(--surface-2);overflow:hidden;flex:none}
+.lvl i{display:block;height:100%;background:var(--ok);transform-origin:left;transform:scaleX(.08);transition:transform .1s linear}
+.attfail{color:inherit}
