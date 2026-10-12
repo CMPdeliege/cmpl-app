@@ -989,41 +989,56 @@ function bindTeam(){
 /* ----- actualités (secrétariat, administrateur) ----- */
 const NEWS_CATS=["Fermeture","Horaires","Prévention","Nouveau au centre","Pratique"];
 function newsAdminHTML(){
-  const now=new Date();
+  const now=new Date(), ed=S.editNews?S.allNews.find(n=>n.id===S.editNews):null;
+  const v=ed||{category:NEWS_CATS[0],title:"",body:"",pinned:false,expires_at:null,image_path:null};
   return `<div class="chead"><div><h1>Actualités</h1><p>Publiées dans l'app des patients. Informations pratiques uniquement, sans donnée personnelle.</p></div></div>
   <div class="pane">
-   <form class="card" id="newsform">
-    <h3>Nouvelle annonce</h3>
-    <label class="fld" for="n-title">Titre<input type="text" id="n-title" maxlength="80" required></label>
-    <label class="fld" for="n-body">Texte<textarea id="n-body" rows="5" maxlength="800" required></textarea></label>
-    <div class="pgrid"><label class="fld" for="n-cat">Catégorie<select id="n-cat">${NEWS_CATS.map(c=>`<option>${c}</option>`).join("")}</select></label>
-    <label class="fld" for="n-exp">Retirer automatiquement le<input type="date" id="n-exp"></label></div>
-    <label class="fld" for="n-img">Image (facultatif)<input type="file" id="n-img" accept="image/png,image/jpeg,image/webp"></label>
-    <label class="chk2"><input type="checkbox" id="n-pin"> Épingler en haut de l'accueil</label>
-    <label class="chk2"><input type="checkbox" id="n-notif"> Envoyer une notification aux patients qui l'ont accepté${typeof S.audience==="number"?` (${S.audience} patient${S.audience>1?"s":""})`:""} <small class="hint">à réserver aux annonces importantes</small></label>
-    <div class="btnrow"><button class="btn" type="submit" id="n-pub">Publier</button></div>
+   <form class="card ${ed?"editing":""}" id="newsform">
+    <h3>${ed?"Modifier l'annonce":"Nouvelle annonce"}</h3>
+    <label class="fld" for="n-title">Titre<input type="text" id="n-title" maxlength="80" required value="${esc(v.title)}"></label>
+    <label class="fld" for="n-body">Texte<textarea id="n-body" rows="5" maxlength="800" required>${esc(v.body)}</textarea></label>
+    <div class="pgrid"><label class="fld" for="n-cat">Catégorie<select id="n-cat">${NEWS_CATS.map(c=>`<option ${c===v.category?"selected":""}>${c}</option>`).join("")}</select></label>
+    <label class="fld" for="n-exp">Retirer automatiquement le<input type="date" id="n-exp" value="${v.expires_at?esc(new Date(v.expires_at).toLocaleDateString("sv-SE")):""}"></label></div>
+    ${ed&&v.image_path?`<div class="curimg"><img src="${esc(v.image_path)}" alt=""><label class="chk2"><input type="checkbox" id="n-noimg"> Retirer cette image</label></div>`:""}
+    <label class="fld" for="n-img">${ed&&v.image_path?"Remplacer l'image (facultatif)":"Image (facultatif)"}<input type="file" id="n-img" accept="image/png,image/jpeg,image/webp"></label>
+    <label class="chk2"><input type="checkbox" id="n-pin" ${v.pinned?"checked":""}> Épingler en haut de l'accueil</label>
+    ${ed?`<p class="hint">La modification corrige l'annonce affichée ; aucune nouvelle notification n'est envoyée aux patients.</p>`
+      :`<label class="chk2"><input type="checkbox" id="n-notif"> Envoyer une notification aux patients qui l'ont accepté${typeof S.audience==="number"?` (${S.audience} patient${S.audience>1?"s":""})`:""} <small class="hint">à réserver aux annonces importantes</small></label>`}
+    <div class="btnrow"><button class="btn" type="submit" id="n-pub">${ed?"Enregistrer les modifications":"Publier"}</button>${ed?`<button class="btn ghost" type="button" id="n-cancel">Annuler</button>`:""}</div>
    </form>
    <section class="card"><h3>Annonces</h3>
-    <div class="list">${S.allNews.length?S.allNews.map(n=>{const live=!n.expires_at||new Date(n.expires_at)>now;return `<div class="medrow"><div class="ic">${IC.news}</div><div><b>${esc(n.title)}</b><small>${esc(n.category)} · publiée ${fmt(n.published_at)}${n.expires_at?` · ${live?"jusqu'au":"expirée le"} ${fmtDate(n.expires_at)}`:""}${n.pinned?" · épinglée":""}</small></div><div class="acts"><button class="mini" data-pin="${n.id}" data-v="${n.pinned?0:1}">${n.pinned?"Désépingler":"Épingler"}</button><button class="linkbtn" style="font-size:12px;color:var(--muted)" data-del="${n.id}">Retirer</button></div></div>`}).join(""):`<div class="empty">Aucune annonce.</div>`}</div>
+    <div class="list">${S.allNews.length?S.allNews.map(n=>{const live=!n.expires_at||new Date(n.expires_at)>now;return `<div class="medrow ${n.id===S.editNews?"sel":""}"><div class="ic">${IC.news}</div><div><b>${esc(n.title)}</b><small>${esc(n.category)} · publiée ${fmt(n.published_at)}${n.expires_at?` · ${live?"jusqu'au":"expirée le"} ${fmtDate(n.expires_at)}`:""}${n.pinned?" · épinglée":""}</small></div><div class="acts"><button class="mini" data-edit-news="${n.id}">Modifier</button><button class="mini" data-pin="${n.id}" data-v="${n.pinned?0:1}">${n.pinned?"Désépingler":"Épingler"}</button><button class="linkbtn" style="font-size:12px;color:var(--muted)" data-del="${n.id}">Retirer</button></div></div>`}).join(""):`<div class="empty">Aucune annonce.</div>`}</div>
    </section>
   </div>`;
 }
+async function uploadNewsImage(f){
+  if(f.size>3e6) throw new Error("Image trop lourde (3 Mo maximum).");
+  const path=`${Date.now()}-${f.name.replace(/[^\w.-]/g,"_")}`;
+  const up=await sb.storage.from("announcements").upload(path,f,{contentType:f.type}); if(up.error) throw up.error;
+  return sb.storage.from("announcements").getPublicUrl(path).data.publicUrl;
+}
 function bindNewsAdmin(){
+  const ed=S.editNews?S.allNews.find(n=>n.id===S.editNews):null;
   $("#newsform").onsubmit=async e=>{ e.preventDefault(); const btn=$("#n-pub"); btn.disabled=true;
     try{
       const title=$("#n-title").value.trim(), body=$("#n-body").value.trim(); if(!title||!body) throw new Error("Donnez un titre et un texte.");
-      let image_path=null; const f=$("#n-img").files[0];
-      if(f){ if(f.size>3e6) throw new Error("Image trop lourde (3 Mo maximum).");
-        const path=`${Date.now()}-${f.name.replace(/[^\w.-]/g,"_")}`;
-        const up=await sb.storage.from("announcements").upload(path,f,{contentType:f.type}); if(up.error) throw up.error;
-        image_path=sb.storage.from("announcements").getPublicUrl(path).data.publicUrl; }
-      const exp=$("#n-exp").value;
-      const ins=await sb.from("announcements").insert({title,body,category:$("#n-cat").value,pinned:$("#n-pin").checked,notify:$("#n-notif").checked,image_path,expires_at:exp?new Date(exp+"T23:59:00").toISOString():null});
-      if(ins.error) throw ins.error;
-      toast("Annonce publiée"); await refresh();
+      const exp=$("#n-exp").value, f=$("#n-img").files[0];
+      const fields={title,body,category:$("#n-cat").value,pinned:$("#n-pin").checked,expires_at:exp?new Date(exp+"T23:59:00").toISOString():null};
+      if(ed){
+        if(f) fields.image_path=await uploadNewsImage(f); else if($("#n-noimg")?.checked) fields.image_path=null;
+        const up=await sb.from("announcements").update(fields).eq("id",ed.id).select("id");
+        if(up.error) throw up.error; if(!(up.data||[]).length) throw new Error("Modification refusée.");
+        S.editNews=null; toast("Annonce modifiée"); await refresh();
+      } else {
+        fields.image_path=f?await uploadNewsImage(f):null; fields.notify=$("#n-notif").checked;
+        const ins=await sb.from("announcements").insert(fields); if(ins.error) throw ins.error;
+        toast("Annonce publiée"); await refresh();
+      }
     }catch(err){ toast(frError(err)); btn.disabled=false; } };
+  const c=$("#n-cancel"); if(c) c.onclick=()=>{ S.editNews=null; render(); };
+  $$("[data-edit-news]").forEach(b=>b.onclick=()=>{ S.editNews=+b.dataset.editNews; render(); $("#newsform").scrollIntoView({behavior:"smooth",block:"start"}); $("#n-title").focus({preventScroll:true}); });
   $$("[data-pin]").forEach(b=>b.onclick=async()=>{ if(await run(()=>sb.from("announcements").update({pinned:b.dataset.v==="1"}).eq("id",+b.dataset.pin),"Enregistré")) await refresh(); });
-  $$("[data-del]").forEach(b=>b.onclick=async()=>{ if(await run(()=>sb.from("announcements").delete().eq("id",+b.dataset.del),"Annonce retirée")) await refresh(); });
+  $$("[data-del]").forEach(b=>b.onclick=async()=>{ if(S.editNews===+b.dataset.del) S.editNews=null; if(await run(()=>sb.from("announcements").delete().eq("id",+b.dataset.del),"Annonce retirée")) await refresh(); });
 }
 
 /* ----- mes notifications (équipe) ----- */
@@ -1071,9 +1086,9 @@ sb.auth.onAuthStateChange((event, session)=>{
 let busy=false;
 async function autoRefresh(){ if(busy||!S.session||S.loading||document.hidden) return; const el=document.activeElement;
   if(el&&(el.tagName==="TEXTAREA"||el.tagName==="INPUT"||el.tagName==="SELECT")) return;
-  if(S.screen==="flow"||S.rec||S.pend||document.querySelector(".viewer")) return; busy=true; try{ await refresh(); } finally{ busy=false; } }
+  if(S.screen==="flow"||S.rec||S.pend||S.editNews||document.querySelector(".viewer")) return; busy=true; try{ await refresh(); } finally{ busy=false; } }
 setInterval(autoRefresh, 60000);
 document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) autoRefresh(); });
 if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
-console.log("CMPL app version 20261012j");
+console.log("CMPL app version 20261012k");
 })();
