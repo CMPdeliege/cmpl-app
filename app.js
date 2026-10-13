@@ -54,6 +54,9 @@ const IC={
  check:'<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg>',
  alert:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" style="flex:none;color:var(--danger)"><path d="M12 3l9.5 17h-19z"/><path d="M12 10v4M12 17.5v.01"/></svg>',
  news:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11v3a1 1 0 0 0 1 1h2l5 4V6L7 10H5a1 1 0 0 0-1 1z"/><path d="M16 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/></svg>',
+ document:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M12 17v-6M9.5 13.5L12 11l2.5 2.5"/></svg>',
+ centre:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>',
+ scan:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M4 12h16"/></svg>',
  search:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>',
  clip:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 11.5l-8.2 8.2a5 5 0 0 1-7.1-7.1l8.6-8.6a3.4 3.4 0 0 1 4.8 4.8l-8.6 8.6a1.7 1.7 0 0 1-2.4-2.4l7.9-7.9"/></svg>',
  mic:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>',
@@ -97,8 +100,11 @@ const TYPES={
  rdv:{label:"Rendez-vous",title:"Demander un rendez-vous",desc:"Avec le motif, pour bien préparer la consultation"},
  question:{label:"Question",title:"Poser une question",desc:"À un prestataire du centre"},
  prescription:{label:"Prescription",title:"Renouveler un médicament",desc:"Pour un traitement habituel"},
- resultats:{label:"Résultats",title:"Mes résultats",desc:"Signaler un examen dont vous attendez le résultat"}
+ resultats:{label:"Résultats",title:"Mes résultats",desc:"Signaler un examen dont vous attendez le résultat"},
+ document:{label:"Document",title:"Envoyer un document",desc:"Résultats, courrier d'un spécialiste, attestation…"},
+ centre:{label:"Message du centre",title:"Message du centre",desc:""}
 };
+const PATIENT_TYPES=["rdv","question","prescription","resultats","document"];
 const GP_MOTIFS=["Maladie aiguë (fièvre, toux, douleur…)","Suivi d'une maladie chronique","Prise de sang","Certificat ou document","Bilan ou prévention","Vaccination","Autre"];
 const OTHER_MOTIFS=["Première consultation","Consultation de suivi","Contrôle ou soin de routine","Douleur ou problème récent","Autre"];
 const FLOWS={
@@ -133,15 +139,22 @@ const FLOWS={
   {id:"quand",kind:"choice",q:"Quand l'avez-vous fait ?",options:["Cette semaine","Il y a 1 à 2 semaines","Il y a plus d'un mois"]},
   {id:"demandeur",kind:"choice",q:"Qui l'a demandé ?",options:()=>[...P.phys().map(P.label),"Un médecin hors du centre (spécialiste, hôpital)"]},
   {id:"contact",kind:"choice",q:"Comment préférez-vous qu'on vous informe ?",options:["Message dans l'application","Appel téléphonique","Rendez-vous pour en parler"]},
-  {kind:"note",q:"Pour votre sécurité, les résultats eux-mêmes ne sont pas envoyés dans l'application. Le centre vous contacte dès qu'ils sont analysés."}
+  {kind:"note",q:"Vous avez déjà le résultat en main ? Utilisez plutôt « Envoyer un document ». Le centre vous contacte dès qu'ils sont analysés."}
  ]
 };
-const LABELS={pour:"Pour",specialite:"Consultation",medecin:"Prestataire",motif:"Motif",delai:"Pour quand",details:"Détails",moment:"Disponibilités",lieu:"Lieu",
+FLOWS.document=[
+  {id:"doc",kind:"choice",q:"Quel document souhaitez-vous envoyer ?",options:["Résultats d'examen (prise de sang, radio…)","Courrier ou rapport d'un spécialiste ou de l'hôpital","Attestation ou formulaire à compléter","Autre document"]},
+  {id:"medecin",kind:"choice",q:"Pour qui ?",options:()=>[...P.list().map(P.label),"Le secrétariat"]},
+  {id:"fichiers",kind:"files",q:"Ajoutez votre document : prenez-le en photo, scannez-le (plusieurs pages possibles) ou choisissez un PDF."},
+  {id:"note",kind:"text",q:"Un mot pour accompagner le document ?",placeholder:"Ex. résultats de la prise de sang du 10 octobre",optional:true},
+  {kind:"note",q:"Le document sera vu dans les 72 heures (heures d'ouverture). Le prestataire vous répond ici ou vous propose un rendez-vous."}
+];
+const LABELS={doc:"Document",fichiers:"Fichiers",note:"Message",de:"De",pour:"Pour",specialite:"Consultation",medecin:"Prestataire",motif:"Motif",delai:"Pour quand",details:"Détails",moment:"Disponibilités",lieu:"Lieu",
  sujet:"Sujet",depuis:"Depuis",texte:"Question",medicament:"Médicaments",historique:"Déjà prescrit",nouveau:"Choix",remarque:"Remarque",
  examen:"Examen",quand:"Date",demandeur:"Demandé par",contact:"Contact souhaité"};
 const HIDDEN_KEYS=new Set(["provider_id","medicaments"]);
 const answersDL = a => Object.entries(a||{}).filter(([k])=>!HIDDEN_KEYS.has(k)).map(([k,v])=>`<dt>${esc(LABELS[k]||k)}</dt><dd>${esc(v||"—")}</dd>`).join("");
-const summaryLine = a => a.motif||a.texte||a.medicament||a.examen||"";
+const summaryLine = a => a.motif||a.texte||a.medicament||a.examen||a.doc||a.sujet||"";
 const qText = s => typeof s.q==="function" ? s.q() : s.q;
 const optsOf = s => typeof s.options==="function" ? s.options(S.answers) : s.options;
 
@@ -164,10 +177,10 @@ const lastFrom = r => r.last_from;
 const msgsOf = r => (r.messages||[]).slice().sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
 const awaitingStaff = r => r.status!=="traite" && r.last_from==="patient";
 const newPatientMsg = r => awaitingStaff(r) && msgsOf(r).some(m=>!m.from_patient);
-const closedLabel = r => r.purged_at ? "Effacée" : (r.request_items||[]).some(i=>i.decision==="accorde") ? "Prescription faite" : "Classée";
+const closedLabel = r => r.purged_at ? "Effacée" : r.type==="centre" ? "Classée" : (r.request_items||[]).some(i=>i.decision==="accorde") ? "Prescription faite" : "Classée";
 function stLabel(r){ if(r.status==="traite") return closedLabel(r); if(newPatientMsg(r)) return "Nouveau message"; if(!awaitingStaff(r)) return "En attente du patient"; return r.status==="nouveau"?"Nouveau":"En cours"; }
 function stClass(r){ if(r.status==="traite") return "traite"; if(newPatientMsg(r)) return "nouveau"; if(!awaitingStaff(r)) return "wait"; return r.status; }
-function stLabelP(r){ if(r.status==="traite") return closedLabel(r); if(r.last_from==="staff") return "Réponse reçue"; return r.status==="encours"?"En cours":"Envoyée"; }
+function stLabelP(r){ if(r.status==="traite") return closedLabel(r); if(r.last_from==="staff") return r.type==="centre"?"Message reçu":"Réponse reçue"; return r.status==="encours"?"En cours":"Envoyée"; }
 function stClassP(r){ if(r.status==="traite") return "traite"; if(r.last_from==="staff") return "reply"; return "encours"; }
 const PRIO_LABEL={haute:"Haute priorité",normale:"Pas pressé"};
 function dueHTML(r){ if(r.status==="traite") return ""; if(!awaitingStaff(r)) return `<span class="due wait">En attente de la réponse du patient</span>`;
@@ -196,7 +209,7 @@ function chatHTML(r, viewer){
   const dest = provName(r.provider_id)||"Secrétariat";
   let h=`<div class="chat" id="chat">`, day="", who="";
   const sep = d => { const l=dayLabel(d); if(l!==day){ day=l; who=""; h+=`<div class="day"><span>${esc(l)}</span></div>`; } };
-  if(viewer==="patient" && !r.purged_at){
+  if(viewer==="patient" && !r.purged_at && r.type!=="centre"){
     sep(r.created_at);
     const dl=answersDL(r.answers);
     h+=`<div class="msg me"><div class="bub me reqcard"><b>${TYPES[r.type].title}</b>${dl?`<dl>${dl}</dl>`:""}<span class="t">${hm(r.created_at)}</span></div></div>`;
@@ -252,6 +265,7 @@ function composerHTML(key){
    ${pf?`<div class="attprev">${pf.kind==="image"?`<img src="${pf.url}" alt="">`:IC.doc}<span><b>${esc(pf.name)}</b><small>${kb(pf.blob.size)} · prêt à envoyer</small></span><button type="button" class="cbtn sm" id="c-unatt" aria-label="Retirer la pièce jointe">✕</button></div>`:""}
    <div class="cbrow" id="cbrow">
     <button type="button" class="cbtn" id="c-att" aria-label="Joindre une photo ou un PDF" title="Photo ou PDF">${IC.clip}</button>
+    <button type="button" class="cbtn" id="c-scan" aria-label="Scanner un document" title="Scanner un document">${IC.scan}</button>
     <input type="file" id="c-file" accept="image/*,application/pdf" hidden>
     <textarea id="c-text" rows="1" maxlength="4000" placeholder="${pf?"Ajouter un message (facultatif)":"Écrire un message"}" aria-label="Message">${esc(draft)}</textarea>
     <button type="button" class="cbtn go" id="c-go"></button>
@@ -273,6 +287,7 @@ function bindComposer(key, send, onInput){
   ta.oninput=()=>{ S.drafts[key]=ta.value; grow(); upd(); if(onInput) onInput(ta.value); };
   grow(); upd();
   $("#c-att").onclick=()=>file.click();
+  $("#c-scan").onclick=()=>openScanner(pend=>{ clearPend(); S.pend={...pend,key}; render(); $("#c-text")?.focus({preventScroll:true}); });
   file.onchange=async()=>{ const f=file.files[0]; file.value=""; if(!f) return;
     try{ clearPend(); S.pend=await prepFile(f,key); render(); $("#c-text")?.focus({preventScroll:true}); }catch(e){ toast(e.message); } };
   const un=$("#c-unatt"); if(un) un.onclick=()=>{ clearPend(); render(); };
@@ -302,6 +317,74 @@ async function shrinkImage(file){
     const g=c.getContext("2d"); g.fillStyle="#fff"; g.fillRect(0,0,c.width,c.height); g.drawImage(img,0,0,c.width,c.height);
     const blob=await new Promise(ok=>c.toBlob(ok,"image/jpeg",0.82)); if(!blob) throw new Error("conversion"); return blob;
   } finally { URL.revokeObjectURL(url); }
+}
+/* ----- scanner : pages photographiées → un seul PDF (fait dans le téléphone, rien n'est envoyé avant) ----- */
+async function scanPage(file, enhance){
+  const url=URL.createObjectURL(file);
+  try{
+    const img=await new Promise((ok,ko)=>{ const i=new Image(); i.onload=()=>ok(i); i.onerror=ko; i.src=url; });
+    const k=Math.min(1,1754/Math.max(img.naturalWidth,img.naturalHeight)), c=document.createElement("canvas");
+    c.width=Math.max(1,Math.round(img.naturalWidth*k)); c.height=Math.max(1,Math.round(img.naturalHeight*k));
+    const g=c.getContext("2d"); g.fillStyle="#fff"; g.fillRect(0,0,c.width,c.height); g.drawImage(img,0,0,c.width,c.height);
+    if(enhance){ // gris + contraste automatique : fond blanc, texte net
+      const d=g.getImageData(0,0,c.width,c.height), px=d.data, hist=new Uint32Array(256), n=px.length/4;
+      for(let i=0;i<px.length;i+=4){ const y=(px[i]*299+px[i+1]*587+px[i+2]*114)/1000|0; px[i]=y; hist[y]++; }
+      let lo=0,hi=255,acc=0; for(let v=0;v<256;v++){ acc+=hist[v]; if(acc>n*0.02){ lo=v; break; } }
+      acc=0; for(let v=255;v>=0;v--){ acc+=hist[v]; if(acc>n*0.25){ hi=v; break; } }
+      if(hi-lo<40){ lo=Math.max(0,hi-40); }
+      for(let i=0;i<px.length;i+=4){ let y=(px[i]-lo)*255/(hi-lo); y=y<0?0:y>255?255:y; y=255*Math.pow(y/255,1.4); px[i]=px[i+1]=px[i+2]=y; }
+      g.putImageData(d,0,0);
+    }
+    const blob=await new Promise(ok=>c.toBlob(ok,"image/jpeg",enhance?0.72:0.8));
+    return {blob, w:c.width, h:c.height, thumb:URL.createObjectURL(blob)};
+  } finally { URL.revokeObjectURL(url); }
+}
+async function makePdf(pages){
+  const enc=new TextEncoder(), parts=[], offs=[]; let len=0;
+  const push=x=>{ const b=typeof x==="string"?enc.encode(x):x; parts.push(b); len+=b.length; };
+  const obj=(n,body)=>{ offs[n]=len; push(`${n} 0 obj\n`); body(); push("\nendobj\n"); };
+  push("%PDF-1.4\n%\xE2\xE3\xCF\xD3\n");
+  const N=pages.length, kids=pages.map((_,i)=>`${3+i*3} 0 R`).join(" ");
+  obj(1,()=>push("<< /Type /Catalog /Pages 2 0 R >>"));
+  obj(2,()=>push(`<< /Type /Pages /Kids [${kids}] /Count ${N} >>`));
+  for(let i=0;i<N;i++){
+    const pg=pages[i], W=595.28, H=+(W*pg.h/pg.w).toFixed(2), jpg=new Uint8Array(await pg.blob.arrayBuffer()), id=3+i*3;
+    obj(id,()=>push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${W} ${H}] /Resources << /XObject << /Im${i} ${id+2} 0 R >> >> /Contents ${id+1} 0 R >>`));
+    const cs=`q ${W} 0 0 ${H} 0 0 cm /Im${i} Do Q`;
+    obj(id+1,()=>push(`<< /Length ${cs.length} >>\nstream\n${cs}\nendstream`));
+    obj(id+2,()=>{ push(`<< /Type /XObject /Subtype /Image /Width ${pg.w} /Height ${pg.h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpg.length} >>\nstream\n`); push(jpg); push("\nendstream"); });
+  }
+  const total=3+N*3, xref=len;
+  let x=`xref\n0 ${total}\n0000000000 65535 f \n`; for(let n=1;n<total;n++) x+=String(offs[n]).padStart(10,"0")+" 00000 n \n";
+  push(x+`trailer\n<< /Size ${total} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`);
+  return new Blob(parts,{type:"application/pdf"});
+}
+function openScanner(done){
+  const pages=[]; let enhance=true;
+  const v=document.createElement("div"); v.className="scanner"; v.setAttribute("role","dialog"); v.setAttribute("aria-label","Scanner un document");
+  const close=()=>{ pages.forEach(p=>URL.revokeObjectURL(p.thumb)); v.remove(); };
+  const paint=()=>{
+    v.innerHTML=`<div class="scanbox"><div class="scanhead"><h2>Scanner un document</h2><button type="button" class="cbtn" id="sc-x" aria-label="Fermer">✕</button></div>
+     <p class="hint" style="margin:0">Posez le document à plat, bien éclairé, et photographiez chaque page. Elles seront réunies en un seul PDF.</p>
+     <div class="scanpages">${pages.map((p,i)=>`<div class="scanpage"><img src="${p.thumb}" alt="Page ${i+1}"><span>${i+1}</span><button type="button" data-sdel="${i}" aria-label="Retirer la page ${i+1}">✕</button></div>`).join("")}
+      ${pages.length<10?`<button type="button" class="scanadd" id="sc-add">${IC.scan}<b>${pages.length?"Ajouter une page":"Photographier la 1re page"}</b></button>`:""}</div>
+     <input type="file" id="sc-file" accept="image/*" capture="environment" hidden>
+     <label class="chk2"><input type="checkbox" id="sc-enh" ${enhance?"checked":""}> Améliorer la lisibilité (noir et blanc)</label>
+     <div class="btnrow"><button type="button" class="btn" id="sc-ok" ${pages.length?"":"disabled"}>Créer le PDF${pages.length?` (${pages.length} page${pages.length>1?"s":""})`:""}</button><button type="button" class="btn ghost" id="sc-no">Annuler</button></div></div>`;
+    v.querySelector("#sc-x").onclick=close; v.querySelector("#sc-no").onclick=close;
+    v.querySelector("#sc-enh").onchange=e=>{ enhance=e.target.checked; };
+    const add=v.querySelector("#sc-add"), inp=v.querySelector("#sc-file"); if(add) add.onclick=()=>inp.click();
+    inp.onchange=async()=>{ const f=inp.files[0]; inp.value=""; if(!f) return; add&&(add.disabled=true);
+      try{ pages.push(await scanPage(f,enhance)); }catch(e){ toast("Cette photo n'a pas pu être lue. Réessayez."); } paint(); };
+    v.querySelectorAll("[data-sdel]").forEach(b=>b.onclick=()=>{ const p=pages.splice(+b.dataset.sdel,1)[0]; URL.revokeObjectURL(p.thumb); paint(); });
+    v.querySelector("#sc-ok").onclick=async e=>{ e.target.disabled=true; e.target.textContent="Création du PDF…";
+      try{ const blob=await makePdf(pages);
+        if(blob.size>5*1048576) throw new Error("Le PDF dépasse 5 Mo : retirez une page ou décochez l'amélioration.");
+        const name=`scan-${new Date().toISOString().slice(0,10)}.pdf`, n=pages.length; close();
+        done({kind:"pdf",mime:"application/pdf",name,blob,pages:n}); }
+      catch(err){ toast(err.message||"Le PDF n'a pas pu être créé."); paint(); } };
+  };
+  paint(); document.body.appendChild(v); v.querySelector("#sc-add")?.focus();
 }
 const blobToB64 = b => new Promise((ok,ko)=>{ const fr=new FileReader(); fr.onload=()=>ok(String(fr.result).split(",")[1]||""); fr.onerror=ko; fr.readAsDataURL(b); });
 async function uploadAtt(reqId, pend, caption){
@@ -615,7 +698,7 @@ function patientHome(a){
   ${S.me.news_choice_at?"":`<section class="consent" aria-labelledby="cq"><h2 id="cq">Annonces du centre</h2><p>Souhaitez-vous recevoir une notification pour les annonces importantes du centre (fermetures exceptionnelles, campagnes de vaccination) ?</p><p class="hint">Les réponses à vos demandes vous sont toujours notifiées. Vous pourrez changer d'avis à tout moment dans Notifications.</p><div class="btnrow"><button class="btn" data-consent="1">Oui, me prévenir</button><button class="btn ghost" data-consent="0">Non merci</button></div></section>`}
   ${pinned.map(n=>`<button class="newsbtn" data-news="${n.id}" style="margin-bottom:12px">${newsCard(n,false)}</button>`).join("")}
   ${BANNER112}
-  <div class="actions">${Object.entries(TYPES).map(([k,t])=>`<button class="act" data-start="${k}"><div class="ic">${IC[k]}</div><b>${t.title}</b><span>${t.desc}</span></button>`).join("")}</div>
+  <div class="actions">${PATIENT_TYPES.map(k=>[k,TYPES[k]]).map(([k,t])=>`<button class="act" data-start="${k}"><div class="ic">${IC[k]}</div><b>${t.title}</b><span>${t.desc}</span></button>`).join("")}</div>
   ${others.length?`<div class="sechead"><h2>Actualités</h2><button class="linkbtn" id="allnews">Tout voir</button></div>
   <div class="newslist" style="margin-bottom:26px">${others.slice(0,2).map(n=>`<button class="newsbtn" data-news="${n.id}">${newsCard(n,false)}</button>`).join("")}</div>`:""}
   <div class="sechead"><h2>Mes médicaments</h2><small class="hint">Accordés par votre médecin</small></div>
@@ -705,7 +788,7 @@ async function exportMyData(){
 }
 
 /* ----- formulaire guidé ----- */
-function startFlow(k, preset){ S.flow=k; S.answers={}; S.drug={q:"",basket:preset?[...preset]:[],manual:false}; S.screen="flow"; render(); scrollTo(0,0); }
+function startFlow(k, preset){ (S.flowFiles||[]).forEach(f=>f.url&&URL.revokeObjectURL(f.url)); S.flowFiles=[]; S.flow=k; S.answers={}; S.drug={q:"",basket:preset?[...preset]:[],manual:false}; S.screen="flow"; render(); scrollTo(0,0); }
 const activeSteps = () => FLOWS[S.flow].filter(s=>!s.when||s.when(S.answers));
 function patientFlow(a){
   const steps=activeSteps();
@@ -726,13 +809,28 @@ function patientFlow(a){
   if(current) bindAnswer(current); else bindSummary();
   const last=a.querySelector(".answer,.summary"); if(last) last.scrollIntoView({block:"nearest"});
 }
+function filesUI(){
+  const F=S.flowFiles;
+  return `<div class="answer"><div class="filelist">${F.length?F.map((f,i)=>`<div class="fileitem">${f.kind==="image"?`<img src="${f.url}" alt="">`:IC.doc}<span><b>${esc(f.name)}</b><small>${f.pages?f.pages+" page"+(f.pages>1?"s":"")+" · ":""}${kb(f.blob.size)}</small></span><button type="button" class="linkbtn" data-frm="${i}">Retirer</button></div>`).join(""):`<p class="hint" style="margin:0">Aucun fichier pour l'instant.</p>`}</div>
+   <input type="file" id="ffile" accept="image/*,application/pdf" hidden>
+   <div class="btnrow">${F.length<5?`<button type="button" class="btn ghost" id="fscan">${IC.scan} Scanner</button><button type="button" class="btn ghost" id="fpick">${IC.clip} Photo ou PDF</button>`:`<p class="hint">5 fichiers maximum.</p>`}</div>
+   <div class="btnrow"><button class="btn" id="fnext" ${F.length?"":"disabled"}>Continuer${F.length>1?` avec ${F.length} fichiers`:""}</button></div></div>`;
+}
 function answerUI(s){
+  if(s.kind==="files") return filesUI();
   if(s.kind==="drug") return drugUI();
   if(s.kind==="choice") return `<div class="answer"><div class="opts">${optsOf(s).map(o=>`<button class="opt" data-o="${esc(o)}">${esc(o)}</button>`).join("")}</div></div>`;
   if(s.kind==="multi") return `<div class="answer"><p class="hint" style="margin:0 0 8px">Plusieurs choix possibles</p><div class="opts">${optsOf(s).map(o=>`<button class="opt multi" aria-pressed="false" data-m="${esc(o)}"><span class="box" aria-hidden="true"></span>${esc(o)}</button>`).join("")}</div><div class="btnrow"><button class="btn" id="mnext" disabled>Continuer</button></div></div>`;
   return `<div class="answer"><label for="ta" class="hint">${s.optional?"Facultatif":"Votre réponse"}</label><textarea id="ta" rows="3" maxlength="2000" placeholder="${esc(s.placeholder||"")}"></textarea><div class="btnrow"><button class="btn" id="tnext" ${s.optional?"":"disabled"}>Continuer</button></div></div>`;
 }
 function bindAnswer(s){
+  if(s.kind==="files"){ const F=S.flowFiles, inp=$("#ffile");
+    $$("[data-frm]").forEach(b=>b.onclick=()=>{ const f=F.splice(+b.dataset.frm,1)[0]; if(f&&f.url) URL.revokeObjectURL(f.url); render(); });
+    const pk=$("#fpick"); if(pk) pk.onclick=()=>inp.click();
+    inp.onchange=async()=>{ const f=inp.files[0]; inp.value=""; if(!f) return; try{ F.push(await prepFile(f,"flow")); render(); }catch(e){ toast(e.message); } };
+    const sc=$("#fscan"); if(sc) sc.onclick=()=>openScanner(pend=>{ F.push(pend); render(); });
+    $("#fnext").onclick=()=>{ S.answers[s.id]=F.map(f=>f.name).join(", "); render(); };
+    return; }
   if(s.kind==="drug") return bindDrug(s);
   if(s.kind==="choice") $$("[data-o]").forEach(b=>b.onclick=()=>{ const v=b.dataset.o;
     if(s.jump&&s.jump[v]){ toast("On passe à la demande de rendez-vous"); startFlow(s.jump[v]); return; }
@@ -815,7 +913,11 @@ function bindSummary(){
     if(S.flow==="prescription") ans.medicaments=S.drug.basket.map(l=>({label:l,boites:boxes(l)}));
     const r = await run(()=>sb.from("requests").insert({type:S.flow, answers:ans}).select(REQ_SELECT).single());
     if(!r){ e.target.disabled=false; return; }
-    S.lastSent=r.data; S.reqs.unshift(r.data); toast("Demande envoyée"); openRequest(r.data.id);
+    S.lastSent=r.data; S.reqs.unshift(r.data);
+    if(S.flowFiles&&S.flowFiles.length){ e.target.textContent="Envoi des fichiers…";
+      for(const f of S.flowFiles){ const ok=await uploadAtt(r.data.id,f,null); if(!ok){ toast("Un fichier n'a pas pu être envoyé : ajoutez-le dans la conversation."); break; } }
+      S.flowFiles=[]; await loadPatient(); }
+    toast("Demande envoyée"); openRequest(r.data.id);
     loadPatient().then(()=>{ if(S.screen==="req") render(); });
   };
 }
@@ -848,6 +950,7 @@ function renderStaff(a){
   const nav=`<div class="top">${BRAND}<div class="menu"><span class="who">${esc(S.me.first_name||"")} · ${ROLE_LABEL[S.me.role]}${S.me.provider_id?` · ${esc(provName(S.me.provider_id))}`:""}</span><button class="iconbtn" id="logout" aria-label="Se déconnecter" title="Se déconnecter">${IC.user}</button></div></div>
   <div class="nav">
    <button data-cs="inbox" aria-pressed="${sc==="inbox"}">Demandes<span class="n">${S.reqs.filter(awaitingStaff).length||""}</span></button>
+   <button data-cs="compose" aria-pressed="${sc==="compose"}">Écrire à un patient</button>
    ${isDesk()?`<button data-cs="accounts" aria-pressed="${sc==="accounts"}">Comptes à valider<span class="n">${S.pending.length||""}</span></button>`:""}
    ${isDesk()?`<button data-cs="news" aria-pressed="${sc==="news"}">Actualités</button>`:""}
    ${S.me.role==="admin"?`<button data-cs="team" aria-pressed="${sc==="team"}">Équipe</button>`:""}
@@ -855,12 +958,12 @@ function renderStaff(a){
    <button id="reload">Actualiser</button>
   </div>`;
   let body="";
-  if(sc==="accounts") body=accountsHTML(); else if(sc==="news") body=newsAdminHTML(); else if(sc==="team") body=teamHTML(); else if(sc==="settings") body=settingsHTML(); else body=inboxHTML();
+  if(sc==="compose") body=composeHTML(); else if(sc==="accounts") body=accountsHTML(); else if(sc==="news") body=newsAdminHTML(); else if(sc==="team") body=teamHTML(); else if(sc==="settings") body=settingsHTML(); else body=inboxHTML();
   a.innerHTML=nav+body;
   $("#logout").onclick=logout;
   $("#reload").onclick=async()=>{ await refresh(); toast("Actualisé"); };
   $$("[data-cs]").forEach(b=>b.onclick=()=>{ S.cscreen=b.dataset.cs; render(); });
-  if(sc==="accounts") bindAccounts(); else if(sc==="news") bindNewsAdmin(); else if(sc==="team") bindTeam(); else if(sc==="settings") bindSettings(); else bindInbox();
+  if(sc==="compose") bindCompose(); else if(sc==="accounts") bindAccounts(); else if(sc==="news") bindNewsAdmin(); else if(sc==="team") bindTeam(); else if(sc==="settings") bindSettings(); else bindInbox();
 }
 
 /* ----- boîte de réception ----- */
@@ -950,6 +1053,62 @@ function bindDetail(){
   const tk=$("#take"); if(tk) tk.onclick=async()=>{ if(await run(()=>sb.rpc("take_request",{p_id:r.id}),"Demande prise en charge")) await refresh(); };
   $("#dotr").onclick=async()=>{ const v=$("#tr").value||null;
     if(await run(()=>sb.rpc("transfer_request",{p_id:r.id,p_provider:v}),`Transférée : ${v?provName(v):"Secrétariat"}`)){ S.sel=null; await refresh(); } };
+}
+
+/* ----- écrire en premier à un patient ----- */
+const SUBJECTS=["Résultats","Document ou certificat","Rappel (vaccin, contrôle…)","Information","Autre"];
+function composeHTML(){
+  const C=S.compose||(S.compose={patient:null,subject:SUBJECTS[0],body:"",files:[],reply:true,q:""}), pt=C.patient;
+  const who=S.me.provider_id?provName(S.me.provider_id):"Secrétariat";
+  return `<div class="chead"><div><h1>Écrire à un patient</h1><p>Pour un patient qui a un compte validé dans l'app. Il reçoit une notification neutre, sans contenu médical. Envoyé au nom de : <b>${esc(who)}</b>.</p></div></div>
+  <div class="compose card">
+   <h3>1. Destinataire</h3>
+   ${pt?`<div class="recipient"><div class="ic">${IC.user}</div><div><b>${esc(`${pt.first_name||""} ${pt.last_name||""}`)}</b><small>Né(e) le ${fmtDate(pt.birth_date)} · Tél. ${esc(pt.phone||"—")}</small></div><button type="button" class="linkbtn" id="cp-change">Changer</button></div>
+     <p class="hint" style="margin:0">Vérifiez la date de naissance : un message au mauvais patient est une fuite de données.</p>`
+   :`<label class="fld" for="cp-q">Nom ou prénom du patient<input id="cp-q" type="text" autocomplete="off" placeholder="Au moins 2 lettres" value="${esc(C.q)}"></label><div id="cp-res"></div>`}
+   <h3>2. Message</h3>
+   <label class="fld" for="cp-subj">Sujet<select id="cp-subj">${SUBJECTS.map(x=>`<option ${x===C.subject?"selected":""}>${x}</option>`).join("")}</select></label>
+   <label class="fld" for="cp-body">Message au patient<textarea id="cp-body" rows="5" maxlength="4000" placeholder="Ex. Vos résultats de prise de sang sont normaux. Vous les trouverez en pièce jointe.">${esc(C.body)}</textarea></label>
+   <div class="filelist">${C.files.map((f,i)=>`<div class="fileitem">${f.kind==="image"?`<img src="${f.url}" alt="">`:IC.doc}<span><b>${esc(f.name)}</b><small>${f.pages?f.pages+" page"+(f.pages>1?"s":"")+" · ":""}${kb(f.blob.size)}</small></span><button type="button" class="linkbtn" data-cprm="${i}">Retirer</button></div>`).join("")}</div>
+   <input type="file" id="cp-file" accept="image/*,application/pdf" multiple hidden>
+   ${C.files.length<5?`<div class="btnrow"><button type="button" class="btn ghost" id="cp-pick">${IC.clip} Joindre un PDF ou une photo</button><button type="button" class="btn ghost" id="cp-scan">${IC.scan} Scanner</button></div>`:""}
+   <h3>3. Réponse</h3>
+   <label class="chk2"><input type="radio" name="cp-r" value="1" ${C.reply?"checked":""}> Le patient peut répondre</label>
+   <label class="chk2"><input type="radio" name="cp-r" value="0" ${C.reply?"":"checked"}> Pour information (classée d'emblée, le patient peut la lire mais pas répondre)</label>
+   <div class="btnrow"><button class="btn" id="cp-send" ${pt&&C.body.trim()?"":"disabled"}>${pt?`Envoyer à ${esc(`${pt.first_name||""} ${pt.last_name||""}`.trim())}`:"Choisissez d'abord le patient"}</button><button type="button" class="btn ghost" id="cp-reset">Effacer</button></div>
+  </div>`;
+}
+function bindCompose(){
+  const C=S.compose;
+  const upd=()=>{ const b=$("#cp-send"); if(b) b.disabled=!(C.patient&&C.body.trim()); };
+  $("#cp-subj").onchange=e=>C.subject=e.target.value;
+  $("#cp-body").oninput=e=>{ C.body=e.target.value; upd(); };
+  $$("[name=cp-r]").forEach(r=>r.onchange=()=>C.reply=r.value==="1");
+  const ch=$("#cp-change"); if(ch) ch.onclick=()=>{ C.patient=null; render(); $("#cp-q")?.focus(); };
+  const q=$("#cp-q");
+  if(q){ let t; const search=async()=>{ C.q=q.value; const words=norm(q.value).replace(/[*%,().]/g," ").split(/\s+/).filter(w=>w.length>=2), out=$("#cp-res");
+      if(!words.length){ out.innerHTML=""; return; }
+      const w=words[0]; const {data,error}=await sb.from("profiles").select("id,first_name,last_name,birth_date,phone").eq("role","patient").eq("status","active").or(`first_name.ilike.*${w}*,last_name.ilike.*${w}*`).limit(20);
+      if(error){ out.innerHTML=`<p class="hint">${esc(frError(error))}</p>`; return; }
+      const rows=(data||[]).filter(p=>words.every(x=>norm(`${p.first_name||""} ${p.last_name||""}`).includes(x))).slice(0,10);
+      out.innerHTML=rows.length?`<div class="list">${rows.map(p=>`<button type="button" class="row" data-pick="${p.id}"><div class="ic">${IC.user}</div><div><b>${esc(`${p.first_name||""} ${p.last_name||""}`)}</b><small>Né(e) le ${fmtDate(p.birth_date)} · Tél. ${esc(p.phone||"—")}</small></div><span></span></button>`).join("")}</div>`:`<p class="hint">Aucun patient avec un compte validé ne correspond.</p>`;
+      out.querySelectorAll("[data-pick]").forEach(b=>b.onclick=()=>{ C.patient=rows.find(p=>p.id===b.dataset.pick); render(); $("#cp-body")?.focus(); }); };
+    q.oninput=()=>{ clearTimeout(t); t=setTimeout(search,300); }; if(C.q) search(); q.focus({preventScroll:true}); }
+  const inp=$("#cp-file"), pk=$("#cp-pick"); if(pk) pk.onclick=()=>inp.click();
+  inp.onchange=async()=>{ for(const f of [...inp.files].slice(0,5-C.files.length)){ try{ C.files.push(await prepFile(f,"compose")); }catch(e){ toast(e.message); } } inp.value=""; render(); };
+  const sc=$("#cp-scan"); if(sc) sc.onclick=()=>openScanner(pend=>{ C.files.push(pend); render(); });
+  $$("[data-cprm]").forEach(b=>b.onclick=()=>{ const f=C.files.splice(+b.dataset.cprm,1)[0]; if(f&&f.url) URL.revokeObjectURL(f.url); render(); });
+  $("#cp-reset").onclick=()=>{ C.files.forEach(f=>f.url&&URL.revokeObjectURL(f.url)); S.compose=null; render(); };
+  const send=$("#cp-send"); send.onclick=async()=>{ send.disabled=true; send.textContent="Envoi…";
+    const r=await run(()=>sb.rpc("staff_start_conversation",{p_patient:C.patient.id,p_subject:C.subject,p_body:C.body.trim()}));
+    if(!r){ send.disabled=false; send.textContent="Réessayer"; return; }
+    const id=r.data; let okAll=true;
+    for(const f of C.files){ if(!await uploadAtt(id,f,null)){ okAll=false; break; } }
+    if(!C.reply) await run(()=>sb.rpc("close_request",{p_id:id,p_body:null}));
+    toast(okAll?"Message envoyé · patient notifié":"Message envoyé, mais une pièce jointe a échoué : ajoutez-la dans la conversation.");
+    C.files.forEach(f=>f.url&&URL.revokeObjectURL(f.url)); S.compose=null;
+    S.profiles[C.patient.id]=C.patient; S.cscreen="inbox"; S.archive=!C.reply; await refresh();
+    const nr=S.reqs.find(x=>x.id===id); if(nr){ S.tab=nr.queue; S.sel=id; render(); } };
 }
 
 /* ----- comptes à valider ----- */
@@ -1086,9 +1245,9 @@ sb.auth.onAuthStateChange((event, session)=>{
 let busy=false;
 async function autoRefresh(){ if(busy||!S.session||S.loading||document.hidden) return; const el=document.activeElement;
   if(el&&(el.tagName==="TEXTAREA"||el.tagName==="INPUT"||el.tagName==="SELECT")) return;
-  if(S.screen==="flow"||S.rec||S.pend||S.editNews||document.querySelector(".viewer")) return; busy=true; try{ await refresh(); } finally{ busy=false; } }
+  if(S.screen==="flow"||S.rec||S.pend||S.editNews||S.cscreen==="compose"||document.querySelector(".viewer,.scanner")) return; busy=true; try{ await refresh(); } finally{ busy=false; } }
 setInterval(autoRefresh, 60000);
 document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) autoRefresh(); });
 if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
-console.log("CMPL app version 20261012k");
+console.log("CMPL app version 20261013a");
 })();
