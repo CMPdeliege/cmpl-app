@@ -27,12 +27,16 @@ function fmtWhen(d){ d=new Date(d); const c=new Date(), hm=d.toLocaleTimeString(
   return d.toLocaleDateString("fr-BE",{weekday:"short",day:"numeric",month:"short"})+" "+hm; }
 const fmtDate = d => d ? new Date(d).toLocaleDateString("fr-BE") : "—";
 function frError(e){
-  const m = (e && (e.message || e.error_description || e.msg)) || String(e);
+  let m = (e && (e.message || e.error_description || e.msg)) || String(e);
+  // Réponse vide du serveur (panne, ou e-mail de confirmation impossible à envoyer)
+  if(m==="{}"||m==="[object Object]") return `Le serveur n'a pas pu traiter la demande${e&&e.status?` (erreur ${e.status})`:""}. Réessayez dans quelques minutes ; si cela continue, contactez le centre au 02 781 18 75.`;
   const map = [
     [/Invalid login credentials/i, "Adresse e-mail ou mot de passe incorrect."],
     [/already registered|already been registered/i, "Un compte existe déjà avec cette adresse."],
     [/Email not confirmed/i, "Confirmez d'abord votre adresse e-mail (lien reçu par e-mail)."],
     [/Password should be at least/i, "Le mot de passe est trop court (8 caractères minimum)."],
+    [/sending confirmation|confirmation email|sending recovery|sending magic/i, "L'e-mail n'a pas pu être envoyé. Réessayez dans quelques minutes ou contactez le centre au 02 781 18 75."],
+    [/email rate limit/i, "Trop d'e-mails envoyés en peu de temps. Réessayez dans une heure."],
     [/rate limit|too many/i, "Trop de tentatives. Réessayez dans quelques minutes."],
     [/Failed to fetch|NetworkError/i, "Pas de connexion internet. Réessayez."],
     [/JWT|token/i, "Votre session a expiré. Reconnectez-vous."]
@@ -581,7 +585,7 @@ const PRIVACY = `<details class="legal"><summary>Protection de vos données</sum
 <p><b>Quelles données ?</b> Votre identité (nom, prénom, date de naissance), vos coordonnées (e-mail, téléphone), vos demandes et messages, les photos, documents et messages vocaux que vous envoyez, les médicaments renouvelés, et un journal technique de sécurité.</p>
 <p><b>Pourquoi ?</b> Uniquement pour communiquer avec le centre : rendez-vous, questions, renouvellements de prescription, résultats. Base légale : la relation de soins (RGPD, art. 6.1.b et 9.2.h). Les notifications d'annonces du centre reposent sur votre accord, que vous pouvez retirer à tout moment (art. 6.1.a).</p>
 <p><b>Qui les voit ?</b> Vous, et seulement les membres de l'équipe concernés par votre demande, tenus au secret professionnel. Chaque ouverture d'une conversation ou d'une pièce jointe par l'équipe est enregistrée. Aucune publicité, aucun traceur, aucune revente.</p>
-<p><b>Où ?</b> Les données sont hébergées par Supabase dans l'Union européenne (Irlande), sous contrat de protection des données. Les pages de l'app sont fournies par GitHub, qui enregistre l'adresse IP des visiteurs à des fins de sécurité.</p>
+<p><b>Où ?</b> Les données sont hébergées par Supabase dans l'Union européenne (Irlande), sous contrat de protection des données. Les pages de l'app sont fournies par GitHub, qui enregistre l'adresse IP des visiteurs à des fins de sécurité. Les e-mails de notification sont envoyés par Brevo (France, UE) et ne contiennent aucune information médicale.</p>
 <p><b>Combien de temps ?</b> Une conversation est effacée 15 jours après sa clôture ; ce qui est utile à votre suivi est reporté par le prestataire dans votre dossier médical au centre, conservé selon la loi. Notifications : 90 jours. Compte non validé : 60 jours. Compte sans connexion pendant 3 ans : supprimé. Journal de sécurité : 5 ans.</p>
 <p><b>Vos droits.</b> Accès, rectification, effacement, limitation, opposition, portabilité, retrait de votre accord. Dans « Mon compte », vous pouvez télécharger vos données et supprimer votre compte. Pour toute autre demande : admin@cmpl.be (réponse dans un délai d'un mois). Vous pouvez aussi introduire une plainte auprès de l'Autorité de protection des données (autoriteprotectiondonnees.be, rue de la Presse 35, 1000 Bruxelles).</p>
 <p><small>Version du 12 octobre 2026.</small></p></details>`;
@@ -731,9 +735,11 @@ function patientNews(a){
 }
 function patientNotifs(a){
   a.innerHTML=`<div class="convhead"><button class="back" id="back" aria-label="Retour">${IC.back}</button><div><h2>Notifications</h2></div></div>
+  <label class="pref"><input type="checkbox" id="emailnotif" ${S.me.email_notify!==false?"checked":""}><span><b>Me prévenir par e-mail</b><small>Un e-mail court quand le centre vous écrit, sans aucune information médicale : il vous invite simplement à ouvrir l'application.</small></span></label>
   <label class="pref"><input type="checkbox" id="newspush" ${S.me.news_push?"checked":""}><span><b>Annonces importantes du centre</b><small>Fermetures exceptionnelles, campagnes de vaccination. Uniquement si vous cochez cette case. Les réponses à vos demandes restent toujours notifiées.</small></span></label>
   <div class="list">${S.notifs.length?S.notifs.map(n=>`<button class="row nrow ${n.read_at?"":"unread"}" data-n="${n.id}"><div class="ic">${n.announcement_id?IC.news:IC.bell}</div><div><b>${esc(n.title)}</b><small style="white-space:normal">${esc(n.body)}</small><small>${fmt(n.created_at)}</small></div><span></span></button>`).join(""):`<div class="empty">Aucune notification.</div>`}</div>`;
   $("#back").onclick=()=>{S.screen="home";render()};
+  $("#emailnotif").onchange=async e=>{ const v=e.target.checked; if(await run(()=>sb.from("profiles").update({email_notify:v}).eq("id",S.me.id),v?"Vous serez prévenu par e-mail":"Plus d'e-mail de notification")) S.me.email_notify=v; else e.target.checked=!v; };
   $("#newspush").onchange=async e=>{ const v=e.target.checked; if(await run(()=>sb.rpc("set_news_consent",{p_ok:v}),v?"Annonces activées":"Annonces désactivées")){ S.me.news_push=v; S.me.news_choice_at=new Date().toISOString(); } else e.target.checked=!v; };
   $$("[data-n]").forEach(b=>b.onclick=async()=>{ const n=S.notifs.find(x=>x.id===+b.dataset.n);
     if(!n.read_at){ await sb.from("notifications").update({read_at:new Date().toISOString()}).eq("id",n.id); n.read_at=new Date().toISOString(); }
@@ -1217,7 +1223,7 @@ function settingsHTML(){
     <label class="chk2"><input type="checkbox" id="s-away" ${s.away?"checked":""}> Je suis absent : renvoyer mes notifications vers</label>
     <select id="s-fw"><option value="">— choisir un collègue —</option>${others.map(t=>`<option value="${t.id}" ${t.id===s.forward_to?"selected":""}>${esc((t.first_name||"")+" "+(t.last_name||""))} · ${ROLE_LABEL[t.role]}</option>`).join("")}</select></section>
    <div class="btnrow"><button class="btn" id="s-save">Enregistrer</button></div>
-   <p class="hint">Les notifications sur le téléphone seront activées à l'étape suivante de la mise en place.</p>
+   <p class="hint">« Aussi par e-mail » : un résumé envoyé à votre adresse de connexion, sans nom de patient ni contenu médical. Les notifications sur le téléphone seront activées à une étape suivante.</p>
   </div>`;
 }
 function bindSettings(){
@@ -1249,5 +1255,5 @@ async function autoRefresh(){ if(busy||!S.session||S.loading||document.hidden) r
 setInterval(autoRefresh, 60000);
 document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) autoRefresh(); });
 if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
-console.log("CMPL app version 20261013a");
+console.log("CMPL app version 20261014a");
 })();
