@@ -433,3 +433,15 @@ small.qty{font-size:inherit;color:var(--muted)}
 .recipient b{display:block}
 .recipient small{color:var(--muted)}
 .recipient .ic{width:36px;height:36px;border-radius:50%;background:var(--surface);color:var(--accent);display:grid;place-items:center}
+
+/* ---------- photos de profil ---------- */
+.av{display:inline-grid;place-items:center;border-radius:50%;background:var(--accent-soft);color:var(--accent);font-weight:700;overflow:hidden;flex:none;line-height:1}
+.av img{width:100%;height:100%;object-fit:cover;display:block}
+.iconbtn .av{width:100%!important;height:100%!important}
+.chat .who{display:inline-flex;align-items:center;gap:6px}
+.dhead{display:flex;align-items:center;gap:12px}
+.photocard .photorow{display:flex;align-items:center;gap:16px}
+.photocard h3{margin-bottom:2px}
+.photocard p{margin:0 0 8px}
+.medrow>.av{margin-right:2px}
+.recipient>.av{flex:none}

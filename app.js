@@ -225,11 +225,52 @@ function chatHTML(r, viewer){
     const name = viewer==="patient" ? (m.from_patient?"":m.author_label) : (m.from_patient?"":m.author_label);
     const showName = !me && name && name!==who; who = me ? "" : name;
     const showBody = !(atts.length && AUTO_BODY.test(m.body));
-    h+=`<div class="msg ${me?"me":"them"}">${showName?`<small class="who">${esc(name)}</small>`:""}<div class="bub ${me?"me":"bot"}${atts.length?" hasatt":""}">${atts.map(attHTML).join("")}${showBody?`<div class="txt">${esc(m.body)}</div>`:""}<span class="t">${hm(m.created_at)}</span></div></div>`;
+    h+=`<div class="msg ${me?"me":"them"}">${showName?`<small class="who">${viewer==="patient"&&!m.from_patient&&AV.get(m.author_id)?avatarHTML(AV.get(m.author_id),name,22):""}${esc(name)}</small>`:""}<div class="bub ${me?"me":"bot"}${atts.length?" hasatt":""}">${atts.map(attHTML).join("")}${showBody?`<div class="txt">${esc(m.body)}</div>`:""}<span class="t">${hm(m.created_at)}</span></div></div>`;
   }
   if(r.purged_at) h+=`<div class="sys">Le contenu de cette conversation a été effacé le ${fmtDate(r.purged_at)} pour protéger les données${viewer==="patient"?" de santé":" du patient"}.</div>`;
   else if(r.status==="traite"&&r.closed_at) h+=`<div class="sys">Conversation classée le ${fmtDate(r.closed_at)}. Elle sera effacée le ${fmtDate(purgeDate(r))}.</div>`;
   return h+`</div>`;
+}
+
+/* ----- photos de profil (facultatives) ----- */
+const AV=new Map(), PAV=new Map(); let pavLoaded=false;
+function b64url(d){ const bin=atob(d), u=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u[i]=bin.charCodeAt(i);
+  return URL.createObjectURL(new Blob([u],{type:d.startsWith("iVBOR")?"image/png":"image/jpeg"})); }
+async function loadAvatars(ids){
+  const need=[...new Set(ids.filter(Boolean))].filter(id=>!AV.has(id)); if(!need.length) return;
+  need.forEach(id=>AV.set(id,null));
+  const {data,error}=await sb.rpc("get_avatars",{p_ids:need}); if(error){ need.forEach(id=>AV.delete(id)); return; }
+  (data||[]).forEach(a=>AV.set(a.user_id,b64url(a.data)));
+}
+async function loadProviderAvatars(){ if(pavLoaded) return; pavLoaded=true;
+  const {data,error}=await sb.rpc("get_provider_avatars"); if(error){ pavLoaded=false; return; }
+  (data||[]).forEach(a=>PAV.set(a.provider_id,b64url(a.data))); }
+const initials = n => (n||"").split(/\s+/).filter(w=>w&&!/^dr\.?$/i.test(w)).slice(0,2).map(w=>w[0].toUpperCase()).join("")||"?";
+function avatarHTML(url,name,size=40,fallback){
+  return `<span class="av" style="width:${size}px;height:${size}px;font-size:${Math.round(size*.38)}px" aria-hidden="true">${url?`<img src="${url}" alt="">`:(fallback||esc(initials(name)))}</span>`; }
+// Photo carrée 256 px, réenregistrée en JPEG (sans données cachées)
+async function squarePhoto(file){
+  const url=URL.createObjectURL(file);
+  try{ const img=await new Promise((ok,ko)=>{ const i=new Image(); i.onload=()=>ok(i); i.onerror=ko; i.src=url; });
+    const s=Math.min(img.naturalWidth,img.naturalHeight), c=document.createElement("canvas"); c.width=c.height=256;
+    c.getContext("2d").drawImage(img,(img.naturalWidth-s)/2,(img.naturalHeight-s)/2,s,s,0,0,256,256);
+    return await new Promise(ok=>c.toBlob(ok,"image/jpeg",0.85));
+  } finally { URL.revokeObjectURL(url); }
+}
+function photoCardHTML(hint){
+  const url=AV.get(S.me.id), name=`${S.me.first_name||""} ${S.me.last_name||""}`;
+  return `<section class="card photocard"><div class="photorow">${avatarHTML(url,name,84)}<div><h3>Photo de profil</h3><p class="hint">${hint}</p>
+   <div class="btnrow"><button type="button" class="btn ghost" id="ph-pick">${url?"Changer la photo":"Ajouter une photo"}</button>${url?`<button type="button" class="linkbtn" id="ph-del">Retirer</button>`:""}</div></div></div>
+   <input type="file" id="ph-file" accept="image/*" hidden></section>`;
+}
+function bindPhotoCard(){
+  const inp=$("#ph-file"); if(!inp) return;
+  $("#ph-pick").onclick=()=>inp.click();
+  inp.onchange=async()=>{ const f=inp.files[0]; inp.value=""; if(!f) return;
+    try{ const blob=await squarePhoto(f); const data=await blobToB64(blob);
+      if(await run(()=>sb.rpc("set_my_avatar",{p_data:data}),"Photo enregistrée")){ const old=AV.get(S.me.id); if(old) URL.revokeObjectURL(old); AV.set(S.me.id,URL.createObjectURL(blob)); render(); } }
+    catch(e){ toast("Cette photo n'a pas pu être lue. Essayez une autre photo."); } };
+  const d=$("#ph-del"); if(d) d.onclick=async()=>{ if(await run(()=>sb.rpc("delete_my_avatar"),"Photo retirée")){ AV.set(S.me.id,null); render(); } };
 }
 
 /* ----- pièces jointes : chargement à la demande (jamais stockées sur l'appareil) ----- */
@@ -465,7 +506,7 @@ async function loadMe(){
   const { data } = await sb.from("profiles").select("*").eq("id", S.session.user.id).maybeSingle();
   S.me = data;
 }
-const REQ_SELECT = "*, messages(id,from_patient,author_label,body,created_at,attachments(id,kind,mime,name,size,duration_s)), request_items(id,label,decision,quantity)";
+const REQ_SELECT = "*, messages(id,from_patient,author_id,author_label,body,created_at,attachments(id,kind,mime,name,size,duration_s)), request_items(id,label,decision,quantity)";
 async function loadPatient(){
   const uid=S.session.user.id;
   const [rq, md, nt] = await Promise.all([
@@ -474,6 +515,7 @@ async function loadPatient(){
     sb.from("notifications").select("*").eq("user_id", uid).order("created_at",{ascending:false}).limit(50)
   ]);
   S.reqs = rq.data||[]; S.meds = md.data||[]; S.notifs = nt.data||[];
+  await Promise.all([loadProviderAvatars(), loadAvatars([uid, ...S.reqs.flatMap(r=>(r.messages||[]).filter(m=>!m.from_patient).map(m=>m.author_id))])]);
 }
 async function loadStaff(){
   const role=S.me.role;
@@ -488,6 +530,7 @@ async function loadStaff(){
   if(role==="secretariat"||role==="admin") tasks.push(sb.from("announcements").select("*").order("published_at",{ascending:false}).limit(100).then(r=>S.allNews=r.data||[]));
   if(role==="secretariat"||role==="admin") tasks.push(sb.rpc("news_audience").then(r=>S.audience=r.data));
   await Promise.all(tasks);
+  await Promise.all([loadProviderAvatars(), loadAvatars([S.me.id, ...ids, ...S.team.map(t=>t.id)])]);
   // Le premier onglet utile selon le rôle
   if(role==="provider") S.tab="prestataires";
 }
@@ -582,7 +625,7 @@ function draw(){
 /* ---------- connexion / inscription ---------- */
 const PRIVACY = `<details class="legal"><summary>Protection de vos données</summary>
 <p><b>Qui est responsable ?</b> La société qui exploite le Centre Médical Prince de Liège, 21-23 rue du Potaerdenberg, 1070 Anderlecht. Contact pour vos données : <b>admin@cmpl.be</b>.</p>
-<p><b>Quelles données ?</b> Votre identité (nom, prénom, date de naissance), vos coordonnées (e-mail, téléphone), vos demandes et messages, les photos, documents et messages vocaux que vous envoyez, les médicaments renouvelés, et un journal technique de sécurité.</p>
+<p><b>Quelles données ?</b> Votre identité (nom, prénom, date de naissance, photo de profil si vous en ajoutez une), vos coordonnées (e-mail, téléphone), vos demandes et messages, les photos, documents et messages vocaux que vous envoyez, les médicaments renouvelés, et un journal technique de sécurité.</p>
 <p><b>Pourquoi ?</b> Uniquement pour communiquer avec le centre : rendez-vous, questions, renouvellements de prescription, résultats. Base légale : la relation de soins (RGPD, art. 6.1.b et 9.2.h). Les notifications d'annonces du centre reposent sur votre accord, que vous pouvez retirer à tout moment (art. 6.1.a).</p>
 <p><b>Qui les voit ?</b> Vous, et seulement les membres de l'équipe concernés par votre demande, tenus au secret professionnel. Chaque ouverture d'une conversation ou d'une pièce jointe par l'équipe est enregistrée. Aucune publicité, aucun traceur, aucune revente.</p>
 <p><b>Où ?</b> Les données sont hébergées par Supabase dans l'Union européenne (Irlande), sous contrat de protection des données. Les pages de l'app sont fournies par GitHub, qui enregistre l'adresse IP des visiteurs à des fins de sécurité. Les e-mails de notification sont envoyés par Brevo (France, UE) et ne contiennent aucune information médicale.</p>
@@ -690,7 +733,7 @@ function renderPatient(a){
 }
 function topBar(){
   const unread=S.notifs.filter(n=>!n.read_at).length;
-  return `<div class="top">${BRAND}<div class="menu"><button class="iconbtn bell" id="bell" aria-label="Notifications">${IC.bell}${unread?`<span class="badge">${unread}</span>`:""}</button><button class="iconbtn" id="acct" aria-label="Mon compte">${IC.user}</button></div></div>`;
+  return `<div class="top">${BRAND}<div class="menu"><button class="iconbtn bell" id="bell" aria-label="Notifications">${IC.bell}${unread?`<span class="badge">${unread}</span>`:""}</button><button class="iconbtn" id="acct" aria-label="Mon compte">${AV.get(S.me.id)?avatarHTML(AV.get(S.me.id),"",42):IC.user}</button></div></div>`;
 }
 function bindTop(){ $("#bell").onclick=()=>{S.screen="notifs";render()}; $("#acct").onclick=()=>{S.screen="account";render()}; }
 function patientHome(a){
@@ -748,7 +791,8 @@ function patientNotifs(a){
 function patientAccount(a){
   const m=S.me;
   a.innerHTML=`<div class="convhead"><button class="back" id="back" aria-label="Retour">${IC.back}</button><div><h2>Mon compte</h2><small>${esc(S.session.user.email)}</small></div></div>
-  <form class="form acct" id="acctform">
+  ${photoCardHTML("Facultatif. Visible uniquement par vous et par l'équipe du centre, pour vous reconnaître.")}
+  <form class="form acct" id="acctform" style="margin-top:12px">
    <div class="row2"><label class="fld" for="a-first">Prénom<input id="a-first" value="${esc(m.first_name)}"></label><label class="fld" for="a-last">Nom<input id="a-last" value="${esc(m.last_name)}"></label></div>
    <div class="row2"><label class="fld" for="a-birth">Date de naissance<input id="a-birth" type="date" value="${esc(m.birth_date||"")}"></label><label class="fld" for="a-phone">Téléphone<input id="a-phone" type="tel" value="${esc(m.phone)}"></label></div>
    <button class="btn" type="submit">Enregistrer</button>
@@ -770,6 +814,7 @@ function patientAccount(a){
   $("#delconf").oninput=e=>{ $("#delgo").disabled=e.target.value.trim().toUpperCase()!=="SUPPRIMER"; };
   $("#delgo").onclick=async e=>{ e.target.disabled=true;
     if(await run(()=>sb.rpc("delete_my_account"))){ await logout("Votre compte et ses données ont été supprimés."); } else e.target.disabled=false; };
+  bindPhotoCard();
   $("#acctform").onsubmit=async e=>{ e.preventDefault();
     const upd={first_name:$("#a-first").value.trim(),last_name:$("#a-last").value.trim(),birth_date:$("#a-birth").value||null,phone:$("#a-phone").value.trim()};
     if(await run(()=>sb.from("profiles").update(upd).eq("id",m.id),"Enregistré")) Object.assign(S.me,upd); };
@@ -784,7 +829,7 @@ async function exportMyData(){
     messages:msgsOf(r).map(m=>({de:m.from_patient?"Vous":m.author_label,le:m.created_at,texte:m.body,pieces_jointes:(m.attachments||[]).map(a=>({type:a.kind,nom:a.name,taille_octets:a.size}))})) });
   const data={ exporte_le:new Date().toISOString(), source:"Application du Centre Médical Prince de Liège (app.cmpl.be)",
     compte:{ email:S.session.user.email, prenom:S.me.first_name, nom:S.me.last_name, date_de_naissance:S.me.birth_date, telephone:S.me.phone, cree_le:S.me.created_at, valide_le:S.me.approved_at,
-      notifications_annonces:S.me.news_push, choix_annonces_le:S.me.news_choice_at },
+      photo_de_profil:AV.get(S.me.id)?"oui (visible dans Mon compte)":"non", notifications_annonces:S.me.news_push, choix_annonces_le:S.me.news_choice_at },
     demandes:S.reqs.map(strip), mes_medicaments:S.meds.map(m=>({medicament:m.label,derniere_prescription:m.last_granted_at,fois:m.times_granted})),
     notifications:S.notifs.map(n=>({titre:n.title,texte:n.body,le:n.created_at,lue_le:n.read_at})),
     note:"Le contenu des photos, documents et messages vocaux peut être ouvert dans l'app et enregistré depuis chaque conversation." };
@@ -932,7 +977,7 @@ function patientReq(a){
   const items=(r.request_items||[]), key="p"+r.id;
   const itemsHTML = r.type==="prescription"&&items.some(i=>i.decision) ? `<div class="itemlist">${items.map(i=>`<div><span>${esc(i.label)}<small class="qty">${qtyText(i.quantity||1)}</small></span><span class="dtag ${i.decision==="accorde"?"ok":"no"}">${i.decision==="accorde"?"Prescrit":i.decision?"Non renouvelé":"En attente"}</span></div>`).join("")}</div>` : "";
   a.className="wrap chatpage";
-  a.innerHTML=`<div class="convhead sticky"><button class="back" id="back" aria-label="Retour">${IC.back}</button><div class="ic avatar">${IC[r.type]}</div><div style="min-width:0"><h2>${esc(provName(r.provider_id)||"Secrétariat")}</h2><small>${TYPES[r.type].label} · ${stLabelP(r)}</small></div></div>
+  a.innerHTML=`<div class="convhead sticky"><button class="back" id="back" aria-label="Retour">${IC.back}</button>${PAV.get(r.provider_id)?avatarHTML(PAV.get(r.provider_id),"",40):`<div class="ic avatar">${IC[r.type]}</div>`}<div style="min-width:0"><h2>${esc(provName(r.provider_id)||"Secrétariat")}</h2><small>${TYPES[r.type].label} · ${stLabelP(r)}</small></div></div>
   ${chatHTML(r,"patient")}${itemsHTML}
   ${r.purged_at||r.status==="traite"?`<div class="closed"><b>${r.purged_at?"Conversation effacée":"Conversation clôturée par le centre"}</b><span>${r.purged_at?"":`Vous pouvez la relire jusqu'au ${fmtDate(purgeDate(r))}, date à laquelle elle sera effacée. `}Pour une suite ou une autre question, ouvrez une nouvelle demande.</span><div class="btnrow"><button class="btn" id="newq">Nouvelle question</button><button class="btn ghost" id="newr">Demander un rendez-vous</button></div></div>`
   :`${composerHTML(key)}<p class="hint center small">Lu pendant les heures d'ouverture. Urgence vitale : appelez le 112.</p>`}`;
@@ -953,14 +998,14 @@ const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
 function renderStaff(a){
   a.className="wrap wide";
   const sc=S.cscreen;
-  const nav=`<div class="top">${BRAND}<div class="menu"><span class="who">${esc(S.me.first_name||"")} · ${ROLE_LABEL[S.me.role]}${S.me.provider_id?` · ${esc(provName(S.me.provider_id))}`:""}</span><button class="iconbtn" id="logout" aria-label="Se déconnecter" title="Se déconnecter">${IC.user}</button></div></div>
+  const nav=`<div class="top">${BRAND}<div class="menu">${AV.get(S.me.id)?avatarHTML(AV.get(S.me.id),"",34):""}<span class="who">${esc(S.me.first_name||"")} · ${ROLE_LABEL[S.me.role]}${S.me.provider_id?` · ${esc(provName(S.me.provider_id))}`:""}</span><button class="iconbtn" id="logout" aria-label="Se déconnecter" title="Se déconnecter">${IC.user}</button></div></div>
   <div class="nav">
    <button data-cs="inbox" aria-pressed="${sc==="inbox"}">Demandes<span class="n">${S.reqs.filter(awaitingStaff).length||""}</span></button>
    <button data-cs="compose" aria-pressed="${sc==="compose"}">Écrire à un patient</button>
    ${isDesk()?`<button data-cs="accounts" aria-pressed="${sc==="accounts"}">Comptes à valider<span class="n">${S.pending.length||""}</span></button>`:""}
    ${isDesk()?`<button data-cs="news" aria-pressed="${sc==="news"}">Actualités</button>`:""}
    ${S.me.role==="admin"?`<button data-cs="team" aria-pressed="${sc==="team"}">Équipe</button>`:""}
-   <button data-cs="settings" aria-pressed="${sc==="settings"}">Mes notifications</button>
+   <button data-cs="settings" aria-pressed="${sc==="settings"}">Mon profil</button>
    <button id="reload">Actualiser</button>
   </div>`;
   let body="";
@@ -1012,9 +1057,9 @@ function detailHTML(){
   const closeBtn=!isRx?"Clôturer et classer":!allDecided?`Décidez pour chaque médicament (${todo.filter(i=>dec[i.id]).length}/${todo.length})`:todo.some(i=>dec[i.id]==="accorde")?"Valider la prescription et classer":"Envoyer le refus et classer";
   const transferOpts=[`<option value="">Secrétariat</option>`,...S.providers.map(pv=>`<option value="${pv.id}" ${pv.id===r.provider_id?"selected":""}>${esc(P.label(pv))}</option>`)].join("");
   return `<div class="detail">
-   <div><h2>${esc(patientName(r.patient_id))}</h2>
+   <div class="dhead">${avatarHTML(AV.get(r.patient_id),patientName(r.patient_id),52)}<div><h2>${esc(patientName(r.patient_id))}</h2>
     <div class="pinfo"><span>Né(e) le <b>${fmtDate(p.birth_date)}</b></span><span>Tél. <b>${esc(p.phone||"—")}</b></span></div>
-    <div class="meta" style="margin-top:6px"><span class="tag">${TYPES[r.type].label}</span><span class="pill st-${stClass(r)}">${stLabel(r)}</span><span>Reçue ${fmt(r.created_at)} · ${esc(provName(r.provider_id)||"Secrétariat")}</span></div></div>
+    <div class="meta" style="margin-top:6px"><span class="tag">${TYPES[r.type].label}</span><span class="pill st-${stClass(r)}">${stLabel(r)}</span><span>Reçue ${fmt(r.created_at)} · ${esc(provName(r.provider_id)||"Secrétariat")}</span></div></div></div>
    ${open?`<div class="prioedit"><span class="hint">Priorité</span>${["haute","normale"].map(k=>`<button class="dec p-${k}" aria-pressed="${r.priority===k}" data-prio="${k}">${PRIO_LABEL[k]}</button>`).join("")}</div><div>${dueHTML(r)}</div>`:""}
    ${r.purged_at?"":`<dl class="qa">${Object.entries(r.answers||{}).filter(([k])=>!HIDDEN_KEYS.has(k)).map(([k,v])=>`<div><dt>${esc(LABELS[k]||k)}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>`}
    ${items.some(i=>i.decision)?`<div class="itemlist">${items.filter(i=>i.decision).map(i=>`<div><span>${esc(i.label)}<small class="qty">${qtyText(i.quantity||1)}</small></span><span class="dtag ${i.decision==="accorde"?"ok":"no"}">${i.decision==="accorde"?"Accordé":"Refusé"}</span></div>`).join("")}</div>`:""}
@@ -1069,7 +1114,7 @@ function composeHTML(){
   return `<div class="chead"><div><h1>Écrire à un patient</h1><p>Pour un patient qui a un compte validé dans l'app. Il reçoit une notification neutre, sans contenu médical. Envoyé au nom de : <b>${esc(who)}</b>.</p></div></div>
   <div class="compose card">
    <h3>1. Destinataire</h3>
-   ${pt?`<div class="recipient"><div class="ic">${IC.user}</div><div><b>${esc(`${pt.first_name||""} ${pt.last_name||""}`)}</b><small>Né(e) le ${fmtDate(pt.birth_date)} · Tél. ${esc(pt.phone||"—")}</small></div><button type="button" class="linkbtn" id="cp-change">Changer</button></div>
+   ${pt?`<div class="recipient">${AV.has(pt.id)?avatarHTML(AV.get(pt.id),`${pt.first_name||""} ${pt.last_name||""}`,40):`<div class="ic">${IC.user}</div>`}<div><b>${esc(`${pt.first_name||""} ${pt.last_name||""}`)}</b><small>Né(e) le ${fmtDate(pt.birth_date)} · Tél. ${esc(pt.phone||"—")}</small></div><button type="button" class="linkbtn" id="cp-change">Changer</button></div>
      <p class="hint" style="margin:0">Vérifiez la date de naissance : un message au mauvais patient est une fuite de données.</p>`
    :`<label class="fld" for="cp-q">Nom ou prénom du patient<input id="cp-q" type="text" autocomplete="off" placeholder="Au moins 2 lettres" value="${esc(C.q)}"></label><div id="cp-res"></div>`}
    <h3>2. Message</h3>
@@ -1098,7 +1143,7 @@ function bindCompose(){
       if(error){ out.innerHTML=`<p class="hint">${esc(frError(error))}</p>`; return; }
       const rows=(data||[]).filter(p=>words.every(x=>norm(`${p.first_name||""} ${p.last_name||""}`).includes(x))).slice(0,10);
       out.innerHTML=rows.length?`<div class="list">${rows.map(p=>`<button type="button" class="row" data-pick="${p.id}"><div class="ic">${IC.user}</div><div><b>${esc(`${p.first_name||""} ${p.last_name||""}`)}</b><small>Né(e) le ${fmtDate(p.birth_date)} · Tél. ${esc(p.phone||"—")}</small></div><span></span></button>`).join("")}</div>`:`<p class="hint">Aucun patient avec un compte validé ne correspond.</p>`;
-      out.querySelectorAll("[data-pick]").forEach(b=>b.onclick=()=>{ C.patient=rows.find(p=>p.id===b.dataset.pick); render(); $("#cp-body")?.focus(); }); };
+      out.querySelectorAll("[data-pick]").forEach(b=>b.onclick=async()=>{ C.patient=rows.find(p=>p.id===b.dataset.pick); await loadAvatars([C.patient.id]); render(); $("#cp-body")?.focus(); }); };
     q.oninput=()=>{ clearTimeout(t); t=setTimeout(search,300); }; if(C.q) search(); q.focus({preventScroll:true}); }
   const inp=$("#cp-file"), pk=$("#cp-pick"); if(pk) pk.onclick=()=>inp.click();
   inp.onchange=async()=>{ for(const f of [...inp.files].slice(0,5-C.files.length)){ try{ C.files.push(await prepFile(f,"compose")); }catch(e){ toast(e.message); } } inp.value=""; render(); };
@@ -1134,7 +1179,7 @@ function teamHTML(){
   <section class="card" style="margin-bottom:12px"><h3>Donner un rôle à un compte</h3>
    <label class="fld" for="t-search">Nom de la personne inscrite<input id="t-search" type="text" placeholder="Tapez au moins 2 lettres du nom"></label>
    <div id="t-results"></div></section>
-  <div class="list">${S.team.map(t=>`<div class="medrow"><div class="ic">${IC.user}</div><div><b>${esc((t.first_name||"")+" "+(t.last_name||""))}</b><small>${ROLE_LABEL[t.role]}${t.provider_id?" · "+esc(provName(t.provider_id)):""}</small></div><div class="acts">${t.id!==S.me.id?`<button class="linkbtn" style="font-size:12px;color:var(--muted)" data-demote="${t.id}">Retirer de l'équipe</button>`:""}</div></div>`).join("")}</div>
+  <div class="list">${S.team.map(t=>`<div class="medrow">${avatarHTML(AV.get(t.id),`${t.first_name||""} ${t.last_name||""}`,32)}<div><b>${esc((t.first_name||"")+" "+(t.last_name||""))}</b><small>${ROLE_LABEL[t.role]}${t.provider_id?" · "+esc(provName(t.provider_id)):""}</small></div><div class="acts">${t.id!==S.me.id?`<button class="linkbtn" style="font-size:12px;color:var(--muted)" data-demote="${t.id}">Retirer de l'équipe</button>`:""}</div></div>`).join("")}</div>
   <template id="t-row"><div class="person" style="border-top:1px solid var(--line);padding-top:10px;margin-top:10px"><b class="t-name"></b><div class="pgrid"><label>Rôle<select class="t-role"><option value="secretariat">Secrétariat</option><option value="provider">Prestataire</option><option value="admin">Administrateur</option></select></label><label>Prestataire<select class="t-prov">${provOpts("")}</select></label></div><div class="btnrow"><button class="btn t-go">Enregistrer</button></div></div></template>`;
 }
 function bindTeam(){
@@ -1212,8 +1257,9 @@ function settingsHTML(){
   const s=S.settings||{haute:"Immédiate",normale:"2 fois par jour",by_email:false,away:false,forward_to:null};
   const sel=(id,val)=>`<select id="${id}">${SETOPTS.map(o=>`<option ${o===val?"selected":""}>${o}</option>`).join("")}</select>`;
   const others=S.team.filter(t=>t.id!==S.me.id&&t.status==="active");
-  return `<div class="chead"><div><h1>Mes notifications</h1><p>Quand et comment vous êtes prévenu des nouvelles demandes et des messages de patients. Les notifications ne contiennent jamais de donnée médicale.</p></div></div>
+  return `<div class="chead"><div><h1>Mon profil et mes notifications</h1><p>Quand et comment vous êtes prévenu des nouvelles demandes et des messages de patients. Les notifications ne contiennent jamais de donnée médicale.</p></div></div>
   <div class="settings">
+   ${photoCardHTML("Facultatif. Visible par les patients dans les conversations, et par l'équipe.")}
    <section class="card"><h3>Quand me prévenir</h3><div class="pgrid">
     <label class="fld">Haute priorité (à voir en moins de 24 h)${sel("s-haute",s.haute)}</label>
     <label class="fld">Pas pressé (à voir en moins de 72 h)${sel("s-normale",s.normale)}</label></div>
@@ -1227,6 +1273,7 @@ function settingsHTML(){
   </div>`;
 }
 function bindSettings(){
+  bindPhotoCard();
   $("#s-save").onclick=async()=>{
     const row={user_id:S.me.id,haute:$("#s-haute").value,normale:$("#s-normale").value,by_email:$("#s-mail").checked,away:$("#s-away").checked,forward_to:$("#s-fw").value||null};
     if(row.away&&!row.forward_to) return toast("Choisissez le collègue qui recevra vos notifications.");
@@ -1255,5 +1302,5 @@ async function autoRefresh(){ if(busy||!S.session||S.loading||document.hidden) r
 setInterval(autoRefresh, 60000);
 document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) autoRefresh(); });
 if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
-console.log("CMPL app version 20261014a");
+console.log("CMPL app version 20261015a");
 })();
