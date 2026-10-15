@@ -59,6 +59,7 @@ const IC={
  alert:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" style="flex:none;color:var(--danger)"><path d="M12 3l9.5 17h-19z"/><path d="M12 10v4M12 17.5v.01"/></svg>',
  news:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11v3a1 1 0 0 0 1 1h2l5 4V6L7 10H5a1 1 0 0 0-1 1z"/><path d="M16 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/></svg>',
  document:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M12 17v-6M9.5 13.5L12 11l2.5 2.5"/></svg>',
+ rapport:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M9 10h6M9 14h6M9 18h3"/></svg>',
  centre:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>',
  scan:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M4 12h16"/></svg>',
  search:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>',
@@ -105,22 +106,29 @@ const TYPES={
  question:{label:"Question",title:"Poser une question",desc:"À un prestataire du centre"},
  prescription:{label:"Prescription",title:"Renouveler un médicament",desc:"Pour un traitement habituel"},
  resultats:{label:"Résultats",title:"Mes résultats",desc:"Signaler un examen dont vous attendez le résultat"},
+ rapport:{label:"Rapport",title:"Demander un rapport médical",desc:"Pour la mutuelle, l'employeur, une assurance…"},
  document:{label:"Document",title:"Envoyer un document",desc:"Résultats, courrier d'un spécialiste, attestation…"},
  centre:{label:"Message du centre",title:"Message du centre",desc:""}
 };
-const PATIENT_TYPES=["rdv","question","prescription","resultats","document"];
-const GP_MOTIFS=["Maladie aiguë (fièvre, toux, douleur…)","Suivi d'une maladie chronique","Prise de sang","Certificat ou document","Bilan ou prévention","Vaccination","Autre"];
-const OTHER_MOTIFS=["Première consultation","Consultation de suivi","Contrôle ou soin de routine","Douleur ou problème récent","Autre"];
+const PATIENT_TYPES=["rdv","question","prescription","rapport","resultats","document"];
+// Motifs de médecine générale (la durée estimée de chacun n'est visible que par l'équipe : table motif_durations)
+const GP="Médecine générale";
+const GP_MOTIFS=["Vaccin ou injection","Prise de sang","Certificat (maladie, sport, école…)","Renouvellement de traitement","Maladie aiguë (fièvre, toux, douleur…)","Suivi d'une maladie chronique (diabète, tension…)","Frottis, petit soin ou petite chirurgie","Bilan ou check-up","Stress, moral, sommeil","Plusieurs problèmes à aborder","Autre"];
+const isGP = a => a.specialite===GP;
 const FLOWS={
  rdv:[
   {id:"pour",kind:"choice",q:()=>`Bonjour ${S.me?.first_name||""}. Le rendez-vous est pour qui ?`,options:["Pour moi","Pour mon enfant","Pour un autre membre de ma famille"]},
   {id:"specialite",kind:"choice",q:"Pour quel type de consultation ?",options:()=>P.specs()},
   {id:"medecin",kind:"choice",q:"Avec qui ?",options:a=>[...P.of(a.specialite).map(P.label),"Peu importe, le premier disponible"],when:a=>P.of(a.specialite).length>1},
-  {id:"motif",kind:"choice",q:"Quel est le motif principal ?",options:a=>a.specialite==="Médecine générale"?GP_MOTIFS:OTHER_MOTIFS},
-  {id:"delai",kind:"choice",q:"Pour quand ?",options:["Aujourd'hui","Dans les prochains jours","Pas pressé (cette semaine ou plus tard)"]},
-  {id:"details",kind:"text",q:"Décrivez en quelques mots ce qui vous amène.",placeholder:"Ex. toux depuis 5 jours, un peu de fièvre le soir",optional:true},
+  // Médecine générale : motif, délai, détails, lieu
+  {id:"motif",kind:"choice",q:"Quel est le motif principal ?",options:GP_MOTIFS,when:isGP},
+  {id:"delai",kind:"choice",q:"Pour quand ?",options:["Aujourd'hui","Dans les prochains jours","Pas pressé (cette semaine ou plus tard)"],when:isGP},
+  {id:"details",kind:"text",q:"Décrivez en quelques mots ce qui vous amène.",placeholder:"Ex. toux depuis 5 jours, un peu de fièvre le soir",optional:true,when:isGP},
+  // Autres prestataires (spécialiste, dentiste, psychologue…) : première fois ou non, et la raison
+  {id:"premiere",kind:"choice",q:"Est-ce la première fois que vous consultez ce prestataire ?",options:["Oui, c'est la première fois","Non, je l'ai déjà consulté"],when:a=>!isGP(a)},
+  {id:"raison",kind:"text",q:"Pour quelle raison souhaitez-vous ce rendez-vous ?",placeholder:"Ex. contrôle annuel, douleur au genou depuis 2 semaines",when:a=>!isGP(a)},
   {id:"moment",kind:"multi",q:"Quels moments vous conviennent ? Vous pouvez en choisir plusieurs.",options:["Matin","Midi","Après-midi","Fin de journée","Peu importe"],exclusive:"Peu importe"},
-  {id:"lieu",kind:"choice",q:"Vous préférez :",options:["Consultation au centre","Visite à domicile","Téléconsultation"]}
+  {id:"lieu",kind:"choice",q:"Vous préférez :",options:["Consultation au centre","Visite à domicile","Téléconsultation"],when:isGP}
  ],
  question:[
   {id:"specialite",kind:"choice",q:"Votre question concerne :",options:()=>P.specs()},
@@ -146,6 +154,13 @@ const FLOWS={
   {kind:"note",q:"Vous avez déjà le résultat en main ? Utilisez plutôt « Envoyer un document ». Le centre vous contacte dès qu'ils sont analysés."}
  ]
 };
+FLOWS.rapport=[
+  {id:"medecin",kind:"choice",q:"Quel médecin doit rédiger le rapport ?",options:()=>P.phys().map(P.label)},
+  {id:"destinataire",kind:"text",q:"Pour qui est ce rapport ?",placeholder:"Ex. mutuelle, médecin conseil, employeur, assurance, école…"},
+  {id:"echeance",kind:"text",q:"Pour quand en avez-vous besoin ?",placeholder:"Ex. avant le 30 octobre"},
+  {id:"details",kind:"text",q:"Précisez votre demande si nécessaire.",placeholder:"Ex. rapport sur mon incapacité de travail depuis septembre",optional:true},
+  {kind:"note",q:"S'il y a un formulaire à compléter, ajoutez-le ensuite dans la conversation (trombone ou scanner). Le médecin vous répond ici ; il peut vous proposer un rendez-vous si un examen est nécessaire."}
+];
 FLOWS.document=[
   {id:"doc",kind:"choice",q:"Quel document souhaitez-vous envoyer ?",options:["Résultats d'examen (prise de sang, radio…)","Courrier ou rapport d'un spécialiste ou de l'hôpital","Attestation ou formulaire à compléter","Autre document"]},
   {id:"medecin",kind:"choice",q:"Pour qui ?",options:()=>[...P.list().map(P.label),"Le secrétariat"]},
@@ -155,10 +170,11 @@ FLOWS.document=[
 ];
 const LABELS={doc:"Document",fichiers:"Fichiers",note:"Message",de:"De",pour:"Pour",specialite:"Consultation",medecin:"Prestataire",motif:"Motif",delai:"Pour quand",details:"Détails",moment:"Disponibilités",lieu:"Lieu",
  sujet:"Sujet",depuis:"Depuis",texte:"Question",medicament:"Médicaments",historique:"Déjà prescrit",nouveau:"Choix",remarque:"Remarque",
- examen:"Examen",quand:"Date",demandeur:"Demandé par",contact:"Contact souhaité"};
+ examen:"Examen",quand:"Date",demandeur:"Demandé par",contact:"Contact souhaité",
+ premiere:"Première consultation",raison:"Raison",destinataire:"Rapport pour",echeance:"Pour quand"};
 const HIDDEN_KEYS=new Set(["provider_id","medicaments"]);
 const answersDL = a => Object.entries(a||{}).filter(([k])=>!HIDDEN_KEYS.has(k)).map(([k,v])=>`<dt>${esc(LABELS[k]||k)}</dt><dd>${esc(v||"—")}</dd>`).join("");
-const summaryLine = a => a.motif||a.texte||a.medicament||a.examen||a.doc||a.sujet||"";
+const summaryLine = a => a.motif||a.raison||(a.destinataire?"Pour "+a.destinataire:"")||a.texte||a.medicament||a.examen||a.doc||a.sujet||"";
 const qText = s => typeof s.q==="function" ? s.q() : s.q;
 const optsOf = s => typeof s.options==="function" ? s.options(S.answers) : s.options;
 
@@ -404,6 +420,116 @@ async function makePdf(pages){
   push(x+`trailer\n<< /Size ${total} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`);
   return new Blob(parts,{type:"application/pdf"});
 }
+/* ----- Enregistrer une conversation en PDF (créé sur l'appareil, rien n'est envoyé) ----- */
+const HELV=[278,278,355,556,556,889,667,191,333,333,389,584,278,333,278,278,556,556,556,556,556,556,556,556,556,556,278,278,584,584,584,556,1015,667,667,722,722,667,611,778,722,278,500,667,556,833,722,778,667,778,722,667,611,722,667,944,667,667,611,278,278,278,469,556,333,556,556,500,556,556,278,556,556,222,222,500,222,833,556,556,556,556,333,500,278,556,500,722,500,500,500,334,260,334,584];
+const WIN={"€":128,"‚":130,"„":132,"…":133,"‰":137,"Š":138,"‹":139,"Œ":140,"Ž":142,"‘":145,"’":146,"“":147,"”":148,"•":149,"–":150,"—":151,"™":153,"š":154,"›":155,"œ":156,"ž":158,"Ÿ":159};
+// texte → caractères de l'encodage WinAnsi (les émojis sont retirés)
+function winText(t){ let o="";
+  for(const ch of String(t||"").replace(/[   ]/g," ").replace(/\r/g,"")){ const c=ch.codePointAt(0);
+    if(c===10||(c>=32&&c<127)||(c>=160&&c<256)) o+=ch; else if(WIN[ch]) o+=String.fromCharCode(WIN[ch]); else if(c>=0x1F000||(c>=0x2600&&c<0x2800)||c===0xFE0F) continue; else o+="?"; }
+  return o.replace(/ {2,}/g," "); }
+function chW(c,bold){ const k=c.charCodeAt(0); let w=k>=32&&k<127?HELV[k-32]:k>=192?HELV[c.normalize("NFD").charCodeAt(0)-32]||556:556; return bold?w*1.06:w; }
+const textW=(t,size,bold)=>[...t].reduce((s,c)=>s+chW(c,bold),0)*size/1000;
+function wrapText(t,size,width,bold){ const out=[];
+  for(const para of winText(t).split("\n")){ let line="";
+    for(const word of para.split(" ")){ const cand=line?line+" "+word:word;
+      if(textW(cand,size,bold)<=width){ line=cand; continue; }
+      if(line) out.push(line);
+      let w=word; while(textW(w,size,bold)>width){ let i=w.length; while(i>1&&textW(w.slice(0,i),size,bold)>width) i--; out.push(w.slice(0,i)); w=w.slice(i); }
+      line=w; }
+    out.push(line); }
+  return out; }
+const pdfStr = t => "("+t.replace(/[\\()]/g,m=>"\\"+m)+")";
+async function imageForPdf(url){
+  const img=await new Promise((ok,ko)=>{ const i=new Image(); i.onload=()=>ok(i); i.onerror=ko; i.src=url; });
+  const k=Math.min(1,1400/Math.max(img.naturalWidth,img.naturalHeight)), c=document.createElement("canvas");
+  c.width=Math.round(img.naturalWidth*k); c.height=Math.round(img.naturalHeight*k);
+  const g=c.getContext("2d"); g.fillStyle="#fff"; g.fillRect(0,0,c.width,c.height); g.drawImage(img,0,0,c.width,c.height);
+  const blob=await new Promise(ok=>c.toBlob(ok,"image/jpeg",0.82));
+  return {w:c.width,h:c.height,data:new Uint8Array(await blob.arrayBuffer())};
+}
+async function conversationPdf(r, who){
+  const W=595.28, H=841.89, M=50, CW=W-2*M, pages=[], imgs=[];
+  let ops=[], y=0;
+  const RED="0.439 0.149 0.161", GOLD="0.624 0.510 0.282", GREY="0.43 0.37 0.36", INK="0.17 0.11 0.11";
+  const newPage=()=>{ ops=[]; pages.push(ops); y=H-M; };
+  const need=h=>{ if(y-h<M+24) newPage(); };
+  const text=(t,x,size,{bold=false,color=INK}={})=>ops.push(`BT /${bold?"F2":"F1"} ${size} Tf ${color} rg ${x.toFixed(2)} ${y.toFixed(2)} Td ${pdfStr(t)} Tj ET`);
+  const para=(t,{size=10.5,bold=false,color=INK,indent=0,gap=3}={})=>{ for(const l of wrapText(t,size,CW-indent,bold)){ need(size+gap); y-=size+gap; text(l,M+indent,size,{bold,color}); } };
+  const rule=()=>{ need(14); y-=8; ops.push(`0.85 0.80 0.76 RG 0.6 w ${M} ${y.toFixed(2)} m ${W-M} ${y.toFixed(2)} l S`); y-=6; };
+  newPage();
+  y-=12; text("CENTRE MÉDICAL",M,12,{bold:true,color:RED}); y-=15; text("PRINCE DE LIÈGE",M,12,{bold:true,color:GOLD});
+  y-=13; text(winText("21-23 rue du Potaerdenberg, 1070 Anderlecht · 02 781 18 75"),M,8.5,{color:GREY});
+  y-=10; rule(); y-=6;
+  para(TYPES[r.type]?.title||"Conversation",{size:15,bold:true,gap:6});
+  para(`Patient : ${who.name}${who.birth?` · né(e) le ${who.birth}`:""}`,{size:10,color:GREY});
+  para(`Avec : ${provName(r.provider_id)||"Secrétariat"} · Commencée le ${fmtDate(r.created_at)}${r.closed_at?` · Clôturée le ${fmtDate(r.closed_at)}`:""}`,{size:10,color:GREY});
+  para(`Document enregistré le ${new Date().toLocaleString("fr-BE")}`,{size:10,color:GREY});
+  const ans=Object.entries(r.answers||{}).filter(([k,v])=>!HIDDEN_KEYS.has(k)&&v);
+  if(ans.length&&r.type!=="centre"){ rule(); para("Votre demande",{size:11.5,bold:true,gap:5});
+    for(const [k,v] of ans) para(`${LABELS[k]||k} : ${v}`,{indent:8}); }
+  if(r.type==="prescription"&&(r.request_items||[]).some(i=>i.decision)){ para("Décision",{size:11.5,bold:true,gap:8});
+    for(const i of r.request_items) para(`${i.label} (${qtyText(i.quantity||1).replace(/^ · /,"")}) : ${i.decision==="accorde"?"prescrit":i.decision?"non renouvelé":"en attente"}`,{indent:8}); }
+  rule(); para("Messages",{size:11.5,bold:true,gap:5});
+  for(const m of msgsOf(r)){
+    const atts=m.attachments||[], from=m.from_patient?"Vous":(m.author_label||"Le centre");
+    need(40); y-=8; para(`${from} · ${new Date(m.created_at).toLocaleDateString("fr-BE")} ${hm(m.created_at)}`,{size:9.5,bold:true,color:m.from_patient?GOLD:RED});
+    if(!(atts.length&&AUTO_BODY.test(m.body))) para(m.body,{indent:8});
+    for(const a of atts){
+      if(a.kind==="image"){ try{ const src=await attLoad(a.id), im=await imageForPdf(src.url), n=imgs.length;
+          let w=Math.min(CW-8,300), h=w*im.h/im.w; if(h>380){ h=380; w=h*im.w/im.h; }
+          need(h+8); y-=h+6; ops.push(`q ${w.toFixed(2)} 0 0 ${h.toFixed(2)} ${M+8} ${y.toFixed(2)} cm /Im${n} Do Q`); imgs.push(im); }
+        catch(e){ para("[Photo : impossible de l'ajouter]",{indent:8,color:GREY}); } }
+      else if(a.kind==="pdf") para(`[Document PDF joint : ${a.name} — ouvrez-le dans l'application pour l'enregistrer séparément]`,{indent:8,color:GREY,size:9.5});
+      else para(`[Message vocal${a.duration_s?` (${dur(a.duration_s)})`:""} — à écouter dans l'application]`,{indent:8,color:GREY,size:9.5});
+    }
+  }
+  if(!msgsOf(r).length) para("Aucun message.",{color:GREY});
+  // assemblage du fichier
+  const N=pages.length, parts=[], offs=[]; let len=0;
+  const bytes=s=>{ const u=new Uint8Array(s.length); for(let i=0;i<s.length;i++) u[i]=s.charCodeAt(i)&255; return u; };
+  const push=x=>{ const b=typeof x==="string"?bytes(x):x; parts.push(b); len+=b.length; };
+  const obj=(n,body)=>{ offs[n]=len; push(`${n} 0 obj\n`); body(); push("\nendobj\n"); };
+  push("%PDF-1.4\n%\xE2\xE3\xCF\xD3\n");
+  const P0=5, I0=P0+N*2, total=I0+imgs.length;
+  obj(1,()=>push("<< /Type /Catalog /Pages 2 0 R >>"));
+  obj(2,()=>push(`<< /Type /Pages /Kids [${pages.map((_,i)=>`${P0+i*2} 0 R`).join(" ")}] /Count ${N} >>`));
+  obj(3,()=>push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>"));
+  obj(4,()=>push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>"));
+  const xo=imgs.map((_,i)=>`/Im${i} ${I0+i} 0 R`).join(" ");
+  pages.forEach((o,i)=>{
+    y=M-4; const foot=[...o]; ops=foot;
+    text(winText(`Document confidentiel (données de santé) · Page ${i+1}/${N}`),M,8,{color:GREY});
+    const cs=foot.join("\n");
+    obj(P0+i*2,()=>push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${W} ${H}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >>${xo?` /XObject << ${xo} >>`:""} >> /Contents ${P0+i*2+1} 0 R >>`));
+    obj(P0+i*2+1,()=>push(`<< /Length ${cs.length} >>\nstream\n${cs}\nendstream`));
+  });
+  imgs.forEach((im,i)=>obj(I0+i,()=>{ push(`<< /Type /XObject /Subtype /Image /Width ${im.w} /Height ${im.h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${im.data.length} >>\nstream\n`); push(im.data); push("\nendstream"); }));
+  const xref=len; let x=`xref\n0 ${total}\n0000000000 65535 f \n`; for(let n=1;n<total;n++) x+=String(offs[n]).padStart(10,"0")+" 00000 n \n";
+  push(x+`trailer\n<< /Size ${total} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`);
+  return new Blob(parts,{type:"application/pdf"});
+}
+// Sur téléphone : feuille de partage (Enregistrer dans Fichiers, etc.) ; sur ordinateur : téléchargement
+async function saveFile(blob,name){
+  const file=new File([blob],name,{type:blob.type});
+  if(matchMedia("(pointer:coarse)").matches&&navigator.canShare&&navigator.canShare({files:[file]})){
+    try{ await navigator.share({files:[file],title:name}); return; } catch(e){ if(e.name==="AbortError") return; } }
+  const url=URL.createObjectURL(blob), a=document.createElement("a"); a.href=url; a.download=name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),60000);
+}
+function bindSavePdf(r){
+  const b=$("#savepdf"); if(!b) return; let ready=null;
+  b.onclick=async()=>{
+    if(ready){ await saveFile(ready.blob,ready.name); return; }
+    b.disabled=true; b.textContent="Préparation du PDF…";
+    try{ const who={name:`${S.me.first_name||""} ${S.me.last_name||""}`.trim(),birth:S.me.birth_date?fmtDate(S.me.birth_date):""};
+      const blob=await conversationPdf(r,who);
+      ready={blob,name:`conversation-cmpl-${new Date(r.created_at).toISOString().slice(0,10)}-${r.id}.pdf`};
+      b.textContent="Enregistrer le PDF"; b.classList.remove("ghost"); }
+    catch(e){ console.error(e); toast("Le PDF n'a pas pu être créé. Réessayez."); b.textContent="Enregistrer la conversation (PDF)"; }
+    b.disabled=false;
+  };
+}
 function openScanner(done){
   const pages=[]; let enhance=true;
   const v=document.createElement("div"); v.className="scanner"; v.setAttribute("role","dialog"); v.setAttribute("aria-label","Scanner un document");
@@ -526,6 +652,7 @@ async function loadStaff(){
   if(ids.length) tasks.push(sb.from("profiles").select("id,first_name,last_name,birth_date,phone").in("id",ids).then(r=>{ for(const p of r.data||[]) S.profiles[p.id]=p; }));
   if(role==="secretariat"||role==="admin") tasks.push(sb.from("profiles").select("id,first_name,last_name,birth_date,phone,created_at").eq("role","patient").eq("status","pending").order("created_at").then(r=>S.pending=r.data||[]));
   tasks.push(sb.from("profiles").select("id,first_name,last_name,role,provider_id,status,created_at").neq("role","patient").then(r=>S.team=r.data||[]));
+  tasks.push(sb.from("motif_durations").select("motif,minutes").then(r=>{ S.durations=Object.fromEntries((r.data||[]).map(d=>[d.motif,d.minutes])); }));
   tasks.push(sb.from("staff_settings").select("*").eq("user_id",S.me.id).maybeSingle().then(r=>S.settings=r.data));
   if(role==="secretariat"||role==="admin") tasks.push(sb.from("announcements").select("*").order("published_at",{ascending:false}).limit(100).then(r=>S.allNews=r.data||[]));
   if(role==="secretariat"||role==="admin") tasks.push(sb.rpc("news_audience").then(r=>S.audience=r.data));
@@ -979,10 +1106,10 @@ function patientReq(a){
   a.className="wrap chatpage";
   a.innerHTML=`<div class="convhead sticky"><button class="back" id="back" aria-label="Retour">${IC.back}</button>${PAV.get(r.provider_id)?avatarHTML(PAV.get(r.provider_id),"",40):`<div class="ic avatar">${IC[r.type]}</div>`}<div style="min-width:0"><h2>${esc(provName(r.provider_id)||"Secrétariat")}</h2><small>${TYPES[r.type].label} · ${stLabelP(r)}</small></div></div>
   ${chatHTML(r,"patient")}${itemsHTML}
-  ${r.purged_at||r.status==="traite"?`<div class="closed"><b>${r.purged_at?"Conversation effacée":"Conversation clôturée par le centre"}</b><span>${r.purged_at?"":`Vous pouvez la relire jusqu'au ${fmtDate(purgeDate(r))}, date à laquelle elle sera effacée. `}Pour une suite ou une autre question, ouvrez une nouvelle demande.</span><div class="btnrow"><button class="btn" id="newq">Nouvelle question</button><button class="btn ghost" id="newr">Demander un rendez-vous</button></div></div>`
+  ${r.purged_at||r.status==="traite"?`<div class="closed"><b>${r.purged_at?"Conversation effacée":"Conversation clôturée par le centre"}</b><span>${r.purged_at?"":`Vous pouvez la relire jusqu'au ${fmtDate(purgeDate(r))}, date à laquelle elle sera effacée. <b>Pour la garder, enregistrez-la en PDF.</b> `}Pour une suite ou une autre question, ouvrez une nouvelle demande.</span>${r.purged_at?"":`<div class="btnrow savepdf"><button class="btn ghost" id="savepdf">${IC.doc} Enregistrer la conversation (PDF)</button></div>`}<div class="btnrow"><button class="btn" id="newq">Nouvelle question</button><button class="btn ghost" id="newr">Demander un rendez-vous</button></div></div>`
   :`${composerHTML(key)}<p class="hint center small">Lu pendant les heures d'ouverture. Urgence vitale : appelez le 112.</p>`}`;
   $("#back").onclick=()=>{ clearPend(); S.screen="home"; render(); scrollTo(0,0); };
-  if(r.purged_at||r.status==="traite"){ $("#newq").onclick=()=>startFlow("question"); $("#newr").onclick=()=>startFlow("rdv"); return; }
+  if(r.purged_at||r.status==="traite"){ $("#newq").onclick=()=>startFlow("question"); $("#newr").onclick=()=>startFlow("rdv"); bindSavePdf(r); return; }
   bindComposer(key, async (text,pend)=>{
     const ok = pend ? await uploadAtt(r.id,pend,text) : await run(()=>sb.from("messages").insert({request_id:r.id, body:text}),"Message envoyé");
     if(!ok) return false;
@@ -1017,12 +1144,21 @@ function renderStaff(a){
   if(sc==="compose") bindCompose(); else if(sc==="accounts") bindAccounts(); else if(sc==="news") bindNewsAdmin(); else if(sc==="team") bindTeam(); else if(sc==="settings") bindSettings(); else bindInbox();
 }
 
+/* ----- durée estimée des rendez-vous de médecine générale (visible par l'équipe seulement) ----- */
+function rdvMinutes(r){ const a=r.answers||{};
+  if(r.type!=="rdv"||a.specialite!==GP||!a.motif||!S.durations) return undefined;
+  return S.durations[a.motif]??null; }
+function durHTML(r){ const m=rdvMinutes(r); if(m===undefined) return "";
+  const dep=(r.answers||{}).lieu==="Visite à domicile"?" + déplacement":"";
+  return `<span class="durtag ${m!==null&&m<=10?"short":""}" title="Durée estimée de la consultation">⏱ ${m===null?"À évaluer":"~"+m+" min"}${dep}</span>`; }
+const isShort = r => { const m=rdvMinutes(r); return m!=null && m<=10; };
+
 /* ----- boîte de réception ----- */
 function inboxList(){
   const inTab = r => r.queue===S.tab && (S.tab!=="prestataires"||S.provFilter==="tous"||r.provider_id===S.provFilter);
   const rank = r => r.status==="traite"?2:awaitingStaff(r)?0:1;
   const lastAt = r => { const m=msgsOf(r); return new Date(m.length?m[m.length-1].created_at:r.created_at); };
-  return S.reqs.filter(inTab).filter(r=>S.archive?r.status==="traite":r.status!=="traite")
+  return S.reqs.filter(inTab).filter(r=>S.archive?r.status==="traite":r.status!=="traite").filter(r=>S.archive||!S.short||isShort(r))
     .sort((x,y)=>rank(x)-rank(y)||(rank(x)===0?new Date(x.due_at)-new Date(y.due_at):lastAt(y)-lastAt(x)));
 }
 function inboxHTML(){
@@ -1035,13 +1171,14 @@ function inboxHTML(){
   const now=new Date();
   const provs=[...new Set(S.reqs.filter(r=>r.queue==="prestataires").map(r=>r.provider_id))].filter(Boolean);
   const nArch=S.reqs.filter(r=>r.queue===S.tab&&r.status==="traite").length;
+  const nShort=S.reqs.filter(r=>r.queue===S.tab&&r.status!=="traite"&&isShort(r)&&(S.tab!=="prestataires"||S.provFilter==="tous"||r.provider_id===S.provFilter)).length;
   return `<div class="chead"><div><h1>Demandes des patients</h1><p>${now.toLocaleDateString("fr-BE",{weekday:"long",day:"numeric",month:"long"})} · ${isOpen(now)?'<span class="state on">Ouvert</span>':`<span class="state off">Fermé · réouverture ${fmtWhen(nextOpen(now))}</span>`}</p></div>
    <div class="counts"><div class="count"><b>${open.filter(r=>r.priority==="haute"&&awaitingStaff(r)).length}</b>haute priorité</div><div class="count"><b>${open.filter(r=>r.status==="nouveau").length}</b>nouvelles</div><div class="count"><b>${open.filter(newPatientMsg).length}</b>messages patients</div><div class="count ${late?"urg":""}"><b>${late}</b>en retard</div></div></div>
   ${queues.length>1?`<div class="tabs">${queues.map(q=>`<button class="tab" data-tab="${q}" aria-pressed="${S.tab===q}">${q==="secretariat"?"Secrétariat":"Prestataires"}<span class="n">${S.reqs.filter(r=>r.queue===q&&r.status!=="traite").length}</span></button>`).join("")}</div>`:""}
   ${S.tab==="prestataires"&&provs.length>1?`<div class="tabs">${["tous",...provs].map(id=>{const k=S.reqs.filter(r=>r.provider_id===id&&r.queue==="prestataires"&&r.status!=="traite").length;return `<button class="tab" data-pf="${id}" aria-pressed="${S.provFilter===id}" style="font-weight:400">${id==="tous"?"Tous":esc(provName(id))}${id!=="tous"&&k?`<span class="n">${k}</span>`:""}</button>`}).join("")}</div>`:""}
-  <div class="seg" role="group" aria-label="Filtrer" style="margin-bottom:10px"><button id="f-open" aria-pressed="${!S.archive}">À traiter</button><button id="f-arch" aria-pressed="${S.archive}">Classées (${nArch})</button></div>
+  <div class="seg" role="group" aria-label="Filtrer" style="margin-bottom:10px"><button id="f-open" aria-pressed="${!S.archive}">À traiter</button><button id="f-arch" aria-pressed="${S.archive}">Classées (${nArch})</button></div>${!S.archive&&(nShort||S.short)?` <button class="tab shortbtn" id="f-short" aria-pressed="${!!S.short}" title="Rendez-vous de médecine générale de 10 minutes ou moins">⏱ Rendez-vous courts (≤ 10 min)<span class="n">${nShort}</span></button>`:""}
   <div class="pane">
-   <div class="list inbox">${list.length?list.map(r=>{const ms=msgsOf(r);return `<button class="row" data-sel="${r.id}" aria-current="${r.id===S.sel}"><span class="prio ${r.priority==="haute"&&awaitingStaff(r)?"on":""}"></span><div class="ic">${IC[r.type]}</div><div><b>${esc(patientName(r.patient_id))}</b><small>${TYPES[r.type].label} · ${esc(summaryLine(r.answers))}</small><small>${ms.length?`${ms.length} message${ms.length>1?"s":""} · dernier ${fmt(ms[ms.length-1].created_at)}`:`Reçue ${fmt(r.created_at)}`}</small>${dueHTML(r)}</div><span class="pill st-${stClass(r)}">${stLabel(r)}</span></button>`}).join(""):`<div class="empty">${S.archive?"Aucune conversation classée.":"Rien à traiter."}</div>`}</div>
+   <div class="list inbox">${list.length?list.map(r=>{const ms=msgsOf(r);return `<button class="row" data-sel="${r.id}" aria-current="${r.id===S.sel}"><span class="prio ${r.priority==="haute"&&awaitingStaff(r)?"on":""}"></span><div class="ic">${IC[r.type]}</div><div><b>${esc(patientName(r.patient_id))}</b><small>${TYPES[r.type].label} · ${esc(summaryLine(r.answers))}</small>${durHTML(r)}<small>${ms.length?`${ms.length} message${ms.length>1?"s":""} · dernier ${fmt(ms[ms.length-1].created_at)}`:`Reçue ${fmt(r.created_at)}`}</small>${dueHTML(r)}</div><span class="pill st-${stClass(r)}">${stLabel(r)}</span></button>`}).join(""):`<div class="empty">${S.archive?"Aucune conversation classée.":"Rien à traiter."}</div>`}</div>
    <div id="detail">${detailHTML()}</div>
   </div>`;
 }
@@ -1059,7 +1196,7 @@ function detailHTML(){
   return `<div class="detail">
    <div class="dhead">${avatarHTML(AV.get(r.patient_id),patientName(r.patient_id),52)}<div><h2>${esc(patientName(r.patient_id))}</h2>
     <div class="pinfo"><span>Né(e) le <b>${fmtDate(p.birth_date)}</b></span><span>Tél. <b>${esc(p.phone||"—")}</b></span></div>
-    <div class="meta" style="margin-top:6px"><span class="tag">${TYPES[r.type].label}</span><span class="pill st-${stClass(r)}">${stLabel(r)}</span><span>Reçue ${fmt(r.created_at)} · ${esc(provName(r.provider_id)||"Secrétariat")}</span></div></div></div>
+    <div class="meta" style="margin-top:6px"><span class="tag">${TYPES[r.type].label}</span>${durHTML(r)}<span class="pill st-${stClass(r)}">${stLabel(r)}</span><span>Reçue ${fmt(r.created_at)} · ${esc(provName(r.provider_id)||"Secrétariat")}</span></div></div></div>
    ${open?`<div class="prioedit"><span class="hint">Priorité</span>${["haute","normale"].map(k=>`<button class="dec p-${k}" aria-pressed="${r.priority===k}" data-prio="${k}">${PRIO_LABEL[k]}</button>`).join("")}</div><div>${dueHTML(r)}</div>`:""}
    ${r.purged_at?"":`<dl class="qa">${Object.entries(r.answers||{}).filter(([k])=>!HIDDEN_KEYS.has(k)).map(([k,v])=>`<div><dt>${esc(LABELS[k]||k)}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>`}
    ${items.some(i=>i.decision)?`<div class="itemlist">${items.filter(i=>i.decision).map(i=>`<div><span>${esc(i.label)}<small class="qty">${qtyText(i.quantity||1)}</small></span><span class="dtag ${i.decision==="accorde"?"ok":"no"}">${i.decision==="accorde"?"Accordé":"Refusé"}</span></div>`).join("")}</div>`:""}
@@ -1080,6 +1217,7 @@ function bindInbox(){
   $$("[data-pf]").forEach(b=>b.onclick=()=>{ S.provFilter=b.dataset.pf; S.sel=null; render(); });
   $("#f-open").onclick=()=>{ S.archive=false; S.sel=null; render(); };
   $("#f-arch").onclick=()=>{ S.archive=true; S.sel=null; render(); };
+  const fs=$("#f-short"); if(fs) fs.onclick=()=>{ S.short=!S.short; S.sel=null; render(); };
   $$("[data-sel]").forEach(b=>b.onclick=()=>{ clearPend(); S.sel=+b.dataset.sel; render(); if(innerWidth<760) $("#detail").scrollIntoView({behavior:"smooth"}); });
   bindDetail();
 }
@@ -1302,5 +1440,5 @@ async function autoRefresh(){ if(busy||!S.session||S.loading||document.hidden) r
 setInterval(autoRefresh, 60000);
 document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) autoRefresh(); });
 if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
-console.log("CMPL app version 20261015a");
+console.log("CMPL app version 20261016a");
 })();

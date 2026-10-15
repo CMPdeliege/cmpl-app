@@ -445,3 +445,11 @@ small.qty{font-size:inherit;color:var(--muted)}
 .photocard p{margin:0 0 8px}
 .medrow>.av{margin-right:2px}
 .recipient>.av{flex:none}
+/* durée estimée (équipe) */
+.durtag{display:inline-block;margin:4px 6px 0 0;font-size:12px;font-weight:700;padding:2px 8px;border-radius:6px;background:var(--surface-2);color:var(--ink)}
+.durtag.short{background:color-mix(in srgb,var(--gold-bright) 22%,transparent);color:var(--gold)}
+.meta .durtag{margin-top:0}
+.shortbtn{vertical-align:top;margin-bottom:10px}
+/* enregistrer la conversation */
+.savepdf{margin-top:10px}
+.savepdf svg{width:18px;height:18px}
