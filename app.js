@@ -1188,7 +1188,7 @@ function detailHTML(){
   const isRx=r.type==="prescription"&&open&&items.some(i=>!i.decision);
   const dec=S.drafts["d"+r.id]||{}; const allDecided=isRx&&items.filter(i=>!i.decision).every(i=>dec[i.id]);
   const draft=S.drafts["s"+r.id]||"";
-  const staffWrote=msgsOf(r).some(m=>!m.from_patient);
+  const staffWrote=msgsOf(r).some(m=>!m.from_patient&&!/· message automatique$/.test(m.author_label||""));
   const canClose=isRx?allDecided:(staffWrote||!!draft.trim());
   const todo=items.filter(i=>!i.decision);
   const closeBtn=!isRx?"Clôturer et classer":!allDecided?`Décidez pour chaque médicament (${todo.filter(i=>dec[i.id]).length}/${todo.length})`:todo.some(i=>dec[i.id]==="accorde")?"Valider la prescription et classer":"Envoyer le refus et classer";
@@ -1403,18 +1403,39 @@ function settingsHTML(){
     <label class="fld">Pas pressé (à voir en moins de 72 h)${sel("s-normale",s.normale)}</label></div>
     <p class="hint">« 2 fois par jour » : à 11:00 et à 16:00. « Résumé du matin » : à 9:00. Rien n'est envoyé quand le centre est fermé.</p>
     <label class="chk2"><input type="checkbox" id="s-mail" ${s.by_email?"checked":""}> Aussi par e-mail</label></section>
-   <section class="card"><h3>Absence</h3>
-    <label class="chk2"><input type="checkbox" id="s-away" ${s.away?"checked":""}> Je suis absent : renvoyer mes notifications vers</label>
-    <select id="s-fw"><option value="">— choisir un collègue —</option>${others.map(t=>`<option value="${t.id}" ${t.id===s.forward_to?"selected":""}>${esc((t.first_name||"")+" "+(t.last_name||""))} · ${ROLE_LABEL[t.role]}</option>`).join("")}</select></section>
+   <section class="card"><h3>En cas d'absence</h3>
+    <label class="chk2"><input type="checkbox" id="s-away" ${s.away?"checked":""}> Je suis absent(e)</label>
+    <div id="s-awaybox" class="awaybox" ${s.away?"":"hidden"}>
+     <label class="fld">Jusqu'au (inclus) — facultatif : l'absence s'arrête toute seule après cette date<input type="date" id="s-until" value="${s.away_until||""}"></label>
+     <label class="fld">Renvoyer mes notifications vers<select id="s-fw"><option value="">Ne pas renvoyer</option>${others.map(t=>`<option value="${t.id}" ${t.id===s.forward_to?"selected":""}>${esc((t.first_name||"")+" "+(t.last_name||""))} · ${ROLE_LABEL[t.role]}</option>`).join("")}</select></label>
+     ${S.me.provider_id?`<label class="chk2"><input type="checkbox" id="s-amsg" ${s.away_message?"checked":""}> Répondre automatiquement aux patients qui m'écrivent</label>
+     <textarea id="s-msg" rows="5" maxlength="1000" ${s.away_message?"":"hidden"} aria-label="Message automatique">${esc(s.away_message||"")}</textarea>
+     <p class="hint" id="s-msghint" ${s.away_message?"":"hidden"}>Envoyé une seule fois par conversation, signé « ${esc(provName(S.me.provider_id))} · message automatique ». Il ne compte pas comme une réponse : la demande reste à traiter.</p>`:""}
+    </div></section>
    <div class="btnrow"><button class="btn" id="s-save">Enregistrer</button></div>
    <p class="hint">« Aussi par e-mail » : un résumé envoyé à votre adresse de connexion, sans nom de patient ni contenu médical. Les notifications sur le téléphone seront activées à une étape suivante.</p>
   </div>`;
 }
+function awayDefaultText(){
+  const u=$("#s-until").value, fw=S.team.find(t=>t.id===$("#s-fw").value);
+  const until=u?` jusqu'au ${new Date(u+"T12:00").toLocaleDateString("fr-BE",{weekday:"long",day:"numeric",month:"long"})} inclus`:"";
+  return `Bonjour,\nJe suis absent(e)${until}. Votre message a bien été reçu${fw?` et sera traité par ${(fw.first_name||"")+" "+(fw.last_name||"")}`:" et sera traité à mon retour"}.\nPour une question qui ne peut pas attendre, appelez le secrétariat au 02 781 18 75. Urgence vitale : 112.`;
+}
 function bindSettings(){
   bindPhotoCard();
+  const away=$("#s-away"), box=$("#s-awaybox"), am=$("#s-amsg"), msg=$("#s-msg"), hint=$("#s-msghint");
+  if(msg) msg.dataset.auto=msg.value.trim()?"":"1";
+  const fill=()=>{ if(msg&&msg.dataset.auto) msg.value=awayDefaultText(); };
+  away.onchange=()=>{ box.hidden=!away.checked; };
+  $("#s-until").onchange=fill; $("#s-fw").onchange=fill;
+  if(am){ am.onchange=()=>{ msg.hidden=hint.hidden=!am.checked; if(am.checked){ if(!msg.value.trim()){ msg.dataset.auto="1"; fill(); } msg.focus(); } };
+    msg.oninput=()=>{ msg.dataset.auto=""; }; }
   $("#s-save").onclick=async()=>{
-    const row={user_id:S.me.id,haute:$("#s-haute").value,normale:$("#s-normale").value,by_email:$("#s-mail").checked,away:$("#s-away").checked,forward_to:$("#s-fw").value||null};
-    if(row.away&&!row.forward_to) return toast("Choisissez le collègue qui recevra vos notifications.");
+    const row={user_id:S.me.id,haute:$("#s-haute").value,normale:$("#s-normale").value,by_email:$("#s-mail").checked,
+      away:away.checked,away_until:$("#s-until").value||null,forward_to:$("#s-fw").value||null,
+      away_message:am&&am.checked&&msg.value.trim()?msg.value.trim():null};
+    if(row.away&&!row.forward_to&&!row.away_message) return toast(am?"Choisissez un collègue, ou activez le message automatique.":"Choisissez le collègue qui recevra vos notifications.");
+    if(row.away_until&&row.away_until<new Date().toISOString().slice(0,10)) return toast("La date de retour est déjà passée.");
     if(await run(()=>sb.from("staff_settings").upsert(row),"Enregistré")) S.settings=row;
   };
 }
@@ -1436,9 +1457,9 @@ sb.auth.onAuthStateChange((event, session)=>{
 let busy=false;
 async function autoRefresh(){ if(busy||!S.session||S.loading||document.hidden) return; const el=document.activeElement;
   if(el&&(el.tagName==="TEXTAREA"||el.tagName==="INPUT"||el.tagName==="SELECT")) return;
-  if(S.screen==="flow"||S.rec||S.pend||S.editNews||S.cscreen==="compose"||document.querySelector(".viewer,.scanner")) return; busy=true; try{ await refresh(); } finally{ busy=false; } }
+  if(S.screen==="flow"||S.rec||S.pend||S.editNews||S.cscreen==="compose"||S.cscreen==="settings"||document.querySelector(".viewer,.scanner")) return; busy=true; try{ await refresh(); } finally{ busy=false; } }
 setInterval(autoRefresh, 60000);
 document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) autoRefresh(); });
 if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
-console.log("CMPL app version 20261016a");
+console.log("CMPL app version 20261016b");
 })();
