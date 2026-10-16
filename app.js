@@ -75,7 +75,7 @@ const BANNER112 = `<div class="urgent">${IC.alert}<div><strong>Urgence vitale :<
 
 /* ---------- état ---------- */
 const S = {
-  session:null, me:null, providers:[], hours:{}, news:[], reqs:[], meds:[], notifs:[], profiles:{},
+  session:null, me:null, providers:[], hours:{}, news:[], reqs:[], meds:[], notifs:[], profiles:{}, children:{}, tasks:[], pendingKids:[],
   screen:"home", flow:null, answers:{}, drug:null, openReq:null, openNews:null, lastSent:null,
   // équipe
   tab:"secretariat", provFilter:"tous", archive:false, sel:null, cscreen:"inbox", drafts:{}, pending:[], team:[], allNews:[], settings:null,
@@ -115,9 +115,20 @@ const PATIENT_TYPES=["rdv","question","prescription","rapport","resultats","docu
 const GP="Médecine générale";
 const GP_MOTIFS=["Vaccin ou injection","Prise de sang","Certificat (maladie, sport, école…)","Renouvellement de traitement","Maladie aiguë (fièvre, toux, douleur…)","Suivi d'une maladie chronique (diabète, tension…)","Frottis, petit soin ou petite chirurgie","Bilan ou check-up","Stress, moral, sommeil","Plusieurs problèmes à aborder","Autre"];
 const isGP = a => a.specialite===GP;
+/* ---------- Ma famille : enfants de moins de 16 ans ---------- */
+const CHILD_MAX_AGE=16;
+const famKids = () => (S.family?.children||[]);
+const kids = () => famKids().filter(c=>c.status==="active"&&c.age<CHILD_MAX_AGE);
+const kidLabel = c => { const same=kids().filter(x=>x.first_name===c.first_name).length>1; return `Pour ${c.first_name}${same?` (${new Date(c.birth_date).getFullYear()})`:""}`; };
+const pourOptions = () => ["Pour moi", ...kids().map(kidLabel)];
+const kidFromPour = v => kids().find(c=>kidLabel(c)===v)||null;
+const childInfo = id => id ? (famKids().find(c=>c.id===id) || S.children?.[id] || null) : null;
+const childFirst = id => childInfo(id)?.first_name || "votre enfant";
+const POUR_STEP = {id:"pour",kind:"choice",q:"C'est pour qui ?",options:()=>pourOptions(),when:()=>kids().length>0};
+const KID_NOTE = {kind:"note",q:"Pour un enfant de moins de 16 ans : ajoutez-le d'abord dans Mon compte → Ma famille.",when:()=>!kids().length};
 const FLOWS={
  rdv:[
-  {id:"pour",kind:"choice",q:()=>`Bonjour ${S.me?.first_name||""}. Le rendez-vous est pour qui ?`,options:["Pour moi","Pour mon enfant","Pour un autre membre de ma famille"]},
+  {id:"pour",kind:"choice",q:()=>`Bonjour ${S.me?.first_name||""}. Le rendez-vous est pour qui ?`,options:()=>pourOptions(),when:()=>kids().length>0},
   {id:"specialite",kind:"choice",q:"Pour quel type de consultation ?",options:()=>P.specs()},
   {id:"medecin",kind:"choice",q:"Avec qui ?",options:a=>[...P.of(a.specialite).map(P.label),"Peu importe, le premier disponible"],when:a=>P.of(a.specialite).length>1},
   // Médecine générale : motif, délai, détails, lieu
@@ -168,6 +179,8 @@ FLOWS.document=[
   {id:"note",kind:"text",q:"Un mot pour accompagner le document ?",placeholder:"Ex. résultats de la prise de sang du 10 octobre",optional:true},
   {kind:"note",q:"Le document sera vu dans les 72 heures (heures d'ouverture). Le prestataire vous répond ici ou vous propose un rendez-vous."}
 ];
+["question","prescription","rapport","resultats","document"].forEach(k=>FLOWS[k].unshift(POUR_STEP));
+FLOWS.rdv.push(KID_NOTE); FLOWS.question.push(KID_NOTE);
 const LABELS={doc:"Document",fichiers:"Fichiers",note:"Message",de:"De",pour:"Pour",specialite:"Consultation",medecin:"Prestataire",motif:"Motif",delai:"Pour quand",details:"Détails",moment:"Disponibilités",lieu:"Lieu",
  sujet:"Sujet",depuis:"Depuis",texte:"Question",medicament:"Médicaments",historique:"Déjà prescrit",nouveau:"Choix",remarque:"Remarque",
  examen:"Examen",quand:"Date",demandeur:"Demandé par",contact:"Contact souhaité",
@@ -522,7 +535,8 @@ function bindSavePdf(r){
   b.onclick=async()=>{
     if(ready){ await saveFile(ready.blob,ready.name); return; }
     b.disabled=true; b.textContent="Préparation du PDF…";
-    try{ const who={name:`${S.me.first_name||""} ${S.me.last_name||""}`.trim(),birth:S.me.birth_date?fmtDate(S.me.birth_date):""};
+    try{ const c=childInfo(r.child_id);
+      const who=c?{name:`${c.first_name} ${c.last_name}`,birth:fmtDate(c.birth_date)}:{name:`${S.me.first_name||""} ${S.me.last_name||""}`.trim(),birth:S.me.birth_date?fmtDate(S.me.birth_date):""};
       const blob=await conversationPdf(r,who);
       ready={blob,name:`conversation-cmpl-${new Date(r.created_at).toISOString().slice(0,10)}-${r.id}.pdf`};
       b.textContent="Enregistrer le PDF"; b.classList.remove("ghost"); }
@@ -606,6 +620,8 @@ async function startRec(key, send){
   mr.start();
 }
 const patientName = id => { const p=S.profiles[id]; return p ? `${p.first_name||""} ${p.last_name||""}`.trim() || "Patient" : "Patient"; };
+const kidName = id => { const c=S.children?.[id]; return c ? `${c.first_name} ${c.last_name}` : "Enfant"; };
+const reqName = r => r.child_id ? kidName(r.child_id) : patientName(r.patient_id);
 
 /* ---------- actualités ---------- */
 function newsCard(n, full){
@@ -636,11 +652,12 @@ const REQ_SELECT = "*, messages(id,from_patient,author_id,author_label,body,crea
 async function loadPatient(){
   const uid=S.session.user.id;
   const [rq, md, nt] = await Promise.all([
-    sb.from("requests").select(REQ_SELECT).eq("patient_id", uid).order("created_at",{ascending:false}).limit(100),
-    sb.from("patient_meds").select("*").eq("patient_id", uid).order("last_granted_at",{ascending:false}),
+    sb.from("requests").select(REQ_SELECT).order("created_at",{ascending:false}).limit(150),
+    sb.from("patient_meds").select("*").order("last_granted_at",{ascending:false}),
     sb.from("notifications").select("*").eq("user_id", uid).order("created_at",{ascending:false}).limit(50)
   ]);
   S.reqs = rq.data||[]; S.meds = md.data||[]; S.notifs = nt.data||[];
+  if(S.me.status==="active"){ const f=await sb.rpc("my_family"); S.family=f.error?null:f.data; }
   await Promise.all([loadProviderAvatars(), loadAvatars([uid, ...S.reqs.flatMap(r=>(r.messages||[]).filter(m=>!m.from_patient).map(m=>m.author_id))])]);
 }
 async function loadStaff(){
@@ -656,7 +673,14 @@ async function loadStaff(){
   tasks.push(sb.from("staff_settings").select("*").eq("user_id",S.me.id).maybeSingle().then(r=>S.settings=r.data));
   if(role==="secretariat"||role==="admin") tasks.push(sb.from("announcements").select("*").order("published_at",{ascending:false}).limit(100).then(r=>S.allNews=r.data||[]));
   if(role==="secretariat"||role==="admin") tasks.push(sb.rpc("news_audience").then(r=>S.audience=r.data));
+  if(role==="secretariat"||role==="admin") tasks.push(sb.from("children").select("id,first_name,last_name,birth_date,status,created_by,created_at").eq("status","pending").is("removed_at",null).order("created_at").then(r=>S.pendingKids=r.data||[]));
+  tasks.push(sb.from("tasks").select("*").order("created_at",{ascending:false}).limit(500).then(r=>S.tasks=r.data||[]));
   await Promise.all(tasks);
+  // enfants (demandes, tâches) et parents à afficher
+  const kidIds=[...new Set([...S.reqs.map(r=>r.child_id),...(S.tasks||[]).map(t=>t.child_id)].filter(Boolean))].filter(id=>!S.children[id]);
+  if(kidIds.length){ const {data}=await sb.from("children").select("id,first_name,last_name,birth_date,status,created_by").in("id",kidIds); for(const c of data||[]) S.children[c.id]=c; }
+  const more=[...new Set([...(S.pendingKids||[]).map(c=>c.created_by),...(S.tasks||[]).map(t=>t.patient_id)].filter(Boolean))].filter(id=>!S.profiles[id]);
+  if(more.length){ const {data}=await sb.from("profiles").select("id,first_name,last_name,birth_date,phone").in("id",more); for(const p of data||[]) S.profiles[p.id]=p; }
   await Promise.all([loadProviderAvatars(), loadAvatars([S.me.id, ...ids, ...S.team.map(t=>t.id)])]);
   // Le premier onglet utile selon le rôle
   if(role==="provider") S.tab="prestataires";
@@ -753,12 +777,13 @@ function draw(){
 const PRIVACY = `<details class="legal"><summary>Protection de vos données</summary>
 <p><b>Qui est responsable ?</b> La société qui exploite le Centre Médical Prince de Liège, 21-23 rue du Potaerdenberg, 1070 Anderlecht. Contact pour vos données : <b>admin@cmpl.be</b>.</p>
 <p><b>Quelles données ?</b> Votre identité (nom, prénom, date de naissance, photo de profil si vous en ajoutez une), vos coordonnées (e-mail, téléphone), vos demandes et messages, les photos, documents et messages vocaux que vous envoyez, les médicaments renouvelés, et un journal technique de sécurité.</p>
+<p><b>Ma famille.</b> Si vous ajoutez vos enfants de moins de 16 ans, nous enregistrons leur prénom, nom et date de naissance, et les demandes faites en leur nom. Ces informations sont visibles par vous, par l'autre parent que vous invitez, et par l'équipe du centre. À 16 ans, l'enfant crée son propre compte ; plus aucune demande ne peut être faite en son nom.</p>
 <p><b>Pourquoi ?</b> Uniquement pour communiquer avec le centre : rendez-vous, questions, renouvellements de prescription, résultats. Base légale : la relation de soins (RGPD, art. 6.1.b et 9.2.h). Les notifications d'annonces du centre reposent sur votre accord, que vous pouvez retirer à tout moment (art. 6.1.a).</p>
 <p><b>Qui les voit ?</b> Vous, et seulement les membres de l'équipe concernés par votre demande, tenus au secret professionnel. Chaque ouverture d'une conversation ou d'une pièce jointe par l'équipe est enregistrée. Aucune publicité, aucun traceur, aucune revente.</p>
 <p><b>Où ?</b> Les données sont hébergées par Supabase dans l'Union européenne (Irlande), sous contrat de protection des données. Les pages de l'app sont fournies par GitHub, qui enregistre l'adresse IP des visiteurs à des fins de sécurité. Les e-mails de notification sont envoyés par Brevo (France, UE) et ne contiennent aucune information médicale.</p>
 <p><b>Combien de temps ?</b> Une conversation est effacée 15 jours après sa clôture ; ce qui est utile à votre suivi est reporté par le prestataire dans votre dossier médical au centre, conservé selon la loi. Notifications : 90 jours. Compte non validé : 60 jours. Compte sans connexion pendant 3 ans : supprimé. Journal de sécurité : 5 ans.</p>
 <p><b>Vos droits.</b> Accès, rectification, effacement, limitation, opposition, portabilité, retrait de votre accord. Dans « Mon compte », vous pouvez télécharger vos données et supprimer votre compte. Pour toute autre demande : admin@cmpl.be (réponse dans un délai d'un mois). Vous pouvez aussi introduire une plainte auprès de l'Autorité de protection des données (autoriteprotectiondonnees.be, rue de la Presse 35, 1000 Bruxelles).</p>
-<p><small>Version du 12 octobre 2026.</small></p></details>`;
+<p><small>Version du 16 octobre 2026.</small></p></details>`;
 function renderAuth(a){
   a.className="wrap";
   const m=S.authMode;
@@ -865,29 +890,39 @@ function topBar(){
 function bindTop(){ $("#bell").onclick=()=>{S.screen="notifs";render()}; $("#acct").onclick=()=>{S.screen="account";render()}; }
 function patientHome(a){
   const pinned=S.news.filter(n=>n.pinned), others=S.news.filter(n=>!n.pinned);
-  const mine=S.reqs.slice().sort((x,y)=>(x.status==="traite")-(y.status==="traite")||new Date(y.created_at)-new Date(x.created_at));
+  const fk=famKids(), who=S.who&&(S.who==="me"||fk.some(c=>c.id===S.who))?S.who:"all";
+  const forWho = x => who==="all" || (who==="me" ? !x.child_id : x.child_id===who);
+  const mine=S.reqs.filter(forWho).sort((x,y)=>(x.status==="traite")-(y.status==="traite")||new Date(y.created_at)-new Date(x.created_at));
+  const meds=S.meds.filter(forWho);
+  const grown=fk.filter(c=>c.status==="active"&&c.age>=CHILD_MAX_AGE), waiting=fk.filter(c=>c.status==="pending");
+  const chips=fk.length?`<div class="tabs whochips" role="group" aria-label="Afficher pour">${[["all","Tous"],["me","Moi"],...fk.map(c=>[c.id,c.first_name])].map(([id,l])=>`<button class="tab" data-who="${id}" aria-pressed="${who===id}">${esc(l)}</button>`).join("")}</div>`:"";
+  const forTag = x => x.child_id ? ` · pour ${esc(childFirst(x.child_id))}` : "";
   a.innerHTML=`${topBar()}
   <h1 class="hello">Bonjour ${esc(S.me.first_name||"")}</h1>
   <p class="sub">Que pouvons-nous faire pour vous ?</p>
   ${S.me.news_choice_at?"":`<section class="consent" aria-labelledby="cq"><h2 id="cq">Annonces du centre</h2><p>Souhaitez-vous recevoir une notification pour les annonces importantes du centre (fermetures exceptionnelles, campagnes de vaccination) ?</p><p class="hint">Les réponses à vos demandes vous sont toujours notifiées. Vous pourrez changer d'avis à tout moment dans Notifications.</p><div class="btnrow"><button class="btn" data-consent="1">Oui, me prévenir</button><button class="btn ghost" data-consent="0">Non merci</button></div></section>`}
   ${pinned.map(n=>`<button class="newsbtn" data-news="${n.id}" style="margin-bottom:12px">${newsCard(n,false)}</button>`).join("")}
   ${BANNER112}
+  ${grown.map(c=>`<div class="famnote"><b>${esc(c.first_name)} a ${c.age} ans.</b> Il ou elle doit maintenant créer son propre compte dans l'app pour ses demandes (Créer un compte, avec sa propre adresse e-mail).</div>`).join("")}
+  ${waiting.length?`<div class="famnote soft">En attente de validation par le centre : ${waiting.map(c=>esc(c.first_name)).join(", ")}. Vous pourrez ensuite faire des demandes en son nom.</div>`:""}
   <div class="actions">${PATIENT_TYPES.map(k=>[k,TYPES[k]]).map(([k,t])=>`<button class="act" data-start="${k}"><div class="ic">${IC[k]}</div><b>${t.title}</b><span>${t.desc}</span></button>`).join("")}</div>
   ${others.length?`<div class="sechead"><h2>Actualités</h2><button class="linkbtn" id="allnews">Tout voir</button></div>
   <div class="newslist" style="margin-bottom:26px">${others.slice(0,2).map(n=>`<button class="newsbtn" data-news="${n.id}">${newsCard(n,false)}</button>`).join("")}</div>`:""}
-  <div class="sechead"><h2>Mes médicaments</h2><small class="hint">Accordés par votre médecin</small></div>
-  <div class="list" style="margin-bottom:26px">${S.meds.length?S.meds.map(m=>`<div class="medrow"><div class="ic">${IC.prescription}</div><div><b>${esc(m.label)}</b><small>Dernière prescription ${fmt(m.last_granted_at)} · ${m.times_granted} fois</small></div><div class="acts"><button class="mini" data-renew="${esc(m.label)}">Renouveler</button><button class="linkbtn" style="font-size:12px;color:var(--muted)" data-forget="${m.id}">Retirer</button></div></div>`).join(""):`<div class="empty">Vos médicaments apparaîtront ici après votre première prescription accordée.</div>`}</div>
-  <div class="sechead"><h2>Mes demandes</h2></div>
+  ${chips}
+  <div class="sechead"><h2>${fk.length?"Médicaments":"Mes médicaments"}</h2><small class="hint">Accordés par votre médecin</small></div>
+  <div class="list" style="margin-bottom:26px">${meds.length?meds.map(m=>`<div class="medrow"><div class="ic">${IC.prescription}</div><div><b>${esc(m.label)}</b><small>${m.child_id?`Pour ${esc(childFirst(m.child_id))} · `:fk.length?"Pour moi · ":""}Dernière prescription ${fmt(m.last_granted_at)} · ${m.times_granted} fois</small></div><div class="acts"><button class="mini" data-renew="${esc(m.label)}" data-renewkid="${m.child_id||""}">Renouveler</button><button class="linkbtn" style="font-size:12px;color:var(--muted)" data-forget="${m.id}">Retirer</button></div></div>`).join(""):`<div class="empty">Vos médicaments apparaîtront ici après votre première prescription accordée.</div>`}</div>
+  <div class="sechead"><h2>${fk.length?"Demandes":"Mes demandes"}</h2></div>
   <div class="list">${mine.length?mine.map(r=>{const ms=msgsOf(r),last=ms[ms.length-1],unread=S.notifs.some(n=>n.request_id===r.id&&!n.read_at&&n.title!=="Demande bien reçue");
     const prev=r.purged_at?"Contenu effacé":last?(last.from_patient?"Vous : ":"")+msgPreview(last):summaryLine(r.answers);
-    return `<button class="row chatrow ${unread?"unread":""}" data-req="${r.id}"><div class="ic">${IC[r.type]}</div><div><b>${esc(provName(r.provider_id)||"Secrétariat")} · ${TYPES[r.type].label}</b><small>${esc(prev)}</small></div><div class="rside"><small>${fmt(last?last.created_at:r.created_at)}</small>${unread?`<span class="dot" aria-label="Nouveau message"></span>`:`<span class="pill st-${stClassP(r)}">${stLabelP(r)}</span>`}</div></button>`}).join(""):`<div class="empty">Aucune demande pour l'instant.</div>`}</div>`;
+    return `<button class="row chatrow ${unread?"unread":""}" data-req="${r.id}"><div class="ic">${IC[r.type]}</div><div><b>${esc(provName(r.provider_id)||"Secrétariat")} · ${TYPES[r.type].label}${forTag(r)}</b><small>${esc(prev)}</small></div><div class="rside"><small>${fmt(last?last.created_at:r.created_at)}</small>${unread?`<span class="dot" aria-label="Nouveau message"></span>`:`<span class="pill st-${stClassP(r)}">${stLabelP(r)}</span>`}</div></button>`}).join(""):`<div class="empty">Aucune demande pour l'instant.</div>`}</div>`;
   bindTop();
   $$("[data-start]").forEach(b=>b.onclick=()=>startFlow(b.dataset.start));
   $$("[data-consent]").forEach(b=>b.onclick=async()=>{ const ok=b.dataset.consent==="1";
     if(await run(()=>sb.rpc("set_news_consent",{p_ok:ok}),ok?"Vous serez prévenu des annonces importantes":"C'est noté : pas de notification pour les annonces")){ S.me.news_push=ok; S.me.news_choice_at=new Date().toISOString(); render(); } });
   $$("[data-news]").forEach(b=>b.onclick=()=>{S.openNews=+b.dataset.news;S.screen="news";render();scrollTo(0,0)});
   const an=$("#allnews"); if(an) an.onclick=()=>{S.openNews=null;S.screen="news";render();scrollTo(0,0)};
-  $$("[data-renew]").forEach(b=>b.onclick=()=>startFlow("prescription",[b.dataset.renew]));
+  $$("[data-renew]").forEach(b=>b.onclick=()=>{ const c=kids().find(k=>k.id===b.dataset.renewkid); startFlow("prescription",[b.dataset.renew], c?kidLabel(c):(kids().length?"Pour moi":null)); });
+  $$("[data-who]").forEach(b=>b.onclick=()=>{ S.who=b.dataset.who; render(); });
   $$("[data-forget]").forEach(b=>b.onclick=async()=>{ if(await run(()=>sb.from("patient_meds").delete().eq("id",+b.dataset.forget),"Retiré de vos médicaments")){ S.meds=S.meds.filter(m=>m.id!==+b.dataset.forget); render(); } });
   $$("[data-req]").forEach(b=>b.onclick=()=>openRequest(+b.dataset.req));
 }
@@ -919,6 +954,7 @@ function patientAccount(a){
   const m=S.me;
   a.innerHTML=`<div class="convhead"><button class="back" id="back" aria-label="Retour">${IC.back}</button><div><h2>Mon compte</h2><small>${esc(S.session.user.email)}</small></div></div>
   ${photoCardHTML("Facultatif. Visible uniquement par vous et par l'équipe du centre, pour vous reconnaître.")}
+  ${m.status==="active"?familyCardHTML():""}
   <form class="form acct" id="acctform" style="margin-top:12px">
    <div class="row2"><label class="fld" for="a-first">Prénom<input id="a-first" value="${esc(m.first_name)}"></label><label class="fld" for="a-last">Nom<input id="a-last" value="${esc(m.last_name)}"></label></div>
    <div class="row2"><label class="fld" for="a-birth">Date de naissance<input id="a-birth" type="date" value="${esc(m.birth_date||"")}"></label><label class="fld" for="a-phone">Téléphone<input id="a-phone" type="tel" value="${esc(m.phone)}"></label></div>
@@ -941,10 +977,47 @@ function patientAccount(a){
   $("#delconf").oninput=e=>{ $("#delgo").disabled=e.target.value.trim().toUpperCase()!=="SUPPRIMER"; };
   $("#delgo").onclick=async e=>{ e.target.disabled=true;
     if(await run(()=>sb.rpc("delete_my_account"))){ await logout("Votre compte et ses données ont été supprimés."); } else e.target.disabled=false; };
-  bindPhotoCard();
+  bindPhotoCard(); bindFamily();
   $("#acctform").onsubmit=async e=>{ e.preventDefault();
     const upd={first_name:$("#a-first").value.trim(),last_name:$("#a-last").value.trim(),birth_date:$("#a-birth").value||null,phone:$("#a-phone").value.trim()};
     if(await run(()=>sb.from("profiles").update(upd).eq("id",m.id),"Enregistré")) Object.assign(S.me,upd); };
+}
+
+/* ----- Ma famille (Mon compte) ----- */
+function familyCardHTML(){
+  const F=S.family||{parents:[],children:[],invites:[],sent:[]}, others=(F.parents||[]).filter(p=>!p.me);
+  const st=c=>c.status==="pending"?`<span class="pill st-encours">En attente de validation</span>`:c.status==="blocked"?`<span class="pill st-traite">Non validé</span>`:c.age>=CHILD_MAX_AGE?`<span class="pill st-traite">${c.age} ans : propre compte</span>`:`<span class="pill st-reply">Validé</span>`;
+  return `<section class="card family" id="family"><h3>Ma famille</h3>
+   <p class="hint">Ajoutez vos enfants de moins de 16 ans pour faire des demandes en leur nom (rendez-vous, questions, prescriptions…). Le centre vérifie chaque enfant avant la première demande. À 16 ans, l'enfant crée son propre compte.</p>
+   ${(F.invites||[]).map(i=>`<div class="famnote"><b>${esc(i.from||"Un parent")}</b> vous invite à suivre ensemble les demandes de vos enfants.<div class="btnrow"><button class="btn" data-inv="${i.id}" data-acc="1">Accepter</button><button class="btn ghost" data-inv="${i.id}" data-acc="0">Refuser</button></div></div>`).join("")}
+   ${famKids().length?`<div class="list">${famKids().map(c=>`<div class="medrow"><div class="ic">${IC.user}</div><div><b>${esc(c.first_name+" "+c.last_name)}</b><small>Né(e) le ${fmtDate(c.birth_date)}</small></div><div class="acts">${st(c)}<button class="linkbtn" style="font-size:12px;color:var(--muted)" data-rmkid="${c.id}">Retirer</button></div></div>`).join("")}</div>`:""}
+   <details class="famadd" ${famKids().length?"":"open"}><summary>Ajouter un enfant</summary>
+    <div class="row2"><label class="fld">Prénom<input id="k-first" autocomplete="off"></label><label class="fld">Nom<input id="k-last" value="${esc(S.me.last_name||"")}" autocomplete="off"></label></div>
+    <label class="fld">Date de naissance<input id="k-birth" type="date"></label>
+    <div class="btnrow"><button class="btn" id="k-add">Ajouter</button></div></details>
+   <h4>Autre parent</h4>
+   ${others.length?`<p>${others.map(p=>`<b>${esc(`${p.first_name||""} ${p.last_name||""}`.trim()||"Autre parent")}</b>`).join(", ")} suit aussi les demandes des enfants.</p><button class="linkbtn" id="f-leave">Quitter cette famille</button>`
+   :`<p class="hint">L'autre parent peut suivre les demandes des enfants avec son propre compte (validé). Indiquez l'adresse e-mail de son compte : il recevra une invitation.</p>
+    <div class="row2"><label class="fld">E-mail de l'autre parent<input id="f-email" type="email" autocomplete="off"></label><div class="btnrow" style="align-self:end"><button class="btn ghost" id="f-invite">Inviter</button></div></div>
+    ${(F.sent||[]).length?`<p class="hint">Invitation envoyée ${fmt(F.sent[F.sent.length-1].created_at)}, en attente de réponse.</p>`:""}`}
+  </section>`;
+}
+function bindFamily(){
+  if(!$("#family")) return;
+  const reload=async()=>{ await loadPatient(); render(); setTimeout(()=>$("#family")?.scrollIntoView({block:"start"}),50); };
+  $("#k-add").onclick=async e=>{ const f=$("#k-first").value.trim(), l=$("#k-last").value.trim(), b=$("#k-birth").value;
+    if(!f||!l||!b) return toast("Indiquez le prénom, le nom et la date de naissance.");
+    e.target.disabled=true;
+    if(await run(()=>sb.rpc("add_child",{p_first:f,p_last:l,p_birth:b}),"Enfant ajouté : le centre va le valider")) await reload(); else e.target.disabled=false; };
+  $$("[data-rmkid]").forEach(b=>b.onclick=async()=>{ const c=famKids().find(x=>x.id===b.dataset.rmkid);
+    if(b.dataset.sure!=="1"){ b.dataset.sure="1"; b.textContent=`Retirer ${c?.first_name||""} ? Confirmer`; b.style.color="var(--danger)"; return; }
+    if(await run(()=>sb.rpc("remove_child",{p_child:b.dataset.rmkid}),"Retiré de votre famille")) await reload(); });
+  $$("[data-inv]").forEach(b=>b.onclick=async()=>{ const ok=b.dataset.acc==="1";
+    if(await run(()=>sb.rpc("respond_family_invite",{p_id:+b.dataset.inv,p_accept:ok}),ok?"Vous suivez maintenant les demandes de vos enfants":"Invitation refusée")) await reload(); });
+  const inv=$("#f-invite"); if(inv) inv.onclick=async()=>{ const em=$("#f-email").value.trim(); if(!/^\S+@\S+\.\S+$/.test(em)) return toast("Indiquez une adresse e-mail valide.");
+    const r=await run(()=>sb.rpc("invite_coparent",{p_email:em})); if(r){ toast(r.data||"Invitation envoyée"); await reload(); } };
+  const lv=$("#f-leave"); if(lv) lv.onclick=async()=>{ if(lv.dataset.sure!=="1"){ lv.dataset.sure="1"; lv.textContent="Vous ne verrez plus les demandes des enfants. Confirmer ?"; lv.style.color="var(--danger)"; return; }
+    if(await run(()=>sb.rpc("leave_family"),"Vous avez quitté la famille")) await reload(); };
 }
 
 // Droit d'accès et de portabilité : copie lisible de toutes les données du compte
@@ -957,7 +1030,8 @@ async function exportMyData(){
   const data={ exporte_le:new Date().toISOString(), source:"Application du Centre Médical Prince de Liège (app.cmpl.be)",
     compte:{ email:S.session.user.email, prenom:S.me.first_name, nom:S.me.last_name, date_de_naissance:S.me.birth_date, telephone:S.me.phone, cree_le:S.me.created_at, valide_le:S.me.approved_at,
       photo_de_profil:AV.get(S.me.id)?"oui (visible dans Mon compte)":"non", notifications_annonces:S.me.news_push, choix_annonces_le:S.me.news_choice_at },
-    demandes:S.reqs.map(strip), mes_medicaments:S.meds.map(m=>({medicament:m.label,derniere_prescription:m.last_granted_at,fois:m.times_granted})),
+    ma_famille:S.family?{parents:(S.family.parents||[]).map(p=>`${p.first_name||""} ${p.last_name||""}`.trim()),enfants:famKids().map(c=>({prenom:c.first_name,nom:c.last_name,date_de_naissance:c.birth_date,statut:c.status}))}:null,
+    demandes:S.reqs.map(r=>({...strip(r),pour:r.child_id?childFirst(r.child_id):"moi"})), mes_medicaments:S.meds.map(m=>({medicament:m.label,derniere_prescription:m.last_granted_at,fois:m.times_granted})),
     notifications:S.notifs.map(n=>({titre:n.title,texte:n.body,le:n.created_at,lue_le:n.read_at})),
     note:"Le contenu des photos, documents et messages vocaux peut être ouvert dans l'app et enregistré depuis chaque conversation." };
   const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:"application/json"}));
@@ -966,7 +1040,7 @@ async function exportMyData(){
 }
 
 /* ----- formulaire guidé ----- */
-function startFlow(k, preset){ (S.flowFiles||[]).forEach(f=>f.url&&URL.revokeObjectURL(f.url)); S.flowFiles=[]; S.flow=k; S.answers={}; S.drug={q:"",basket:preset?[...preset]:[],manual:false}; S.screen="flow"; render(); scrollTo(0,0); }
+function startFlow(k, preset, pour){ (S.flowFiles||[]).forEach(f=>f.url&&URL.revokeObjectURL(f.url)); S.flowFiles=[]; S.flow=k; S.answers=pour&&kids().length?{pour}:{}; S.drug={q:"",basket:preset?[...preset]:[],manual:false}; S.screen="flow"; render(); scrollTo(0,0); }
 const activeSteps = () => FLOWS[S.flow].filter(s=>!s.when||s.when(S.answers));
 function patientFlow(a){
   const steps=activeSteps();
@@ -1089,7 +1163,9 @@ function bindSummary(){
     if(!prov && ans.specialite && P.of(ans.specialite).length===1) prov=P.of(ans.specialite)[0];
     if(prov) ans.provider_id=prov.id;
     if(S.flow==="prescription") ans.medicaments=S.drug.basket.map(l=>({label:l,boites:boxes(l)}));
-    const r = await run(()=>sb.from("requests").insert({type:S.flow, answers:ans}).select(REQ_SELECT).single());
+    const kid=kidFromPour(ans.pour);
+    const row={type:S.flow, answers:ans}; if(kid) row.child_id=kid.id;
+    const r = await run(()=>sb.from("requests").insert(row).select(REQ_SELECT).single());
     if(!r){ e.target.disabled=false; return; }
     S.lastSent=r.data; S.reqs.unshift(r.data);
     if(S.flowFiles&&S.flowFiles.length){ e.target.textContent="Envoi des fichiers…";
@@ -1104,7 +1180,7 @@ function patientReq(a){
   const items=(r.request_items||[]), key="p"+r.id;
   const itemsHTML = r.type==="prescription"&&items.some(i=>i.decision) ? `<div class="itemlist">${items.map(i=>`<div><span>${esc(i.label)}<small class="qty">${qtyText(i.quantity||1)}</small></span><span class="dtag ${i.decision==="accorde"?"ok":"no"}">${i.decision==="accorde"?"Prescrit":i.decision?"Non renouvelé":"En attente"}</span></div>`).join("")}</div>` : "";
   a.className="wrap chatpage";
-  a.innerHTML=`<div class="convhead sticky"><button class="back" id="back" aria-label="Retour">${IC.back}</button>${PAV.get(r.provider_id)?avatarHTML(PAV.get(r.provider_id),"",40):`<div class="ic avatar">${IC[r.type]}</div>`}<div style="min-width:0"><h2>${esc(provName(r.provider_id)||"Secrétariat")}</h2><small>${TYPES[r.type].label} · ${stLabelP(r)}</small></div></div>
+  a.innerHTML=`<div class="convhead sticky"><button class="back" id="back" aria-label="Retour">${IC.back}</button>${PAV.get(r.provider_id)?avatarHTML(PAV.get(r.provider_id),"",40):`<div class="ic avatar">${IC[r.type]}</div>`}<div style="min-width:0"><h2>${esc(provName(r.provider_id)||"Secrétariat")}</h2><small>${TYPES[r.type].label}${r.child_id?` · pour ${esc(childFirst(r.child_id))}`:""} · ${stLabelP(r)}</small></div></div>
   ${chatHTML(r,"patient")}${itemsHTML}
   ${r.purged_at||r.status==="traite"?`<div class="closed"><b>${r.purged_at?"Conversation effacée":"Conversation clôturée par le centre"}</b><span>${r.purged_at?"":`Vous pouvez la relire jusqu'au ${fmtDate(purgeDate(r))}, date à laquelle elle sera effacée. <b>Pour la garder, enregistrez-la en PDF.</b> `}Pour une suite ou une autre question, ouvrez une nouvelle demande.</span>${r.purged_at?"":`<div class="btnrow savepdf"><button class="btn ghost" id="savepdf">${IC.doc} Enregistrer la conversation (PDF)</button></div>`}<div class="btnrow"><button class="btn" id="newq">Nouvelle question</button><button class="btn ghost" id="newr">Demander un rendez-vous</button></div></div>`
   :`${composerHTML(key)}<p class="hint center small">Lu pendant les heures d'ouverture. Urgence vitale : appelez le 112.</p>`}`;
@@ -1120,6 +1196,8 @@ function patientReq(a){
 /* =====================================================================
    ÉQUIPE
    ===================================================================== */
+// Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
+const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
 function renderStaff(a){
@@ -1129,19 +1207,21 @@ function renderStaff(a){
   <div class="nav">
    <button data-cs="inbox" aria-pressed="${sc==="inbox"}">Demandes<span class="n">${S.reqs.filter(awaitingStaff).length||""}</span></button>
    <button data-cs="compose" aria-pressed="${sc==="compose"}">Écrire à un patient</button>
-   ${isDesk()?`<button data-cs="accounts" aria-pressed="${sc==="accounts"}">Comptes à valider<span class="n">${S.pending.length||""}</span></button>`:""}
+   <button data-cs="tasks" aria-pressed="${sc==="tasks"}">Tâches<span class="n">${myTasks().length||""}</span></button>
+   ${isDesk()?`<button data-cs="accounts" aria-pressed="${sc==="accounts"}">Comptes à valider<span class="n">${(S.pending.length+(S.pendingKids||[]).length)||""}</span></button>`:""}
    ${isDesk()?`<button data-cs="news" aria-pressed="${sc==="news"}">Actualités</button>`:""}
    ${S.me.role==="admin"?`<button data-cs="team" aria-pressed="${sc==="team"}">Équipe</button>`:""}
    <button data-cs="settings" aria-pressed="${sc==="settings"}">Mon profil</button>
    <button id="reload">Actualiser</button>
+   <a class="navlink" href="${ROSA_PRO_URL}" target="_blank" rel="noopener" title="Ouvre votre agenda Rosa (connexion avec votre propre compte Rosa)">Mon agenda Rosa ↗</a>
   </div>`;
   let body="";
-  if(sc==="compose") body=composeHTML(); else if(sc==="accounts") body=accountsHTML(); else if(sc==="news") body=newsAdminHTML(); else if(sc==="team") body=teamHTML(); else if(sc==="settings") body=settingsHTML(); else body=inboxHTML();
+  if(sc==="compose") body=composeHTML(); else if(sc==="tasks") body=tasksHTML(); else if(sc==="accounts") body=accountsHTML(); else if(sc==="news") body=newsAdminHTML(); else if(sc==="team") body=teamHTML(); else if(sc==="settings") body=settingsHTML(); else body=inboxHTML();
   a.innerHTML=nav+body;
   $("#logout").onclick=logout;
   $("#reload").onclick=async()=>{ await refresh(); toast("Actualisé"); };
   $$("[data-cs]").forEach(b=>b.onclick=()=>{ S.cscreen=b.dataset.cs; render(); });
-  if(sc==="compose") bindCompose(); else if(sc==="accounts") bindAccounts(); else if(sc==="news") bindNewsAdmin(); else if(sc==="team") bindTeam(); else if(sc==="settings") bindSettings(); else bindInbox();
+  if(sc==="compose") bindCompose(); else if(sc==="tasks") bindTasks(); else if(sc==="accounts") bindAccounts(); else if(sc==="news") bindNewsAdmin(); else if(sc==="team") bindTeam(); else if(sc==="settings") bindSettings(); else bindInbox();
 }
 
 /* ----- durée estimée des rendez-vous de médecine générale (visible par l'équipe seulement) ----- */
@@ -1178,7 +1258,7 @@ function inboxHTML(){
   ${S.tab==="prestataires"&&provs.length>1?`<div class="tabs">${["tous",...provs].map(id=>{const k=S.reqs.filter(r=>r.provider_id===id&&r.queue==="prestataires"&&r.status!=="traite").length;return `<button class="tab" data-pf="${id}" aria-pressed="${S.provFilter===id}" style="font-weight:400">${id==="tous"?"Tous":esc(provName(id))}${id!=="tous"&&k?`<span class="n">${k}</span>`:""}</button>`}).join("")}</div>`:""}
   <div class="seg" role="group" aria-label="Filtrer" style="margin-bottom:10px"><button id="f-open" aria-pressed="${!S.archive}">À traiter</button><button id="f-arch" aria-pressed="${S.archive}">Classées (${nArch})</button></div>${!S.archive&&(nShort||S.short)?` <button class="tab shortbtn" id="f-short" aria-pressed="${!!S.short}" title="Rendez-vous de médecine générale de 10 minutes ou moins">⏱ Rendez-vous courts (≤ 10 min)<span class="n">${nShort}</span></button>`:""}
   <div class="pane">
-   <div class="list inbox">${list.length?list.map(r=>{const ms=msgsOf(r);return `<button class="row" data-sel="${r.id}" aria-current="${r.id===S.sel}"><span class="prio ${r.priority==="haute"&&awaitingStaff(r)?"on":""}"></span><div class="ic">${IC[r.type]}</div><div><b>${esc(patientName(r.patient_id))}</b><small>${TYPES[r.type].label} · ${esc(summaryLine(r.answers))}</small>${durHTML(r)}<small>${ms.length?`${ms.length} message${ms.length>1?"s":""} · dernier ${fmt(ms[ms.length-1].created_at)}`:`Reçue ${fmt(r.created_at)}`}</small>${dueHTML(r)}</div><span class="pill st-${stClass(r)}">${stLabel(r)}</span></button>`}).join(""):`<div class="empty">${S.archive?"Aucune conversation classée.":"Rien à traiter."}</div>`}</div>
+   <div class="list inbox">${list.length?list.map(r=>{const ms=msgsOf(r);return `<button class="row" data-sel="${r.id}" aria-current="${r.id===S.sel}"><span class="prio ${r.priority==="haute"&&awaitingStaff(r)?"on":""}"></span><div class="ic">${IC[r.type]}</div><div><b>${esc(reqName(r))}</b>${r.child_id?`<small class="kidtag">Enfant · demande de ${esc(patientName(r.patient_id))}</small>`:""}<small>${TYPES[r.type].label} · ${esc(summaryLine(r.answers))}</small>${durHTML(r)}<small>${ms.length?`${ms.length} message${ms.length>1?"s":""} · dernier ${fmt(ms[ms.length-1].created_at)}`:`Reçue ${fmt(r.created_at)}`}</small>${dueHTML(r)}</div><span class="pill st-${stClass(r)}">${stLabel(r)}</span></button>`}).join(""):`<div class="empty">${S.archive?"Aucune conversation classée.":"Rien à traiter."}</div>`}</div>
    <div id="detail">${detailHTML()}</div>
   </div>`;
 }
@@ -1194,8 +1274,9 @@ function detailHTML(){
   const closeBtn=!isRx?"Clôturer et classer":!allDecided?`Décidez pour chaque médicament (${todo.filter(i=>dec[i.id]).length}/${todo.length})`:todo.some(i=>dec[i.id]==="accorde")?"Valider la prescription et classer":"Envoyer le refus et classer";
   const transferOpts=[`<option value="">Secrétariat</option>`,...S.providers.map(pv=>`<option value="${pv.id}" ${pv.id===r.provider_id?"selected":""}>${esc(P.label(pv))}</option>`)].join("");
   return `<div class="detail">
-   <div class="dhead">${avatarHTML(AV.get(r.patient_id),patientName(r.patient_id),52)}<div><h2>${esc(patientName(r.patient_id))}</h2>
-    <div class="pinfo"><span>Né(e) le <b>${fmtDate(p.birth_date)}</b></span><span>Tél. <b>${esc(p.phone||"—")}</b></span></div>
+   <div class="dhead">${r.child_id?avatarHTML(null,reqName(r),52):avatarHTML(AV.get(r.patient_id),patientName(r.patient_id),52)}<div><h2>${esc(reqName(r))}</h2>
+    ${r.child_id?`<div class="pinfo"><span>Né(e) le <b>${fmtDate(S.children[r.child_id]?.birth_date)}</b></span><span>Enfant de <b>${esc(patientName(r.patient_id))}</b></span><span>Tél. parent <b>${esc(p.phone||"—")}</b></span></div>`
+    :`<div class="pinfo"><span>Né(e) le <b>${fmtDate(p.birth_date)}</b></span><span>Tél. <b>${esc(p.phone||"—")}</b></span></div>`}
     <div class="meta" style="margin-top:6px"><span class="tag">${TYPES[r.type].label}</span>${durHTML(r)}<span class="pill st-${stClass(r)}">${stLabel(r)}</span><span>Reçue ${fmt(r.created_at)} · ${esc(provName(r.provider_id)||"Secrétariat")}</span></div></div></div>
    ${open?`<div class="prioedit"><span class="hint">Priorité</span>${["haute","normale"].map(k=>`<button class="dec p-${k}" aria-pressed="${r.priority===k}" data-prio="${k}">${PRIO_LABEL[k]}</button>`).join("")}</div><div>${dueHTML(r)}</div>`:""}
    ${r.purged_at?"":`<dl class="qa">${Object.entries(r.answers||{}).filter(([k])=>!HIDDEN_KEYS.has(k)).map(([k,v])=>`<div><dt>${esc(LABELS[k]||k)}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>`}
@@ -1246,13 +1327,24 @@ function bindDetail(){
 
 /* ----- écrire en premier à un patient ----- */
 const SUBJECTS=["Résultats","Document ou certificat","Rappel (vaccin, contrôle…)","Information","Autre"];
+// Recherche d'un patient (compte validé) ou d'un enfant validé, par nom ou prénom
+async function searchPatients(words){
+  const w=words[0];
+  const [a,b]=await Promise.all([
+    sb.from("profiles").select("id,first_name,last_name,birth_date,phone").eq("role","patient").eq("status","active").or(`first_name.ilike.*${w}*,last_name.ilike.*${w}*`).limit(20),
+    sb.from("children").select("id,first_name,last_name,birth_date,status,created_by").eq("status","active").is("removed_at",null).or(`first_name.ilike.*${w}*,last_name.ilike.*${w}*`).limit(20)]);
+  if(a.error&&b.error) return null;
+  const all=[...(a.data||[]),...(b.data||[]).map(c=>({...c,child:true}))];
+  return all.filter(p=>words.every(x=>norm(`${p.first_name||""} ${p.last_name||""}`).includes(x))).slice(0,12);
+}
+const patientPickRow = p => `<button type="button" class="row" data-pick="${p.id}"><div class="ic">${IC.user}</div><div><b>${esc(`${p.first_name||""} ${p.last_name||""}`)}</b><small>Né(e) le ${fmtDate(p.birth_date)} · ${p.child?"Enfant (via ses parents)":`Tél. ${esc(p.phone||"—")}`}</small></div><span></span></button>`;
 function composeHTML(){
   const C=S.compose||(S.compose={patient:null,subject:SUBJECTS[0],body:"",files:[],reply:true,q:""}), pt=C.patient;
   const who=S.me.provider_id?provName(S.me.provider_id):"Secrétariat";
   return `<div class="chead"><div><h1>Écrire à un patient</h1><p>Pour un patient qui a un compte validé dans l'app. Il reçoit une notification neutre, sans contenu médical. Envoyé au nom de : <b>${esc(who)}</b>.</p></div></div>
   <div class="compose card">
    <h3>1. Destinataire</h3>
-   ${pt?`<div class="recipient">${AV.has(pt.id)?avatarHTML(AV.get(pt.id),`${pt.first_name||""} ${pt.last_name||""}`,40):`<div class="ic">${IC.user}</div>`}<div><b>${esc(`${pt.first_name||""} ${pt.last_name||""}`)}</b><small>Né(e) le ${fmtDate(pt.birth_date)} · Tél. ${esc(pt.phone||"—")}</small></div><button type="button" class="linkbtn" id="cp-change">Changer</button></div>
+   ${pt?`<div class="recipient">${AV.get(pt.id)?avatarHTML(AV.get(pt.id),`${pt.first_name||""} ${pt.last_name||""}`,40):`<div class="ic">${IC.user}</div>`}<div><b>${esc(`${pt.first_name||""} ${pt.last_name||""}`)}</b><small>Né(e) le ${fmtDate(pt.birth_date)} · ${pt.child?"Enfant : le message va à ses parents dans l'app":`Tél. ${esc(pt.phone||"—")}`}</small></div><button type="button" class="linkbtn" id="cp-change">Changer</button></div>
      <p class="hint" style="margin:0">Vérifiez la date de naissance : un message au mauvais patient est une fuite de données.</p>`
    :`<label class="fld" for="cp-q">Nom ou prénom du patient<input id="cp-q" type="text" autocomplete="off" placeholder="Au moins 2 lettres" value="${esc(C.q)}"></label><div id="cp-res"></div>`}
    <h3>2. Message</h3>
@@ -1277,11 +1369,9 @@ function bindCompose(){
   const q=$("#cp-q");
   if(q){ let t; const search=async()=>{ C.q=q.value; const words=norm(q.value).replace(/[*%,().]/g," ").split(/\s+/).filter(w=>w.length>=2), out=$("#cp-res");
       if(!words.length){ out.innerHTML=""; return; }
-      const w=words[0]; const {data,error}=await sb.from("profiles").select("id,first_name,last_name,birth_date,phone").eq("role","patient").eq("status","active").or(`first_name.ilike.*${w}*,last_name.ilike.*${w}*`).limit(20);
-      if(error){ out.innerHTML=`<p class="hint">${esc(frError(error))}</p>`; return; }
-      const rows=(data||[]).filter(p=>words.every(x=>norm(`${p.first_name||""} ${p.last_name||""}`).includes(x))).slice(0,10);
-      out.innerHTML=rows.length?`<div class="list">${rows.map(p=>`<button type="button" class="row" data-pick="${p.id}"><div class="ic">${IC.user}</div><div><b>${esc(`${p.first_name||""} ${p.last_name||""}`)}</b><small>Né(e) le ${fmtDate(p.birth_date)} · Tél. ${esc(p.phone||"—")}</small></div><span></span></button>`).join("")}</div>`:`<p class="hint">Aucun patient avec un compte validé ne correspond.</p>`;
-      out.querySelectorAll("[data-pick]").forEach(b=>b.onclick=async()=>{ C.patient=rows.find(p=>p.id===b.dataset.pick); await loadAvatars([C.patient.id]); render(); $("#cp-body")?.focus(); }); };
+      const rows=await searchPatients(words); if(rows===null){ out.innerHTML=`<p class="hint">La recherche n'a pas fonctionné. Réessayez.</p>`; return; }
+      out.innerHTML=rows.length?`<div class="list">${rows.map(p=>patientPickRow(p)).join("")}</div>`:`<p class="hint">Aucun patient avec un compte validé ne correspond.</p>`;
+      out.querySelectorAll("[data-pick]").forEach(b=>b.onclick=async()=>{ C.patient=rows.find(p=>p.id===b.dataset.pick); if(!C.patient.child) await loadAvatars([C.patient.id]); render(); $("#cp-body")?.focus(); }); };
     q.oninput=()=>{ clearTimeout(t); t=setTimeout(search,300); }; if(C.q) search(); q.focus({preventScroll:true}); }
   const inp=$("#cp-file"), pk=$("#cp-pick"); if(pk) pk.onclick=()=>inp.click();
   inp.onchange=async()=>{ for(const f of [...inp.files].slice(0,5-C.files.length)){ try{ C.files.push(await prepFile(f,"compose")); }catch(e){ toast(e.message); } } inp.value=""; render(); };
@@ -1289,23 +1379,99 @@ function bindCompose(){
   $$("[data-cprm]").forEach(b=>b.onclick=()=>{ const f=C.files.splice(+b.dataset.cprm,1)[0]; if(f&&f.url) URL.revokeObjectURL(f.url); render(); });
   $("#cp-reset").onclick=()=>{ C.files.forEach(f=>f.url&&URL.revokeObjectURL(f.url)); S.compose=null; render(); };
   const send=$("#cp-send"); send.onclick=async()=>{ send.disabled=true; send.textContent="Envoi…";
-    const r=await run(()=>sb.rpc("staff_start_conversation",{p_patient:C.patient.id,p_subject:C.subject,p_body:C.body.trim()}));
+    const r=await run(()=>sb.rpc("staff_start_conversation",{p_patient:C.patient.child?null:C.patient.id,p_subject:C.subject,p_body:C.body.trim(),p_child:C.patient.child?C.patient.id:null}));
     if(!r){ send.disabled=false; send.textContent="Réessayer"; return; }
     const id=r.data; let okAll=true;
     for(const f of C.files){ if(!await uploadAtt(id,f,null)){ okAll=false; break; } }
     if(!C.reply) await run(()=>sb.rpc("close_request",{p_id:id,p_body:null}));
     toast(okAll?"Message envoyé · patient notifié":"Message envoyé, mais une pièce jointe a échoué : ajoutez-la dans la conversation.");
     C.files.forEach(f=>f.url&&URL.revokeObjectURL(f.url)); S.compose=null;
-    S.profiles[C.patient.id]=C.patient; S.cscreen="inbox"; S.archive=!C.reply; await refresh();
+    if(C.patient.child) S.children[C.patient.id]=C.patient; else S.profiles[C.patient.id]=C.patient; S.cscreen="inbox"; S.archive=!C.reply; await refresh();
     const nr=S.reqs.find(x=>x.id===id); if(nr){ S.tab=nr.queue; S.sel=id; render(); } };
+}
+
+/* ----- tâches (équipe) ----- */
+const todayISO = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
+const teamName = id => { if(id===S.me.id) return "moi"; const t=S.team.find(x=>x.id===id); return t?`${t.first_name||""} ${t.last_name||""}`.trim()||ROLE_LABEL[t.role]:"—"; };
+const forMe = t => t.assigned_to===S.me.id || (t.assigned_group==="secretariat" && isDesk());
+const myTasks = () => (S.tasks||[]).filter(t=>!t.done_at&&forMe(t));
+const byDue = (a,b) => (a.due_date||"9999")<(b.due_date||"9999")?-1:(a.due_date||"9999")>(b.due_date||"9999")?1:new Date(b.created_at)-new Date(a.created_at);
+function dueTag(t){ if(!t.due_date||t.done_at) return ""; const td=todayISO();
+  const d=new Date(t.due_date+"T12:00").toLocaleDateString("fr-BE",{weekday:"short",day:"numeric",month:"short"});
+  return t.due_date<td?`<span class="due late">En retard · ${d}</span>`:t.due_date===td?`<span class="due haute">Aujourd'hui</span>`:`<span class="due">Pour le ${d}</span>`; }
+function taskLinkHTML(t){ if(!t.patient_id&&!t.child_id) return "";
+  const nm=t.child_id?kidName(t.child_id):patientName(t.patient_id), bd=t.child_id?S.children[t.child_id]?.birth_date:S.profiles[t.patient_id]?.birth_date;
+  return `<span class="tasklink">${IC.user}<b>${esc(nm)}</b>${bd?` · né(e) le ${fmtDate(bd)}`:""}${t.child_id?" · enfant":""}</span>`; }
+function tasksHTML(){
+  const D=S.tdraft||(S.tdraft={title:"",notes:"",due:"",to:"me",patient:null,q:""}), V=S.tview||"todo";
+  const all=S.tasks||[], todo=myTasks().sort(byDue), given=all.filter(t=>!t.done_at&&t.created_by===S.me.id&&!forMe(t)).sort(byDue),
+        done=all.filter(t=>t.done_at).sort((a,b)=>new Date(b.done_at)-new Date(a.done_at));
+  const list=V==="todo"?todo:V==="given"?given:done;
+  const others=S.team.filter(t=>t.id!==S.me.id&&t.status==="active");
+  const pt=D.patient;
+  return `<div class="chead"><div><h1>Tâches</h1><p>Pour vous, pour un collègue ou pour tout le secrétariat. Une tâche peut être liée à un patient. Elle n'est visible que par vous et la ou les personnes qui doivent la faire.</p></div></div>
+  <div class="taskgrid">
+  <section class="card taskform"><h3>Nouvelle tâche</h3>
+   <label class="fld">Tâche<input id="tk-title" maxlength="200" autocomplete="off" placeholder="Ex. Changer les filtres de la ventilation" value="${esc(D.title)}"></label>
+   <label class="fld">Note (facultatif)<textarea id="tk-notes" rows="3" maxlength="2000" placeholder="Ex. Vérifier sa prise de sang et l'appeler si anomalie">${esc(D.notes)}</textarea></label>
+   <div class="row2"><label class="fld">Pour<select id="tk-to"><option value="me" ${D.to==="me"?"selected":""}>Moi</option><option value="secretariat" ${D.to==="secretariat"?"selected":""}>Secrétariat (toute l'équipe du secrétariat)</option>${others.map(t=>`<option value="${t.id}" ${D.to===t.id?"selected":""}>${esc(`${t.first_name||""} ${t.last_name||""}`.trim())} · ${ROLE_LABEL[t.role]}</option>`).join("")}</select></label>
+   <label class="fld">Échéance (facultatif)<input id="tk-due" type="date" value="${esc(D.due)}"></label></div>
+   <div class="fld">Patient lié (facultatif)
+   ${pt?`<div class="recipient">${`<div class="ic">${IC.user}</div>`}<div><b>${esc(`${pt.first_name||""} ${pt.last_name||""}`)}</b><small>Né(e) le ${fmtDate(pt.birth_date)}${pt.child?" · enfant":""}</small></div><button type="button" class="linkbtn" id="tk-unpick">Retirer</button></div>`
+   :`<input id="tk-q" type="text" autocomplete="off" placeholder="Nom ou prénom (au moins 2 lettres)" value="${esc(D.q)}"><div id="tk-res"></div>`}</div>
+   <div class="btnrow"><button class="btn" id="tk-add" ${D.title.trim()?"":"disabled"}>Ajouter la tâche</button></div>
+  </section>
+  <section>
+   <div class="seg" role="group" aria-label="Afficher" style="margin-bottom:10px"><button data-tv="todo" aria-pressed="${V==="todo"}">À faire (${todo.length})</button><button data-tv="given" aria-pressed="${V==="given"}">Confiées (${given.length})</button><button data-tv="done" aria-pressed="${V==="done"}">Terminées</button></div>
+   <div class="list tasks">${list.length?list.map(t=>`<div class="taskrow ${t.done_at?"done":""}">
+     <button class="tcheck" data-tdone="${t.id}" aria-pressed="${!!t.done_at}" aria-label="${t.done_at?"Marquer comme à faire":"Marquer comme faite"}">${t.done_at?"✓":""}</button>
+     <div><b>${esc(t.title)}</b>${t.notes?`<p class="tnotes">${esc(t.notes)}</p>`:""}${taskLinkHTML(t)}
+      <small>${t.assigned_group?"Pour : secrétariat":"Pour : "+esc(teamName(t.assigned_to))} · de ${esc(teamName(t.created_by))} · ${fmt(t.created_at)}${t.done_at?` · faite ${fmt(t.done_at)} par ${esc(teamName(t.done_by))}`:""}</small>${dueTag(t)}</div>
+     ${t.created_by===S.me.id?`<button class="linkbtn tdel" data-tdel="${t.id}">Supprimer</button>`:"<span></span>"}</div>`).join("")
+     :`<div class="empty">${V==="todo"?"Rien à faire pour l'instant.":V==="given"?"Aucune tâche confiée en cours.":"Aucune tâche terminée (elles sont effacées après 90 jours)."}</div>`}</div>
+  </section></div>`;
+}
+function bindTasks(){
+  const D=S.tdraft, add=$("#tk-add");
+  const upd=()=>{ add.disabled=!D.title.trim(); };
+  $("#tk-title").oninput=e=>{ D.title=e.target.value; upd(); };
+  $("#tk-notes").oninput=e=>{ D.notes=e.target.value; };
+  $("#tk-to").onchange=e=>{ D.to=e.target.value; };
+  $("#tk-due").onchange=e=>{ D.due=e.target.value; };
+  const un=$("#tk-unpick"); if(un) un.onclick=()=>{ D.patient=null; render(); $("#tk-q")?.focus(); };
+  const q=$("#tk-q");
+  if(q){ let tm; const go=async()=>{ D.q=q.value; const words=norm(q.value).replace(/[*%,().]/g," ").split(/\s+/).filter(w=>w.length>=2), out=$("#tk-res");
+      if(!words.length){ out.innerHTML=""; return; }
+      const rows=await searchPatients(words); if(rows===null){ out.innerHTML=`<p class="hint">La recherche n'a pas fonctionné.</p>`; return; }
+      out.innerHTML=rows.length?`<div class="list">${rows.map(patientPickRow).join("")}</div>`:`<p class="hint">Aucun patient ne correspond.</p>`;
+      out.querySelectorAll("[data-pick]").forEach(b=>b.onclick=()=>{ D.patient=rows.find(p=>p.id===b.dataset.pick); render(); }); };
+    q.oninput=()=>{ clearTimeout(tm); tm=setTimeout(go,300); }; if(D.q) go(); }
+  add.onclick=async()=>{ add.disabled=true; const pt=D.patient;
+    const r=await run(()=>sb.rpc("create_task",{p_title:D.title.trim(),p_notes:D.notes.trim()||null,p_due:D.due||null,
+      p_assignee:D.to==="me"?S.me.id:D.to==="secretariat"?null:D.to,p_group:D.to==="secretariat"?"secretariat":null,
+      p_patient:pt&&!pt.child?pt.id:null,p_child:pt&&pt.child?pt.id:null}),"Tâche ajoutée");
+    if(!r){ upd(); return; }
+    if(pt){ if(pt.child) S.children[pt.id]=pt; else S.profiles[pt.id]=pt; }
+    S.tdraft=null; S.tview=D.to==="me"||(D.to==="secretariat"&&isDesk())?"todo":"given"; await refresh(); };
+  $$("[data-tv]").forEach(b=>b.onclick=()=>{ S.tview=b.dataset.tv; render(); });
+  $$("[data-tdone]").forEach(b=>b.onclick=async()=>{ const t=S.tasks.find(x=>x.id===+b.dataset.tdone), d=!t.done_at;
+    if(await run(()=>sb.rpc("set_task_done",{p_id:t.id,p_done:d}),d?"Tâche faite":"Tâche remise à faire")){ t.done_at=d?new Date().toISOString():null; t.done_by=d?S.me.id:null; render(); } });
+  $$("[data-tdel]").forEach(b=>b.onclick=async()=>{ if(b.dataset.sure!=="1"){ b.dataset.sure="1"; b.textContent="Confirmer ?"; b.style.color="var(--danger)"; return; }
+    if(await run(()=>sb.rpc("delete_task",{p_id:+b.dataset.tdel}),"Tâche supprimée")){ S.tasks=S.tasks.filter(x=>x.id!==+b.dataset.tdel); render(); } });
 }
 
 /* ----- comptes à valider ----- */
 function accountsHTML(){
+  const K=S.pendingKids||[];
   return `<div class="chead"><div><h1>Comptes à valider</h1><p>Vérifiez que la personne est bien patiente du centre (nom, date de naissance, téléphone) avant de valider.</p></div></div>
+  ${K.length?`<h3 class="subh">Enfants ajoutés par un parent</h3><p class="hint">Vérifiez dans le dossier que l'enfant existe et que la personne est bien son parent.</p>
+  <div class="list" style="margin-bottom:20px">${K.map(c=>`<div class="medrow"><div class="ic">${IC.user}</div><div><b>${esc(c.first_name+" "+c.last_name)}</b><small>Né(e) le ${fmtDate(c.birth_date)} · ajouté par <b>${esc(patientName(c.created_by))}</b> (né(e) le ${fmtDate(S.profiles[c.created_by]?.birth_date)}, tél. ${esc(S.profiles[c.created_by]?.phone||"—")}) · ${fmt(c.created_at)}</small></div><div class="acts"><button class="mini" data-kok="${c.id}">Valider</button><button class="linkbtn" style="font-size:12px;color:var(--muted)" data-kno="${c.id}">Refuser</button></div></div>`).join("")}</div>
+  <h3 class="subh">Comptes de patients</h3>`:""}
   <div class="list">${S.pending.length?S.pending.map(p=>`<div class="medrow"><div class="ic">${IC.user}</div><div><b>${esc((p.first_name||"")+" "+(p.last_name||""))}</b><small>Né(e) le ${fmtDate(p.birth_date)} · Tél. ${esc(p.phone||"—")} · inscrit ${fmt(p.created_at)}</small></div><div class="acts"><button class="mini" data-ok="${p.id}">Valider</button><button class="linkbtn" style="font-size:12px;color:var(--muted)" data-no="${p.id}">Refuser</button></div></div>`).join(""):`<div class="empty">Aucun compte en attente.</div>`}</div>`;
 }
 function bindAccounts(){
+  $$("[data-kok]").forEach(b=>b.onclick=async()=>{ if(await run(()=>sb.rpc("set_child_status",{p_child:b.dataset.kok,p_status:"active"}),"Enfant validé · parents prévenus")) await refresh(); });
+  $$("[data-kno]").forEach(b=>b.onclick=async()=>{ if(await run(()=>sb.rpc("set_child_status",{p_child:b.dataset.kno,p_status:"blocked"}),"Ajout refusé · parents prévenus")) await refresh(); });
   $$("[data-ok]").forEach(b=>b.onclick=async()=>{ if(await run(()=>sb.rpc("set_patient_status",{p_patient:b.dataset.ok,p_status:"active"}),"Compte validé")) await refresh(); });
   $$("[data-no]").forEach(b=>b.onclick=async()=>{ if(await run(()=>sb.rpc("set_patient_status",{p_patient:b.dataset.no,p_status:"blocked"}),"Compte refusé")) await refresh(); });
 }
@@ -1457,9 +1623,9 @@ sb.auth.onAuthStateChange((event, session)=>{
 let busy=false;
 async function autoRefresh(){ if(busy||!S.session||S.loading||document.hidden) return; const el=document.activeElement;
   if(el&&(el.tagName==="TEXTAREA"||el.tagName==="INPUT"||el.tagName==="SELECT")) return;
-  if(S.screen==="flow"||S.rec||S.pend||S.editNews||S.cscreen==="compose"||S.cscreen==="settings"||document.querySelector(".viewer,.scanner")) return; busy=true; try{ await refresh(); } finally{ busy=false; } }
+  if(S.screen==="flow"||S.rec||S.pend||S.editNews||S.cscreen==="compose"||S.cscreen==="settings"||S.cscreen==="tasks"||document.querySelector(".viewer,.scanner")) return; busy=true; try{ await refresh(); } finally{ busy=false; } }
 setInterval(autoRefresh, 60000);
 document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) autoRefresh(); });
 if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
-console.log("CMPL app version 20261016b");
+console.log("CMPL app version 20261016d");
 })();
