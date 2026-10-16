@@ -826,7 +826,38 @@ function render(){
   if(REC) stopRec();
   draw(); hydrateAtt();
   if($("#chat")) requestAnimationFrame(scrollChat);
+  updateBadges();
 }
+
+/* ---------- pastille « nouveau » : titre de l'onglet, icône de l'onglet, icône de l'app ---------- */
+const BASE_TITLE=document.title;
+const badgeCount = () => !S.me||S.me.status!=="active" ? 0
+  : S.me.role==="patient" ? S.notifs.filter(n=>!n.read_at).length
+  : S.reqs.filter(awaitingStaff).length;
+let lastBadge=-1, favImg=null;
+function setFavicon(n){
+  const link=document.querySelector('link[rel="icon"]'); if(!link) return;
+  if(!link.dataset.base) link.dataset.base=link.href;
+  if(!n){ link.href=link.dataset.base; return; }
+  const draw=()=>{ const c=document.createElement("canvas"); c.width=c.height=64; const g=c.getContext("2d");
+    g.drawImage(favImg,0,0,64,64); g.fillStyle="#d92d20"; g.beginPath(); g.arc(46,18,17,0,Math.PI*2); g.fill();
+    g.fillStyle="#fff"; g.font="bold 24px sans-serif"; g.textAlign="center"; g.textBaseline="middle"; g.fillText(n>9?"9+":String(n),46,19);
+    link.href=c.toDataURL("image/png"); };
+  if(favImg&&favImg.complete) draw(); else { favImg=new Image(); favImg.onload=draw; favImg.src=link.dataset.base; }
+}
+function updateBadges(n=badgeCount()){
+  if(n===lastBadge) return; lastBadge=n;
+  document.title = n ? `(${n}) ${BASE_TITLE}` : BASE_TITLE;
+  setFavicon(n);
+  try{ if(navigator.setAppBadge){ (n?navigator.setAppBadge(n):navigator.clearAppBadge()).catch(()=>{}); } }catch(e){}
+}
+// Onglet en arrière-plan : le compteur se met à jour toutes les 2 minutes, sans recharger l'écran
+setInterval(async()=>{ if(!document.hidden||!S.me||S.me.status!=="active") return;
+  try{
+    if(S.me.role==="patient"){ const r=await sb.from("notifications").select("id",{count:"exact",head:true}).eq("user_id",S.me.id).is("read_at",null); if(!r.error) updateBadges(r.count||0); }
+    else { const r=await sb.from("requests").select("id",{count:"exact",head:true}).neq("status","traite").eq("last_from","patient"); if(!r.error) updateBadges(r.count||0); }
+  }catch(e){}
+},120000);
 function draw(){
   const a=app();
   if(S.loading){ a.className="wrap"; a.innerHTML=`<div class="loading">Chargement…</div>`; return; }
@@ -938,7 +969,7 @@ function renderBlocked(a){
   <div class="closed"><b>Compte non validé</b><span>Ce compte n'a pas pu être validé. Contactez le secrétariat au 02 781 18 75.</span></div>`;
   $("#logout").onclick=logout;
 }
-async function logout(reason){ await sb.auth.signOut(); const keep=savedLang(); if(keep&&keep!==L) applyLang(keep); S.session=null; S.me=null; S.mfa=null; S.screen="home"; S.cscreen="inbox"; try{ localStorage.removeItem("cmpl_last_active"); }catch(e){} render(); if(typeof reason==="string") toast(reason); }
+async function logout(reason){ await sb.auth.signOut(); updateBadges(0); const keep=savedLang(); if(keep&&keep!==L) applyLang(keep); S.session=null; S.me=null; S.mfa=null; S.screen="home"; S.cscreen="inbox"; try{ localStorage.removeItem("cmpl_last_active"); }catch(e){} render(); if(typeof reason==="string") toast(reason); }
 
 /* =====================================================================
    PATIENT
@@ -1012,9 +1043,12 @@ function patientNotifs(a){
   a.innerHTML=`<div class="convhead"><button class="back" id="back" aria-label="Retour">${IC.back}</button><div><h2>Notifications</h2></div></div>
   <label class="pref"><input type="checkbox" id="emailnotif" ${S.me.email_notify!==false?"checked":""}><span><b>Me prévenir par e-mail</b><small>Un e-mail court quand le centre vous écrit, sans aucune information médicale : il vous invite simplement à ouvrir l'application.</small></span></label>
   <label class="pref"><input type="checkbox" id="newspush" ${S.me.news_push?"checked":""}><span><b>Annonces importantes du centre</b><small>Fermetures exceptionnelles, campagnes de vaccination. Uniquement si vous cochez cette case. Les réponses à vos demandes restent toujours notifiées.</small></span></label>
+  ${("setAppBadge" in navigator)&&("Notification" in window)&&Notification.permission!=="granted"?`<div class="pref"><span><b>Pastille sur l'icône de l'app</b><small>Affiche le nombre de nouvelles notifications sur l'icône de l'app, comme WhatsApp. Votre téléphone va vous demander l'autorisation.</small><button class="btn ghost" id="badgeon" style="margin-top:8px">Activer</button></span></div>`:""}
   ${S.notifs.some(n=>!n.read_at)?`<div class="btnrow readall"><button class="btn ghost" id="readall">✓ Tout marquer comme lu</button></div>`:""}
   <div class="list">${S.notifs.length?S.notifs.map(n=>`<button class="row nrow ${n.read_at?"":"unread"}" data-n="${n.id}"><div class="ic">${n.announcement_id?IC.news:IC.bell}</div><div><b>${esc(n.title)}</b><small style="white-space:normal">${esc(n.body)}</small><small>${fmt(n.created_at)}</small></div><span></span></button>`).join(""):`<div class="empty">Aucune notification.</div>`}</div>`;
   $("#back").onclick=()=>{S.screen="home";render()};
+  const bo=$("#badgeon"); if(bo) bo.onclick=async()=>{ try{ const p=await Notification.requestPermission();
+      if(p==="granted"){ lastBadge=-1; updateBadges(); toast("Pastille activée"); render(); } else toast("Pastille refusée : vous pouvez l'autoriser dans les réglages du téléphone."); }catch(e){ toast("Pastille refusée : vous pouvez l'autoriser dans les réglages du téléphone."); } };
   const ra=$("#readall"); if(ra) ra.onclick=async()=>{ ra.disabled=true; const now=new Date().toISOString();
     if(await run(()=>sb.from("notifications").update({read_at:now}).eq("user_id",S.me.id).is("read_at",null),"Toutes les notifications sont marquées comme lues")){ S.notifs.forEach(n=>{ if(!n.read_at) n.read_at=now; }); render(); } else ra.disabled=false; };
   $("#emailnotif").onchange=async e=>{ const v=e.target.checked; if(await run(()=>sb.from("profiles").update({email_notify:v}).eq("id",S.me.id),v?"Vous serez prévenu par e-mail":"Plus d'e-mail de notification")) S.me.email_notify=v; else e.target.checked=!v; };
@@ -1738,5 +1772,5 @@ async function autoRefresh(){ if(busy||!S.session||S.loading||document.hidden) r
 setInterval(autoRefresh, 60000);
 document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) autoRefresh(); });
 if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
-console.log("CMPL app version 20261016i");
+console.log("CMPL app version 20261016j");
 })();
