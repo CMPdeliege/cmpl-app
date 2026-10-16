@@ -673,6 +673,8 @@ async function startRec(key, send){
   mr.start();
 }
 const patientName = id => { const p=S.profiles[id]; return p ? `${p.first_name||""} ${p.last_name||""}`.trim() || "Patient" : "Patient"; };
+function extraContactsHTML(p){ const L=(p&&p.extra_contacts)||[]; if(!L.length&&!(p&&p.contact_note)) return "";
+  return `<div class="xcontacts">${L.map(c=>`<span>${c.type==="personne"?`${esc(c.lien||"Contact")} : <b>${esc(c.nom||"")}</b>`:"Autre n°"} · <b>${esc(c.tel||"")}</b></span>`).join("")}${p.contact_note?`<span class="xnote">ℹ︎ ${esc(p.contact_note)}</span>`:""}</div>`; }
 const kidName = id => { const c=S.children?.[id]; return c ? `${c.first_name} ${c.last_name}` : "Enfant"; };
 const reqName = r => r.child_id ? kidName(r.child_id) : patientName(r.patient_id);
 
@@ -719,7 +721,7 @@ async function loadStaff(){
   S.reqs = rq.data||[];
   const ids=[...new Set(S.reqs.map(r=>r.patient_id))];
   const tasks=[];
-  if(ids.length) tasks.push(sb.from("profiles").select("id,first_name,last_name,birth_date,phone").in("id",ids).then(r=>{ for(const p of r.data||[]) S.profiles[p.id]=p; }));
+  if(ids.length) tasks.push(sb.from("profiles").select("id,first_name,last_name,birth_date,phone,extra_contacts,contact_note").in("id",ids).then(r=>{ for(const p of r.data||[]) S.profiles[p.id]=p; }));
   if(role==="secretariat"||role==="admin") tasks.push(sb.from("profiles").select("id,first_name,last_name,birth_date,phone,created_at").eq("role","patient").eq("status","pending").order("created_at").then(r=>S.pending=r.data||[]));
   tasks.push(sb.from("profiles").select("id,first_name,last_name,role,provider_id,status,created_at").neq("role","patient").then(r=>S.team=r.data||[]));
   tasks.push(sb.from("motif_durations").select("motif,minutes").then(r=>{ S.durations=Object.fromEntries((r.data||[]).map(d=>[d.motif,d.minutes])); }));
@@ -746,7 +748,7 @@ async function refresh(){
   syncLang();
   S.mfa=null;
   if(S.me.status==="active"&&S.me.role!=="patient"){
-    if(idleTooLong()){ await logout("Vous avez été déconnecté après 30 minutes d'inactivité."); return; }
+    if(idleTooLong()){ await logout(IDLE_MSG); return; }
     const {data:aal}=await sb.auth.mfa.getAuthenticatorAssuranceLevel();
     if(!aal||aal.currentLevel!=="aal2"){ S.mfa={hasFactor:aal&&aal.nextLevel==="aal2"}; render(); return; }
     markActive();
@@ -762,13 +764,17 @@ function syncLang(){
   if(!saved&&S.me.lang&&LANGS[S.me.lang]&&S.me.lang!==L){ try{ localStorage.setItem("cmpl_lang",S.me.lang); }catch(e){} applyLang(S.me.lang); }
   else if(S.me.lang!==L&&(saved||!S.me.lang)){ const l=L; S.me.lang=l; sb.from("profiles").update({lang:l}).eq("id",S.me.id).then(()=>{}); }
 }
-/* ---------- équipe : déconnexion après 30 minutes d'inactivité ---------- */
-const IDLE_MS=30*60*1000;
+/* ---------- équipe : déconnexion après une période d'inactivité ----------
+   Ordinateur (souvent partagé, à l'accueil) : 30 minutes.
+   Téléphone ou tablette (personnel, protégé par son propre verrouillage) : 8 heures. */
+const ON_PHONE=matchMedia("(pointer:coarse)").matches;
+const IDLE_MS=(ON_PHONE?8*60:30)*60*1000;
+const IDLE_MSG=`Vous avez été déconnecté après ${ON_PHONE?"8 heures":"30 minutes"} d'inactivité.`;
 function markActive(){ try{ localStorage.setItem("cmpl_last_active", String(Date.now())); }catch(e){} }
 function idleTooLong(){ try{ const t=+localStorage.getItem("cmpl_last_active"); return t>0 && Date.now()-t>IDLE_MS; }catch(e){ return false; } }
 let lastAct=Date.now(), lastSaved=0;
 ["pointerdown","keydown","touchstart","scroll"].forEach(ev=>addEventListener(ev,()=>{ lastAct=Date.now(); if(lastAct-lastSaved>60000){ lastSaved=lastAct; markActive(); } },{passive:true}));
-setInterval(()=>{ if(S.me&&S.me.role!=="patient"&&S.session&&Date.now()-lastAct>IDLE_MS) logout("Vous avez été déconnecté après 30 minutes d'inactivité."); },60000);
+setInterval(()=>{ if(S.me&&S.me.role!=="patient"&&S.session&&Date.now()-lastAct>IDLE_MS) logout(IDLE_MSG); },60000);
 
 /* ---------- équipe : double authentification ---------- */
 function renderMfa(a){
@@ -839,6 +845,7 @@ const PRIVACY = `<details class="legal"><summary>Protection de vos données</sum
 <p><b>Qui est responsable ?</b> La société qui exploite le Centre Médical Prince de Liège, 21-23 rue du Potaerdenberg, 1070 Anderlecht. Contact pour vos données : <b>admin@cmpl.be</b>.</p>
 <p><b>Quelles données ?</b> Votre identité (nom, prénom, date de naissance, photo de profil si vous en ajoutez une), vos coordonnées (e-mail, téléphone), vos demandes et messages, les photos, documents et messages vocaux que vous envoyez, les médicaments renouvelés, et un journal technique de sécurité.</p>
 <p><b>Ma famille.</b> Si vous ajoutez vos enfants de moins de 16 ans, nous enregistrons leur prénom, nom et date de naissance, et les demandes faites en leur nom. Ces informations sont visibles par vous, par l'autre parent que vous invitez, et par l'équipe du centre. À 16 ans, l'enfant crée son propre compte ; plus aucune demande ne peut être faite en son nom.</p>
+<p><b>Autres contacts.</b> Si vous indiquez un autre numéro ou une personne à contacter, seule l'équipe du centre le voit. Prévenez cette personne que vous avez donné son numéro.</p>
 <p><b>Pourquoi ?</b> Uniquement pour communiquer avec le centre : rendez-vous, questions, renouvellements de prescription, résultats. Base légale : la relation de soins (RGPD, art. 6.1.b et 9.2.h). Les notifications d'annonces du centre reposent sur votre accord, que vous pouvez retirer à tout moment (art. 6.1.a).</p>
 <p><b>Qui les voit ?</b> Vous, et seulement les membres de l'équipe concernés par votre demande, tenus au secret professionnel. Chaque ouverture d'une conversation ou d'une pièce jointe par l'équipe est enregistrée. Aucune publicité, aucun traceur, aucune revente.</p>
 <p><b>Où ?</b> Les données sont hébergées par Supabase dans l'Union européenne (Irlande), sous contrat de protection des données. Les pages de l'app sont fournies par GitHub, qui enregistre l'adresse IP des visiteurs à des fins de sécurité. Les e-mails de notification sont envoyés par Brevo (France, UE) et ne contiennent aucune information médicale.</p>
@@ -1019,6 +1026,7 @@ function patientAccount(a){
   <section class="card langcard"><h3>Langue de l'application</h3><p class="hint">Les messages restent écrits par le centre en français.</p>${langPickerHTML()}</section>
   ${photoCardHTML("Facultatif. Visible uniquement par vous et par l'équipe du centre, pour vous reconnaître.")}
   ${m.status==="active"?familyCardHTML():""}
+  ${contactsCardHTML()}
   <form class="form acct" id="acctform" style="margin-top:12px">
    <div class="row2"><label class="fld" for="a-first">Prénom<input id="a-first" value="${esc(m.first_name)}"></label><label class="fld" for="a-last">Nom<input id="a-last" value="${esc(m.last_name)}"></label></div>
    <div class="row2"><label class="fld" for="a-birth">Date de naissance<input id="a-birth" type="date" value="${esc(m.birth_date||"")}"></label><label class="fld" for="a-phone">Téléphone<input id="a-phone" type="tel" value="${esc(m.phone)}"></label></div>
@@ -1033,7 +1041,7 @@ function patientAccount(a){
     <div class="btnrow"><button class="btn danger" id="delgo" disabled>Supprimer définitivement</button><button class="linkbtn" id="delno">Annuler</button></div></div>
   </section>
   <div class="btnrow" style="margin-top:18px"><button class="btn ghost" id="logout">Se déconnecter</button></div>`;
-  $("#back").onclick=()=>{S.screen="home";render()};
+  $("#back").onclick=()=>{S.cdraft=null;S.screen="home";render()};
   $("#logout").onclick=logout;
   $("#export").onclick=exportMyData;
   $("#delask").onclick=()=>{ $("#delbox").hidden=false; $("#delconf").focus(); };
@@ -1041,10 +1049,43 @@ function patientAccount(a){
   $("#delconf").oninput=e=>{ $("#delgo").disabled=e.target.value.trim().toUpperCase()!=="SUPPRIMER"; };
   $("#delgo").onclick=async e=>{ e.target.disabled=true;
     if(await run(()=>sb.rpc("delete_my_account"))){ await logout("Votre compte et ses données ont été supprimés."); } else e.target.disabled=false; };
-  bindPhotoCard(); bindFamily(); bindLangPicker();
+  bindPhotoCard(); bindFamily(); bindLangPicker(); bindContacts();
   $("#acctform").onsubmit=async e=>{ e.preventDefault();
     const upd={first_name:$("#a-first").value.trim(),last_name:$("#a-last").value.trim(),birth_date:$("#a-birth").value||null,phone:$("#a-phone").value.trim()};
     if(await run(()=>sb.from("profiles").update(upd).eq("id",m.id),"Enregistré")) Object.assign(S.me,upd); };
+}
+
+/* ----- Autres contacts (Mon compte) : autre numéro, personne à contacter, informations pratiques ----- */
+const LIENS=["Conjoint(e)","Parent","Enfant","Frère ou sœur","Ami(e) ou voisin(e)","Aide ou soignant(e) à domicile","Autre"];
+function contactsCardHTML(){
+  const C=S.cdraft||(S.cdraft={list:JSON.parse(JSON.stringify(S.me.extra_contacts||[])),note:S.me.contact_note||""});
+  const row=(c,i)=>`<div class="crow" data-ci="${i}">
+    <label class="fld">Type<select data-cf="type"><option value="tel" ${c.type!=="personne"?"selected":""}>Autre numéro de téléphone</option><option value="personne" ${c.type==="personne"?"selected":""}>Personne à contacter</option></select></label>
+    ${c.type==="personne"?`<div class="row2"><label class="fld">Nom de la personne<input data-cf="nom" maxlength="80" value="${esc(c.nom||"")}" autocomplete="off"></label>
+    <label class="fld">Lien<select data-cf="lien">${LIENS.map(l=>`<option value="${esc(l)}" ${c.lien===l?"selected":""}>${esc(l)}</option>`).join("")}</select></label></div>`:""}
+    <div class="crow2"><label class="fld">Téléphone<input data-cf="tel" type="tel" maxlength="30" value="${esc(c.tel||"")}" placeholder="04xx xx xx xx"></label><button type="button" class="linkbtn" data-crm="${i}">Retirer</button></div></div>`;
+  return `<section class="card contacts" id="contacts"><h3>Autres contacts</h3>
+   <p class="hint">Facultatif. Un autre numéro où vous joindre, ou une personne à prévenir. Visible uniquement par l'équipe du centre.</p>
+   ${C.list.map(row).join("")}
+   ${C.list.length<5?`<button type="button" class="btn ghost" id="c-add">+ Ajouter un numéro ou une personne</button>`:`<p class="hint">5 contacts maximum.</p>`}
+   <label class="fld" style="margin-top:12px">Informations pratiques<textarea id="c-note" rows="2" maxlength="500" placeholder="Ex. joignable seulement après 17 h, parle mieux néerlandais, sonner chez le voisin…">${esc(C.note)}</textarea></label>
+   <p class="hint">N'indiquez pas d'informations médicales ici.</p>
+   <div class="btnrow"><button type="button" class="btn" id="c-save">Enregistrer les contacts</button></div></section>`;
+}
+function bindContacts(){
+  const C=S.cdraft; if(!$("#contacts")) return;
+  const again=()=>{ render(); setTimeout(()=>$("#contacts")?.scrollIntoView({block:"start"}),30); };
+  $$("#contacts [data-ci]").forEach(r=>{ const c=C.list[+r.dataset.ci];
+    r.querySelectorAll("[data-cf]").forEach(f=>{ f.oninput=f.onchange=()=>{ c[f.dataset.cf]=f.value; if(f.dataset.cf==="type"){ if(c.type==="personne"&&!c.lien) c.lien=LIENS[0]; again(); } }; }); });
+  $$("[data-crm]").forEach(b=>b.onclick=()=>{ C.list.splice(+b.dataset.crm,1); again(); });
+  const ad=$("#c-add"); if(ad) ad.onclick=()=>{ C.list.push({type:"tel",tel:""}); again(); };
+  $("#c-note").oninput=e=>{ C.note=e.target.value; };
+  $("#c-save").onclick=async()=>{
+    const list=C.list.map(c=>c.type==="personne"?{type:"personne",nom:(c.nom||"").trim(),lien:c.lien||"Autre",tel:(c.tel||"").trim()}:{type:"tel",tel:(c.tel||"").trim()});
+    if(list.some(c=>!c.tel)) return toast("Indiquez un numéro de téléphone pour chaque ligne.");
+    if(list.some(c=>c.type==="personne"&&!c.nom)) return toast("Indiquez le nom de chaque personne à contacter.");
+    const upd={extra_contacts:list,contact_note:C.note.trim()||null};
+    if(await run(()=>sb.from("profiles").update(upd).eq("id",S.me.id),"Contacts enregistrés")){ Object.assign(S.me,upd); S.cdraft=null; again(); } };
 }
 
 /* ----- Ma famille (Mon compte) ----- */
@@ -1092,7 +1133,8 @@ async function exportMyData(){
     medicaments:(r.request_items||[]).map(i=>({medicament:i.label,boites:i.quantity||1,decision:i.decision})),
     messages:msgsOf(r).map(m=>({de:m.from_patient?"Vous":m.author_label,le:m.created_at,texte:m.body,pieces_jointes:(m.attachments||[]).map(a=>({type:a.kind,nom:a.name,taille_octets:a.size}))})) });
   const data={ exporte_le:new Date().toISOString(), source:"Application du Centre Médical Prince de Liège (app.cmpl.be)",
-    compte:{ email:S.session.user.email, prenom:S.me.first_name, nom:S.me.last_name, date_de_naissance:S.me.birth_date, telephone:S.me.phone, cree_le:S.me.created_at, valide_le:S.me.approved_at,
+    compte:{ email:S.session.user.email, prenom:S.me.first_name, nom:S.me.last_name, date_de_naissance:S.me.birth_date, telephone:S.me.phone,
+      autres_contacts:S.me.extra_contacts||[], informations_pratiques:S.me.contact_note||null, cree_le:S.me.created_at, valide_le:S.me.approved_at,
       photo_de_profil:AV.get(S.me.id)?"oui (visible dans Mon compte)":"non", notifications_annonces:S.me.news_push, choix_annonces_le:S.me.news_choice_at },
     ma_famille:S.family?{parents:(S.family.parents||[]).map(p=>`${p.first_name||""} ${p.last_name||""}`.trim()),enfants:famKids().map(c=>({prenom:c.first_name,nom:c.last_name,date_de_naissance:c.birth_date,statut:c.status}))}:null,
     demandes:S.reqs.map(r=>({...strip(r),pour:r.child_id?childFirst(r.child_id):"moi"})), mes_medicaments:S.meds.map(m=>({medicament:m.label,derniere_prescription:m.last_granted_at,fois:m.times_granted})),
@@ -1341,6 +1383,7 @@ function detailHTML(){
    <div class="dhead">${r.child_id?avatarHTML(null,reqName(r),52):avatarHTML(AV.get(r.patient_id),patientName(r.patient_id),52)}<div><h2>${esc(reqName(r))}</h2>
     ${r.child_id?`<div class="pinfo"><span>Né(e) le <b>${fmtDate(S.children[r.child_id]?.birth_date)}</b></span><span>Enfant de <b>${esc(patientName(r.patient_id))}</b></span><span>Tél. parent <b>${esc(p.phone||"—")}</b></span></div>`
     :`<div class="pinfo"><span>Né(e) le <b>${fmtDate(p.birth_date)}</b></span><span>Tél. <b>${esc(p.phone||"—")}</b></span></div>`}
+    ${extraContactsHTML(p)}
     <div class="meta" style="margin-top:6px"><span class="tag">${TYPES[r.type].label}</span>${durHTML(r)}<span class="pill st-${stClass(r)}">${stLabel(r)}</span><span>Reçue ${fmt(r.created_at)} · ${esc(provName(r.provider_id)||"Secrétariat")}</span></div></div></div>
    ${open?`<div class="prioedit"><span class="hint">Priorité</span>${["haute","normale"].map(k=>`<button class="dec p-${k}" aria-pressed="${r.priority===k}" data-prio="${k}">${PRIO_LABEL[k]}</button>`).join("")}</div><div>${dueHTML(r)}</div>`:""}
    ${r.purged_at?"":`<dl class="qa">${Object.entries(r.answers||{}).filter(([k])=>!HIDDEN_KEYS.has(k)).map(([k,v])=>`<div><dt>${esc(LABELS[k]||k)}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>`}
@@ -1692,5 +1735,5 @@ async function autoRefresh(){ if(busy||!S.session||S.loading||document.hidden) r
 setInterval(autoRefresh, 60000);
 document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) autoRefresh(); });
 if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
-console.log("CMPL app version 20261016f");
+console.log("CMPL app version 20261016h");
 })();

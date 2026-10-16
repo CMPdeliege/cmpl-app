@@ -504,3 +504,12 @@ small.qty{font-size:inherit;color:var(--muted)}
 .langcard{margin-bottom:12px}
 .langcard .langpick{margin-top:6px}
 [dir="rtl"] .back svg,[dir="rtl"] .convhead .back svg{transform:scaleX(-1)}
+/* autres contacts */
+.contacts{margin-top:12px}
+.contacts .crow{border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:10px 0;display:flex;flex-direction:column;gap:8px}
+.contacts .crow2{display:flex;gap:10px;align-items:flex-end}
+.contacts .crow2 .fld{flex:1}
+.contacts .fld input,.contacts .fld select,.contacts textarea{font:inherit;color:var(--ink);background:var(--surface);border:1.5px solid var(--line);border-radius:10px;padding:9px 11px;width:100%;box-sizing:border-box}
+.contacts textarea{resize:vertical}
+.xcontacts{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:6px;font-size:13px;color:var(--muted)}
+.xcontacts .xnote{flex-basis:100%}
