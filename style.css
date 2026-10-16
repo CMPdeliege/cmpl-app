@@ -497,3 +497,10 @@ small.qty{font-size:inherit;color:var(--muted)}
 .taskform input[type=date]{font:inherit;font-size:14px;border:1.5px solid var(--line);border-radius:10px;padding:7px 10px;background:var(--surface);color:var(--ink)}
 .family .fld input{font:inherit;color:var(--ink);background:var(--surface);border:1.5px solid var(--line);border-radius:10px;padding:10px 12px;width:100%;box-sizing:border-box}
 .family .fld input:focus,.taskform :is(input,select,textarea):focus{border-color:var(--accent);outline:none}
+/* langue */
+.langbar{display:flex;justify-content:flex-end;margin:4px 0 6px}
+.langpick{display:inline-flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:4px 10px}
+.langpick select{border:0;background:transparent;font:inherit;font-size:14px;font-weight:700;color:var(--ink);padding:4px 2px}
+.langcard{margin-bottom:12px}
+.langcard .langpick{margin-top:6px}
+[dir="rtl"] .back svg,[dir="rtl"] .convhead .back svg{transform:scaleX(-1)}

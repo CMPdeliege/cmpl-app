@@ -12,20 +12,73 @@ const sb = window.supabase.createClient(CFG.url, CFG.key, {
   auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
 });
 
+/* ---------- langues (écrans des patients) ----------
+   Les textes sont écrits en français dans le code. Pour un patient qui a choisi une
+   autre langue, chaque texte affiché est remplacé par sa traduction (fichier i18n.js),
+   automatiquement, au moment où il apparaît à l'écran. Les réponses enregistrées
+   restent en français : l'équipe lit toujours tout en français.
+   Les messages écrits par les personnes ne sont jamais traduits. */
+const LANGS={fr:"Français",nl:"Nederlands",en:"English",ar:"العربية",tr:"Türkçe",es:"Español",it:"Italiano",ro:"Română",pt:"Português",pl:"Polski"};
+const LOCALES={fr:"fr-BE",nl:"nl-BE",en:"en-GB",ar:"ar-MA",tr:"tr-TR",es:"es-ES",it:"it-IT",ro:"ro-RO",pt:"pt-PT",pl:"pl-PL"};
+const I18N=window.CMPL_I18N||{};
+const savedLang=()=>{ try{ const v=localStorage.getItem("cmpl_lang"); return LANGS[v]?v:null; }catch(e){ return null; } };
+let L=savedLang()||(()=>{ const n=(navigator.language||"fr").slice(0,2).toLowerCase(); return LANGS[n]&&I18N[n]?n:"fr"; })();
+if(!I18N[L]) L="fr";
+let LOC=LOCALES[L];
+const PATS={};
+function tr(s){
+  if(L==="fr"||s==null) return s; const D=I18N[L]; if(!D) return s;
+  const m=/^(\s*)([\s\S]*?)(\s*)$/.exec(s), core=m[2]; if(!core) return s;
+  let r=D.t[core];
+  if(r==null&&core.includes(" · ")){ const parts=core.split(" · "), t=parts.map(x=>tr(x)); if(t.some((x,i)=>x!==parts[i])) r=t.join(" · "); }
+  if(r==null&&D.p){ const P=PATS[L]||(PATS[L]=D.p.map(([a,b])=>[new RegExp("^"+a+"$","u"),b]));
+    for(const [re,b] of P){ const x=re.exec(core); if(x){ r=b.replace(/\$(\d)/g,(_,i)=>{ const g=x[+i]||""; return g&&g!==core?tr(g):g; }); break; } } }
+  if(r==null&&core.includes(", ")){ const parts=core.split(", "), t=parts.map(x=>D.t[x]); if(t.every(Boolean)) r=t.join(L==="ar"?"، ":", "); }
+  return r==null?s:m[1]+r+m[3];
+}
+const TR_ATTRS=["placeholder","aria-label","title","alt"];
+function trTree(root){
+  if(L==="fr"||!root) return;
+  const skip=el=>!el||el.closest('[translate="no"],script,style,code');
+  const skipT=el=>skip(el)||el.closest("textarea");
+  if(root.nodeType===3){ if(!skipT(root.parentElement)){ const v=root.nodeValue,t=tr(v); if(t!==v) root.nodeValue=t; } return; }
+  if(root.nodeType!==1||skip(root)) return;
+  const w=document.createTreeWalker(root,NodeFilter.SHOW_ELEMENT|NodeFilter.SHOW_TEXT);
+  for(let n=root;n;n=w.nextNode()){
+    if(n.nodeType===3){ if(!skipT(n.parentElement)){ const v=n.nodeValue,t=tr(v); if(t!==v) n.nodeValue=t; } }
+    else if(!skip(n)) for(const a of TR_ATTRS){ if(n.hasAttribute(a)){ const v=n.getAttribute(a),t=tr(v); if(t!==v) n.setAttribute(a,t); } }
+  }
+}
+let trObs=null;
+function applyLang(l){
+  L=I18N[l]||l==="fr"?l:"fr"; LOC=LOCALES[L];
+  document.documentElement.lang=L; document.documentElement.dir=L==="ar"?"rtl":"ltr";
+  if(trObs){ trObs.disconnect(); trObs=null; }
+  if(L!=="fr"){
+    trObs=new MutationObserver(ms=>{ for(const m of ms){ if(m.type==="childList") m.addedNodes.forEach(trTree); else trTree(m.target); } });
+    trObs.observe(document.body,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:TR_ATTRS});
+    trTree(document.body);
+  }
+}
+const langPickerHTML = () => `<label class="langpick" translate="no"><span aria-hidden="true">🌐</span><select id="langsel" aria-label="Langue / Language">${Object.entries(LANGS).filter(([k])=>k==="fr"||I18N[k]).map(([k,v])=>`<option value="${k}" ${k===L?"selected":""}>${v}</option>`).join("")}</select></label>`;
+function bindLangPicker(){ const s=document.getElementById("langsel"); if(!s) return;
+  s.onchange=async()=>{ const l=s.value; try{ localStorage.setItem("cmpl_lang",l); }catch(e){}
+    applyLang(l); if(S.me&&S.me.role==="patient"&&S.me.lang!==l){ S.me.lang=l; sb.from("profiles").update({lang:l}).eq("id",S.me.id).then(()=>{}); } render(); }; }
+
 /* ---------- utilitaires ---------- */
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const app = () => $("#app");
-function toast(t){ const el=$("#toast"); el.textContent=t; el.hidden=false; clearTimeout(toast.t); toast.t=setTimeout(()=>el.hidden=true,2600); }
+function toast(t){ const el=$("#toast"); el.textContent=tr(t); el.hidden=false; clearTimeout(toast.t); toast.t=setTimeout(()=>el.hidden=true,2600); }
 function fmt(d){ d=new Date(d); const h=(Date.now()-d)/3600e3;
   if(h<1/60) return "à l'instant"; if(h<1) return `il y a ${Math.round(h*60)} min`; if(h<24) return `il y a ${Math.round(h)} h`;
-  return d.toLocaleDateString("fr-BE",{day:"numeric",month:"short"}); }
-function fmtWhen(d){ d=new Date(d); const c=new Date(), hm=d.toLocaleTimeString("fr-BE",{hour:"2-digit",minute:"2-digit"});
+  return d.toLocaleDateString(LOC,{day:"numeric",month:"short"}); }
+function fmtWhen(d){ d=new Date(d); const c=new Date(), hm=d.toLocaleTimeString(LOC,{hour:"2-digit",minute:"2-digit"});
   const day=x=>new Date(x.getFullYear(),x.getMonth(),x.getDate()).getTime(); const diff=Math.round((day(d)-day(c))/864e5);
   if(diff===0) return hm; if(diff===1) return "demain "+hm;
-  return d.toLocaleDateString("fr-BE",{weekday:"short",day:"numeric",month:"short"})+" "+hm; }
-const fmtDate = d => d ? new Date(d).toLocaleDateString("fr-BE") : "—";
+  return d.toLocaleDateString(LOC,{weekday:"short",day:"numeric",month:"short"})+" "+hm; }
+const fmtDate = d => d ? new Date(d).toLocaleDateString(LOC) : "—";
 function frError(e){
   let m = (e && (e.message || e.error_description || e.msg)) || String(e);
   // Réponse vide du serveur (panne, ou e-mail de confirmation impossible à envoyer)
@@ -69,9 +122,9 @@ const IC={
  trash:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
  doc:'<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg>'
 };
-const BRAND = `<div class="brand"><img class="logo" src="logo.png?v=1" alt="" width="46" height="46"><div><b>Centre Médical</b><span>Prince de Liège</span></div></div>`;
-const AUTHLOGO = `<div class="authlogo"><img src="logo.png?v=1" alt="Logo du Centre Médical Prince de Liège" width="104" height="104"><b>Centre Médical</b><span>Prince de Liège</span></div>`;
-const BANNER112 = `<div class="urgent">${IC.alert}<div><strong>Urgence vitale :</strong> appelez le <span class="nums">112</span>.<br>Les demandes envoyées ici sont lues pendant les heures d'ouverture, pas en urgence.</div></div>`;
+const BRAND = `<div class="brand" lang="fr"><img class="logo" src="logo.png?v=1" alt="" width="46" height="46"><div><b>Centre Médical</b><span>Prince de Liège</span></div></div>`;
+const AUTHLOGO = `<div class="authlogo" lang="fr"><img src="logo.png?v=1" alt="Logo du Centre Médical Prince de Liège" width="104" height="104"><b>Centre Médical</b><span>Prince de Liège</span></div>`;
+const BANNER112 = `<div class="urgent">${IC.alert}<div><strong>Urgence vitale : appelez le 112.</strong><br>Les demandes envoyées ici sont lues pendant les heures d'ouverture, pas en urgence.</div></div>`;
 
 /* ---------- état ---------- */
 const S = {
@@ -224,10 +277,10 @@ function dueHTML(r){ if(r.status==="traite") return ""; if(!awaitingStaff(r)) re
    ===================================================================== */
 const PURGE_DAYS=15;
 const purgeDate = r => r.closed_at ? new Date(new Date(r.closed_at).getTime()+PURGE_DAYS*864e5) : null;
-const longDate = d => new Date(d).toLocaleDateString("fr-BE",{weekday:"long",day:"numeric",month:"long"});
-const hm = d => new Date(d).toLocaleTimeString("fr-BE",{hour:"2-digit",minute:"2-digit"});
+const longDate = d => new Date(d).toLocaleDateString(LOC,{weekday:"long",day:"numeric",month:"long"});
+const hm = d => new Date(d).toLocaleTimeString(LOC,{hour:"2-digit",minute:"2-digit"});
 const dur = s => `${Math.floor((s||0)/60)}:${String((s||0)%60).padStart(2,"0")}`;
-const kb = n => n>=1048576 ? (n/1048576).toFixed(1).replace(".",",")+" Mo" : Math.max(1,Math.round(n/1024))+" ko";
+const kb = n => n>=1048576 ? (n/1048576).toFixed(1).replace(".",L==="fr"?",":".")+(L==="fr"?" Mo":" MB") : Math.max(1,Math.round(n/1024))+(L==="fr"?" ko":" KB");
 const AUTO_BODY = /^(📷 Photo|📄 .*|🎤 Message vocal)$/u;
 function dayLabel(d){ d=new Date(d); const k=x=>new Date(x.getFullYear(),x.getMonth(),x.getDate()).getTime(), diff=Math.round((k(new Date())-k(d))/864e5);
   return diff===0?"Aujourd'hui":diff===1?"Hier":longDate(d); }
@@ -246,7 +299,7 @@ function chatHTML(r, viewer){
     sep(r.created_at);
     const dl=answersDL(r.answers);
     h+=`<div class="msg me"><div class="bub me reqcard"><b>${TYPES[r.type].title}</b>${dl?`<dl>${dl}</dl>`:""}<span class="t">${hm(r.created_at)}</span></div></div>`;
-    if(r.status!=="traite") h+=`<div class="sys">Envoyée à <b>${esc(dest)}</b>. Elle sera vue ${r.priority==="haute"?"dans les 24 heures":"dans les 72 heures"} (heures d'ouverture). Le délai de réponse est ensuite décidé par ${r.provider_id?"le prestataire":"le centre"}. Urgence vitale : 112.</div>`;
+    if(r.status!=="traite") h+=`<div class="sys"><span>Envoyée à :</span> <b translate="no">${esc(dest)}</b><br><span>${r.priority==="haute"?"Elle sera vue dans les 24 heures (heures d'ouverture).":"Elle sera vue dans les 72 heures (heures d'ouverture)."}</span> <span>${r.provider_id?"Le délai de réponse est ensuite décidé par le prestataire.":"Le délai de réponse est ensuite décidé par le centre."}</span><br>Urgence vitale : 112.</div>`;
   }
   for(const m of msgsOf(r)){
     sep(m.created_at);
@@ -254,7 +307,7 @@ function chatHTML(r, viewer){
     const name = viewer==="patient" ? (m.from_patient?"":m.author_label) : (m.from_patient?"":m.author_label);
     const showName = !me && name && name!==who; who = me ? "" : name;
     const showBody = !(atts.length && AUTO_BODY.test(m.body));
-    h+=`<div class="msg ${me?"me":"them"}">${showName?`<small class="who">${viewer==="patient"&&!m.from_patient&&AV.get(m.author_id)?avatarHTML(AV.get(m.author_id),name,22):""}${esc(name)}</small>`:""}<div class="bub ${me?"me":"bot"}${atts.length?" hasatt":""}">${atts.map(attHTML).join("")}${showBody?`<div class="txt">${esc(m.body)}</div>`:""}<span class="t">${hm(m.created_at)}</span></div></div>`;
+    h+=`<div class="msg ${me?"me":"them"}">${showName?`<small class="who">${viewer==="patient"&&!m.from_patient&&AV.get(m.author_id)?avatarHTML(AV.get(m.author_id),name,22):""}${esc(name)}</small>`:""}<div class="bub ${me?"me":"bot"}${atts.length?" hasatt":""}">${atts.map(attHTML).join("")}${showBody?`<div class="txt" dir="auto" translate="${AUTO_BODY.test(m.body)?"yes":"no"}">${esc(m.body)}</div>`:""}<span class="t">${hm(m.created_at)}</span></div></div>`;
   }
   if(r.purged_at) h+=`<div class="sys">Le contenu de cette conversation a été effacé le ${fmtDate(r.purged_at)} pour protéger les données${viewer==="patient"?" de santé":" du patient"}.</div>`;
   else if(r.status==="traite"&&r.closed_at) h+=`<div class="sys">Conversation classée le ${fmtDate(r.closed_at)}. Elle sera effacée le ${fmtDate(purgeDate(r))}.</div>`;
@@ -486,7 +539,7 @@ async function conversationPdf(r, who){
   rule(); para("Messages",{size:11.5,bold:true,gap:5});
   for(const m of msgsOf(r)){
     const atts=m.attachments||[], from=m.from_patient?"Vous":(m.author_label||"Le centre");
-    need(40); y-=8; para(`${from} · ${new Date(m.created_at).toLocaleDateString("fr-BE")} ${hm(m.created_at)}`,{size:9.5,bold:true,color:m.from_patient?GOLD:RED});
+    need(40); y-=8; para(`${from} · ${new Date(m.created_at).toLocaleDateString("fr-BE")} ${new Date(m.created_at).toLocaleTimeString("fr-BE",{hour:"2-digit",minute:"2-digit"})}`,{size:9.5,bold:true,color:m.from_patient?GOLD:RED});
     if(!(atts.length&&AUTO_BODY.test(m.body))) para(m.body,{indent:8});
     for(const a of atts){
       if(a.kind==="image"){ try{ const src=await attLoad(a.id), im=await imageForPdf(src.url), n=imgs.length;
@@ -625,7 +678,7 @@ const reqName = r => r.child_id ? kidName(r.child_id) : patientName(r.patient_id
 
 /* ---------- actualités ---------- */
 function newsCard(n, full){
-  return `<article class="news ${n.pinned?"pinned":""}">${n.image_path?`<img src="${esc(n.image_path)}" alt="">`:""}<div class="nbody"><div class="nmeta"><span class="ncat">${esc(n.category)}</span>${n.pinned?'<span class="ncat pin">Épinglé</span>':""}<span>${fmt(n.published_at)}</span></div><h3>${esc(n.title)}</h3><p class="${full?"":"clamp"}">${esc(n.body)}</p></div></article>`;
+  return `<article class="news ${n.pinned?"pinned":""}">${n.image_path?`<img src="${esc(n.image_path)}" alt="">`:""}<div class="nbody"><div class="nmeta"><span class="ncat">${esc(n.category)}</span>${n.pinned?'<span class="ncat pin">Épinglé</span>':""}<span>${fmt(n.published_at)}</span></div><h3 translate="no" dir="auto">${esc(n.title)}</h3><p translate="no" dir="auto" class="${full?"":"clamp"}">${esc(n.body)}</p></div></article>`;
 }
 
 /* =====================================================================
@@ -690,6 +743,7 @@ async function refresh(){
   if(!S.session){ S.me=null; render(); return; }
   await loadMe();
   if(!S.me){ render(); return; }
+  syncLang();
   S.mfa=null;
   if(S.me.status==="active"&&S.me.role!=="patient"){
     if(idleTooLong()){ await logout("Vous avez été déconnecté après 30 minutes d'inactivité."); return; }
@@ -701,6 +755,13 @@ async function refresh(){
   render();
 }
 
+// L'équipe travaille toujours en français ; le patient retrouve sa langue sur tous ses appareils
+function syncLang(){
+  if(S.me.role!=="patient"){ if(L!=="fr") applyLang("fr"); return; }
+  const saved=savedLang();
+  if(!saved&&S.me.lang&&LANGS[S.me.lang]&&S.me.lang!==L){ try{ localStorage.setItem("cmpl_lang",S.me.lang); }catch(e){} applyLang(S.me.lang); }
+  else if(S.me.lang!==L&&(saved||!S.me.lang)){ const l=L; S.me.lang=l; sb.from("profiles").update({lang:l}).eq("id",S.me.id).then(()=>{}); }
+}
 /* ---------- équipe : déconnexion après 30 minutes d'inactivité ---------- */
 const IDLE_MS=30*60*1000;
 function markActive(){ try{ localStorage.setItem("cmpl_last_active", String(Date.now())); }catch(e){} }
@@ -788,7 +849,7 @@ function renderAuth(a){
   a.className="wrap";
   const m=S.authMode;
   const pinned=S.news.filter(n=>n.pinned);
-  a.innerHTML=`${AUTHLOGO}
+  a.innerHTML=`<div class="langbar">${langPickerHTML()}</div>${AUTHLOGO}
   ${pinned.map(n=>`<div style="margin-bottom:12px">${newsCard(n,true)}</div>`).join("")}
   <div class="auth">
    <h1>${m==="signup"?"Créer mon compte":m==="forgot"?"Mot de passe oublié":"Connexion"}</h1>
@@ -813,6 +874,7 @@ function renderAuth(a){
    ${m!=="signup"?PRIVACY:""}
    ${BANNER112}
   </div>`;
+  bindLangPicker();
   $("#m-login").onclick=()=>{S.authMode="login";render()};
   $("#m-signup").onclick=()=>{S.authMode="signup";render()};
   const fg=$("#m-forgot"); if(fg) fg.onclick=()=>{S.authMode="forgot";render()};
@@ -856,11 +918,12 @@ function renderRecovery(a){
 function renderPending(a){
   a.className="wrap";
   a.innerHTML=`<div class="top">${BRAND}<button class="iconbtn" id="logout" aria-label="Se déconnecter" title="Se déconnecter">${IC.user}</button></div>
+  <div class="langbar">${langPickerHTML()}</div>
   <h1 class="hello">Bonjour ${esc(S.me.first_name||"")}</h1>
   <div class="promise" style="margin:12px 0 18px;max-width:none"><b>Votre compte est en attente de validation</b><span>Le secrétariat vérifie que vous êtes bien patient du centre. Vous pourrez ensuite envoyer vos demandes. Revenez dans l'app après la validation.</span></div>
   ${BANNER112}
   ${S.news.length?`<div class="sechead"><h2>Actualités</h2></div><div class="newslist">${S.news.map(n=>newsCard(n,true)).join("")}</div>`:""}`;
-  $("#logout").onclick=logout;
+  $("#logout").onclick=logout; bindLangPicker();
 }
 function renderBlocked(a){
   a.className="wrap";
@@ -868,7 +931,7 @@ function renderBlocked(a){
   <div class="closed"><b>Compte non validé</b><span>Ce compte n'a pas pu être validé. Contactez le secrétariat au 02 781 18 75.</span></div>`;
   $("#logout").onclick=logout;
 }
-async function logout(reason){ await sb.auth.signOut(); S.session=null; S.me=null; S.mfa=null; S.screen="home"; S.cscreen="inbox"; try{ localStorage.removeItem("cmpl_last_active"); }catch(e){} render(); if(typeof reason==="string") toast(reason); }
+async function logout(reason){ await sb.auth.signOut(); const keep=savedLang(); if(keep&&keep!==L) applyLang(keep); S.session=null; S.me=null; S.mfa=null; S.screen="home"; S.cscreen="inbox"; try{ localStorage.removeItem("cmpl_last_active"); }catch(e){} render(); if(typeof reason==="string") toast(reason); }
 
 /* =====================================================================
    PATIENT
@@ -953,6 +1016,7 @@ function patientNotifs(a){
 function patientAccount(a){
   const m=S.me;
   a.innerHTML=`<div class="convhead"><button class="back" id="back" aria-label="Retour">${IC.back}</button><div><h2>Mon compte</h2><small>${esc(S.session.user.email)}</small></div></div>
+  <section class="card langcard"><h3>Langue de l'application</h3><p class="hint">Les messages restent écrits par le centre en français.</p>${langPickerHTML()}</section>
   ${photoCardHTML("Facultatif. Visible uniquement par vous et par l'équipe du centre, pour vous reconnaître.")}
   ${m.status==="active"?familyCardHTML():""}
   <form class="form acct" id="acctform" style="margin-top:12px">
@@ -977,7 +1041,7 @@ function patientAccount(a){
   $("#delconf").oninput=e=>{ $("#delgo").disabled=e.target.value.trim().toUpperCase()!=="SUPPRIMER"; };
   $("#delgo").onclick=async e=>{ e.target.disabled=true;
     if(await run(()=>sb.rpc("delete_my_account"))){ await logout("Votre compte et ses données ont été supprimés."); } else e.target.disabled=false; };
-  bindPhotoCard(); bindFamily();
+  bindPhotoCard(); bindFamily(); bindLangPicker();
   $("#acctform").onsubmit=async e=>{ e.preventDefault();
     const upd={first_name:$("#a-first").value.trim(),last_name:$("#a-last").value.trim(),birth_date:$("#a-birth").value||null,phone:$("#a-phone").value.trim()};
     if(await run(()=>sb.from("profiles").update(upd).eq("id",m.id),"Enregistré")) Object.assign(S.me,upd); };
@@ -1151,7 +1215,7 @@ function bindDrug(s){
 function summaryUI(){
   const now=new Date(), open=isOpen(now);
   const timing = open ? `<p class="route">Urgence vitale : appelez le 112.</p>`
-    : `<div class="urgent">${IC.alert}<div><strong>Le centre est fermé.</strong> Votre demande sera vue à partir de ${fmtWhen(nextOpen(now))}.<br>Urgence vitale : appelez le <span class="nums">112</span>.</div></div>`;
+    : `<div class="urgent">${IC.alert}<div><strong>Le centre est fermé.</strong> Votre demande sera vue à partir de ${fmtWhen(nextOpen(now))}.<br>Urgence vitale : appelez le 112.</div></div>`;
   return `<div class="summary"><h3 style="font-size:17px;margin-bottom:10px">Vérifiez votre demande</h3><dl>${answersDL(S.answers)}</dl>${timing}<div class="btnrow"><button class="btn" id="send">Envoyer la demande</button></div></div>`;
 }
 function bindSummary(){
@@ -1252,7 +1316,7 @@ function inboxHTML(){
   const provs=[...new Set(S.reqs.filter(r=>r.queue==="prestataires").map(r=>r.provider_id))].filter(Boolean);
   const nArch=S.reqs.filter(r=>r.queue===S.tab&&r.status==="traite").length;
   const nShort=S.reqs.filter(r=>r.queue===S.tab&&r.status!=="traite"&&isShort(r)&&(S.tab!=="prestataires"||S.provFilter==="tous"||r.provider_id===S.provFilter)).length;
-  return `<div class="chead"><div><h1>Demandes des patients</h1><p>${now.toLocaleDateString("fr-BE",{weekday:"long",day:"numeric",month:"long"})} · ${isOpen(now)?'<span class="state on">Ouvert</span>':`<span class="state off">Fermé · réouverture ${fmtWhen(nextOpen(now))}</span>`}</p></div>
+  return `<div class="chead"><div><h1>Demandes des patients</h1><p>${now.toLocaleDateString(LOC,{weekday:"long",day:"numeric",month:"long"})} · ${isOpen(now)?'<span class="state on">Ouvert</span>':`<span class="state off">Fermé · réouverture ${fmtWhen(nextOpen(now))}</span>`}</p></div>
    <div class="counts"><div class="count"><b>${open.filter(r=>r.priority==="haute"&&awaitingStaff(r)).length}</b>haute priorité</div><div class="count"><b>${open.filter(r=>r.status==="nouveau").length}</b>nouvelles</div><div class="count"><b>${open.filter(newPatientMsg).length}</b>messages patients</div><div class="count ${late?"urg":""}"><b>${late}</b>en retard</div></div></div>
   ${queues.length>1?`<div class="tabs">${queues.map(q=>`<button class="tab" data-tab="${q}" aria-pressed="${S.tab===q}">${q==="secretariat"?"Secrétariat":"Prestataires"}<span class="n">${S.reqs.filter(r=>r.queue===q&&r.status!=="traite").length}</span></button>`).join("")}</div>`:""}
   ${S.tab==="prestataires"&&provs.length>1?`<div class="tabs">${["tous",...provs].map(id=>{const k=S.reqs.filter(r=>r.provider_id===id&&r.queue==="prestataires"&&r.status!=="traite").length;return `<button class="tab" data-pf="${id}" aria-pressed="${S.provFilter===id}" style="font-weight:400">${id==="tous"?"Tous":esc(provName(id))}${id!=="tous"&&k?`<span class="n">${k}</span>`:""}</button>`}).join("")}</div>`:""}
@@ -1397,7 +1461,7 @@ const forMe = t => t.assigned_to===S.me.id || (t.assigned_group==="secretariat" 
 const myTasks = () => (S.tasks||[]).filter(t=>!t.done_at&&forMe(t));
 const byDue = (a,b) => (a.due_date||"9999")<(b.due_date||"9999")?-1:(a.due_date||"9999")>(b.due_date||"9999")?1:new Date(b.created_at)-new Date(a.created_at);
 function dueTag(t){ if(!t.due_date||t.done_at) return ""; const td=todayISO();
-  const d=new Date(t.due_date+"T12:00").toLocaleDateString("fr-BE",{weekday:"short",day:"numeric",month:"short"});
+  const d=new Date(t.due_date+"T12:00").toLocaleDateString(LOC,{weekday:"short",day:"numeric",month:"short"});
   return t.due_date<td?`<span class="due late">En retard · ${d}</span>`:t.due_date===td?`<span class="due haute">Aujourd'hui</span>`:`<span class="due">Pour le ${d}</span>`; }
 function taskLinkHTML(t){ if(!t.patient_id&&!t.child_id) return "";
   const nm=t.child_id?kidName(t.child_id):patientName(t.patient_id), bd=t.child_id?S.children[t.child_id]?.birth_date:S.profiles[t.patient_id]?.birth_date;
@@ -1584,7 +1648,7 @@ function settingsHTML(){
 }
 function awayDefaultText(){
   const u=$("#s-until").value, fw=S.team.find(t=>t.id===$("#s-fw").value);
-  const until=u?` jusqu'au ${new Date(u+"T12:00").toLocaleDateString("fr-BE",{weekday:"long",day:"numeric",month:"long"})} inclus`:"";
+  const until=u?` jusqu'au ${new Date(u+"T12:00").toLocaleDateString(LOC,{weekday:"long",day:"numeric",month:"long"})} inclus`:"";
   return `Bonjour,\nJe suis absent(e)${until}. Votre message a bien été reçu${fw?` et sera traité par ${(fw.first_name||"")+" "+(fw.last_name||"")}`:" et sera traité à mon retour"}.\nPour une question qui ne peut pas attendre, appelez le secrétariat au 02 781 18 75. Urgence vitale : 112.`;
 }
 function bindSettings(){
@@ -1615,6 +1679,7 @@ sb.auth.onAuthStateChange((event, session)=>{
   if(event==="SIGNED_IN"||event==="SIGNED_OUT"||event==="USER_UPDATED") setTimeout(refresh,0);
 });
 (async()=>{
+  applyLang(L);
   try{ const {data}=await sb.auth.getSession(); S.session=data.session; await refresh(); }
   catch(e){ console.error(e); app().innerHTML=`<div class="wrap"><div class="err" style="margin-top:20px">Impossible de joindre le centre pour l'instant. Vérifiez votre connexion internet puis rechargez la page.</div></div>`; return; }
   S.loading=false; render();
@@ -1627,5 +1692,5 @@ async function autoRefresh(){ if(busy||!S.session||S.loading||document.hidden) r
 setInterval(autoRefresh, 60000);
 document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) autoRefresh(); });
 if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
-console.log("CMPL app version 20261016d");
+console.log("CMPL app version 20261016f");
 })();
