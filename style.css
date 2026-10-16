@@ -513,3 +513,4 @@ small.qty{font-size:inherit;color:var(--muted)}
 .contacts textarea{resize:vertical}
 .xcontacts{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:6px;font-size:13px;color:var(--muted)}
 .xcontacts .xnote{flex-basis:100%}
+.readall{justify-content:flex-end;margin:4px 0 8px}

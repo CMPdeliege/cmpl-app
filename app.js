@@ -1012,8 +1012,11 @@ function patientNotifs(a){
   a.innerHTML=`<div class="convhead"><button class="back" id="back" aria-label="Retour">${IC.back}</button><div><h2>Notifications</h2></div></div>
   <label class="pref"><input type="checkbox" id="emailnotif" ${S.me.email_notify!==false?"checked":""}><span><b>Me prévenir par e-mail</b><small>Un e-mail court quand le centre vous écrit, sans aucune information médicale : il vous invite simplement à ouvrir l'application.</small></span></label>
   <label class="pref"><input type="checkbox" id="newspush" ${S.me.news_push?"checked":""}><span><b>Annonces importantes du centre</b><small>Fermetures exceptionnelles, campagnes de vaccination. Uniquement si vous cochez cette case. Les réponses à vos demandes restent toujours notifiées.</small></span></label>
+  ${S.notifs.some(n=>!n.read_at)?`<div class="btnrow readall"><button class="btn ghost" id="readall">✓ Tout marquer comme lu</button></div>`:""}
   <div class="list">${S.notifs.length?S.notifs.map(n=>`<button class="row nrow ${n.read_at?"":"unread"}" data-n="${n.id}"><div class="ic">${n.announcement_id?IC.news:IC.bell}</div><div><b>${esc(n.title)}</b><small style="white-space:normal">${esc(n.body)}</small><small>${fmt(n.created_at)}</small></div><span></span></button>`).join(""):`<div class="empty">Aucune notification.</div>`}</div>`;
   $("#back").onclick=()=>{S.screen="home";render()};
+  const ra=$("#readall"); if(ra) ra.onclick=async()=>{ ra.disabled=true; const now=new Date().toISOString();
+    if(await run(()=>sb.from("notifications").update({read_at:now}).eq("user_id",S.me.id).is("read_at",null),"Toutes les notifications sont marquées comme lues")){ S.notifs.forEach(n=>{ if(!n.read_at) n.read_at=now; }); render(); } else ra.disabled=false; };
   $("#emailnotif").onchange=async e=>{ const v=e.target.checked; if(await run(()=>sb.from("profiles").update({email_notify:v}).eq("id",S.me.id),v?"Vous serez prévenu par e-mail":"Plus d'e-mail de notification")) S.me.email_notify=v; else e.target.checked=!v; };
   $("#newspush").onchange=async e=>{ const v=e.target.checked; if(await run(()=>sb.rpc("set_news_consent",{p_ok:v}),v?"Annonces activées":"Annonces désactivées")){ S.me.news_push=v; S.me.news_choice_at=new Date().toISOString(); } else e.target.checked=!v; };
   $$("[data-n]").forEach(b=>b.onclick=async()=>{ const n=S.notifs.find(x=>x.id===+b.dataset.n);
@@ -1735,5 +1738,5 @@ async function autoRefresh(){ if(busy||!S.session||S.loading||document.hidden) r
 setInterval(autoRefresh, 60000);
 document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) autoRefresh(); });
 if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
-console.log("CMPL app version 20261016h");
+console.log("CMPL app version 20261016i");
 })();
