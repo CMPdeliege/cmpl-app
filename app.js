@@ -868,9 +868,12 @@ function updateBadges(n=badgeCount()){
 }
 // ---------- Notifications push (téléphone et ordinateur, même app fermée) ----------
 const IS_IOS=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
-const IS_STANDALONE=matchMedia("(display-mode: standalone)").matches||navigator.standalone===true;
+// Dans l'app iPhone / Android (App Store, Google Play) : les notifications natives arrivent à l'étape suivante
+const IS_NATIVE=/CMPLApp/.test(navigator.userAgent)||!!(window.Capacitor&&window.Capacitor.isNativePlatform&&window.Capacitor.isNativePlatform());
+const IS_STANDALONE=IS_NATIVE||matchMedia("(display-mode: standalone)").matches||navigator.standalone===true;
 let pushSynced=false;
 function pushState(){
+  if(IS_NATIVE) return "unsupported";
   if(IS_IOS&&!IS_STANDALONE&&!("PushManager" in window)) return "ios-browser";
   if(!("serviceWorker" in navigator)||!("PushManager" in window)||!("Notification" in window)) return "unsupported";
   return Notification.permission;   // default | granted | denied
@@ -2005,5 +2008,5 @@ async function autoRefresh(){ if(busy||!S.session||S.loading||document.hidden||S
 setInterval(autoRefresh, 60000);
 document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) autoRefresh(); });
 if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
-console.log("CMPL app version 20261017b");
+console.log("CMPL app version 20261017c");
 })();
