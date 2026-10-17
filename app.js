@@ -117,6 +117,7 @@ const IC={
  scan:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M4 12h16"/></svg>',
  search:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>',
  clip:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 11.5l-8.2 8.2a5 5 0 0 1-7.1-7.1l8.6-8.6a3.4 3.4 0 0 1 4.8 4.8l-8.6 8.6a1.7 1.7 0 0 1-2.4-2.4l7.9-7.9"/></svg>',
+ help:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><path d="M9.3 9.2a2.8 2.8 0 0 1 5.4 1c0 1.9-2.7 2.4-2.7 4"/><path d="M12 17.4h.01"/></svg>',
  mic:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>',
  send:'<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M3.4 20.4l17.5-7.5a1 1 0 0 0 0-1.8L3.4 3.6a.9.9 0 0 0-1.3 1l1.8 6.4 9 1-9 1-1.8 6.4a.9.9 0 0 0 1.3 1z"/></svg>',
  trash:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
@@ -177,6 +178,12 @@ const pourOptions = () => ["Pour moi", ...kids().map(kidLabel)];
 const kidFromPour = v => kids().find(c=>kidLabel(c)===v)||null;
 const childInfo = id => id ? (famKids().find(c=>c.id===id) || S.children?.[id] || null) : null;
 const childFirst = id => childInfo(id)?.first_name || "votre enfant";
+// Prestataire choisi dans le formulaire (ou seul prestataire de la spécialité)
+const chosenProv = a => { let p=a.medecin?P.fromLabel(a.medecin):null; if(!p&&a.specialite&&P.of(a.specialite).length===1) p=P.of(a.specialite)[0]; return p||null; };
+const DEJA_VU = {id:"deja_vu",kind:"choice",q:()=>`Avez-vous déjà consulté ${chosenProv(S.answers)?.display_name||"ce prestataire"} ?`,options:["Oui","Non, jamais"],
+  when:a=>{ const p=chosenProv(a); return !!p&&p.direct_contact!==false; }};
+const VIA_SECR = {kind:"note",q:"Votre demande sera d'abord lue par le secrétariat, qui la transmettra au bon prestataire.",
+  when:a=>{ const p=chosenProv(a); return !!p&&(p.direct_contact===false||a.deja_vu==="Non, jamais"); }};
 const POUR_STEP = {id:"pour",kind:"choice",q:"C'est pour qui ?",options:()=>pourOptions(),when:()=>kids().length>0};
 const KID_NOTE = {kind:"note",q:"Pour un enfant de moins de 16 ans : ajoutez-le d'abord dans Mon compte → Ma famille.",when:()=>!kids().length};
 const FLOWS={
@@ -232,12 +239,14 @@ FLOWS.document=[
   {id:"note",kind:"text",q:"Un mot pour accompagner le document ?",placeholder:"Ex. résultats de la prise de sang du 10 octobre",optional:true},
   {kind:"note",q:"Le document sera vu dans les 72 heures (heures d'ouverture). Le prestataire vous répond ici ou vous propose un rendez-vous."}
 ];
+// Après le choix du prestataire : « Avez-vous déjà consulté… ? » (sauf rendez-vous et secrétariat)
+["question","prescription","rapport","document"].forEach(k=>{ const i=FLOWS[k].findIndex(s=>s.id==="medecin"); FLOWS[k].splice(i+1,0,DEJA_VU); FLOWS[k].push(VIA_SECR); });
 ["question","prescription","rapport","resultats","document"].forEach(k=>FLOWS[k].unshift(POUR_STEP));
 FLOWS.rdv.push(KID_NOTE); FLOWS.question.push(KID_NOTE);
 const LABELS={doc:"Document",fichiers:"Fichiers",note:"Message",de:"De",pour:"Pour",specialite:"Consultation",medecin:"Prestataire",motif:"Motif",delai:"Pour quand",details:"Détails",moment:"Disponibilités",lieu:"Lieu",
  sujet:"Sujet",depuis:"Depuis",texte:"Question",medicament:"Médicaments",historique:"Déjà prescrit",nouveau:"Choix",remarque:"Remarque",
  examen:"Examen",quand:"Date",demandeur:"Demandé par",contact:"Contact souhaité",
- premiere:"Première consultation",raison:"Raison",destinataire:"Rapport pour",echeance:"Pour quand"};
+ premiere:"Première consultation",deja_vu:"Déjà consulté",raison:"Raison",destinataire:"Rapport pour",echeance:"Pour quand"};
 const HIDDEN_KEYS=new Set(["provider_id","medicaments"]);
 const answersDL = a => Object.entries(a||{}).filter(([k])=>!HIDDEN_KEYS.has(k)).map(([k,v])=>`<dt>${esc(LABELS[k]||k)}</dt><dd>${esc(v||"—")}</dd>`).join("");
 const summaryLine = a => a.motif||a.raison||(a.destinataire?"Pour "+a.destinataire:"")||a.texte||a.medicament||a.examen||a.doc||a.sujet||"";
@@ -399,7 +408,7 @@ function composerHTML(key){
    </div>
    <div class="recbar" id="recbar" hidden>
     <button type="button" class="cbtn" id="r-cancel" aria-label="Annuler le message vocal">${IC.trash}</button>
-    <span class="recdot" aria-hidden="true"></span><span id="r-time" class="rtime">0:00</span><span class="lvl" aria-hidden="true"><i id="r-lvl"></i></span><span class="rech">Parlez… (3 min max.)</span>
+    <span class="recdot" aria-hidden="true"></span><span id="r-time" class="rtime">0:00</span><span class="lvl" aria-hidden="true"><i id="r-lvl"></i></span><span class="rech">Parlez, puis touchez ➤ pour envoyer</span>
     <button type="button" class="cbtn go" id="r-send" aria-label="Envoyer le message vocal">${IC.send}</button>
    </div>
   </div>`;
@@ -653,16 +662,17 @@ async function startRec(key, send){
   const chunks=[], t0=Date.now(); mr.ondataavailable=e=>{ if(e.data&&e.data.size) chunks.push(e.data); };
   REC={mr,stream,tick:null,ac}; S.rec=true;
   $("#cbrow").hidden=true; $("#recbar").hidden=false; const at=$("#chatbar .attprev"); if(at) at.hidden=true;
-  const finish=doSend=>{ if(!REC||REC.mr!==mr) return; clearInterval(REC.tick);
+  let ms=0, secs=0;
+  const finish=doSend=>{ if(!REC||REC.mr!==mr) return; clearInterval(REC.tick); ms=Date.now()-t0; secs=Math.max(1,Math.round(ms/1000));
     mr.onstop=async()=>{ stream.getTracks().forEach(t=>t.stop()); const measured=!!(ac&&ac.state==="running"); try{ ac&&ac.close(); }catch(e){} REC=null; S.rec=false;
-      const secs=Math.round((Date.now()-t0)/1000);
       if(!doSend) return render();
-      if(secs<1||!chunks.length){ toast("Message vocal trop court."); return render(); }
+      if(!chunks.length) await new Promise(r=>setTimeout(r,400));   // Safari : le dernier morceau arrive parfois après « stop »
+      if(!chunks.length){ toast("L'enregistrement n'a pas fonctionné sur cet appareil. Réessayez, ou écrivez votre message."); return render(); }
+      if(ms<800){ toast("Message vocal trop court : touchez le micro une fois, parlez, puis touchez ➤ pour envoyer."); return render(); }
       if(measured&&peak<0.02){ toast("Aucun son n'a été capté. Vérifiez que le micro est autorisé et non coupé, puis réessayez."); return render(); }
       const mime=((mr.mimeType||type||"audio/webm").split(";")[0]).replace("audio/x-m4a","audio/mp4").replace("audio/aac","audio/mp4");
       const ok=await send($("#c-text")?.value.trim()||"", {key,kind:"audio",mime,name:"Message vocal",blob:new Blob(chunks,{type:mime}),duration:secs});
       if(!ok) render(); };
-    try{ mr.requestData(); }catch(e){}
     mr.stop(); };
   REC.tick=setInterval(()=>{ const s=Math.floor((Date.now()-t0)/1000), el=$("#r-time"); if(el) el.textContent=dur(s);
     if(an){ an.getByteTimeDomainData(buf); let m=0; for(const v of buf){ const d=Math.abs(v-128)/128; if(d>m) m=d; } peak=Math.max(peak,m);
@@ -670,7 +680,7 @@ async function startRec(key, send){
     if(s>=180) finish(true); },100);
   $("#r-cancel").onclick=()=>finish(false);
   $("#r-send").onclick=()=>finish(true);
-  mr.start();
+  mr.start(1000);   // un morceau chaque seconde : rien n'est perdu, même sur iPhone
 }
 const patientName = id => { const p=S.profiles[id]; return p ? `${p.first_name||""} ${p.last_name||""}`.trim() || "Patient" : "Patient"; };
 function extraContactsHTML(p){ const L=(p&&p.extra_contacts)||[]; if(!L.length&&!(p&&p.contact_note)) return "";
@@ -688,7 +698,7 @@ function newsCard(n, full){
    ===================================================================== */
 async function loadPublic(){
   const [pr, oh, nw] = await Promise.all([
-    sb.from("providers").select("id,display_name,specialty,job,is_physician,sort_order").order("sort_order"),
+    sb.from("providers").select("id,display_name,specialty,job,is_physician,sort_order,direct_contact").order("sort_order"),
     sb.from("opening_hours").select("dow,opens,closes"),
     sb.from("announcements").select("*").order("published_at",{ascending:false}).limit(30)
   ]);
@@ -730,6 +740,7 @@ async function loadStaff(){
   if(role==="secretariat"||role==="admin") tasks.push(sb.rpc("news_audience").then(r=>S.audience=r.data));
   if(role==="secretariat"||role==="admin") tasks.push(sb.from("children").select("id,first_name,last_name,birth_date,status,created_by,created_at").eq("status","pending").is("removed_at",null).order("created_at").then(r=>S.pendingKids=r.data||[]));
   tasks.push(sb.from("tasks").select("*").order("created_at",{ascending:false}).limit(500).then(r=>S.tasks=r.data||[]));
+  tasks.push(loadInventory());
   await Promise.all(tasks);
   // enfants (demandes, tâches) et parents à afficher
   const kidIds=[...new Set([...S.reqs.map(r=>r.child_id),...(S.tasks||[]).map(t=>t.child_id)].filter(Boolean))].filter(id=>!S.children[id]);
@@ -755,6 +766,7 @@ async function refresh(){
   }
   if(S.me.status==="active"){ if(S.me.role==="patient") await loadPatient(); else await loadStaff(); }
   render();
+  if(S.me.status==="active"&&!pushSynced&&pushState()==="granted"){ pushSynced=true; pushSubscribe().catch(()=>{ pushSynced=false; }); }
 }
 
 // L'équipe travaille toujours en français ; le patient retrouve sa langue sur tous ses appareils
@@ -778,8 +790,11 @@ setInterval(()=>{ if(S.me&&S.me.role!=="patient"&&S.session&&Date.now()-lastAct>
 
 /* ---------- équipe : double authentification ---------- */
 function renderMfa(a){
-  a.className="wrap";
   const enroll=!S.mfa.hasFactor;
+  // déjà affiché : ne pas recréer (sinon le code QR déjà scanné serait remplacé par un nouveau)
+  if(a.dataset.view===(enroll?"mfa-enroll":"mfa-code")&&$("#mfa-go")) return;
+  a.dataset.view=enroll?"mfa-enroll":"mfa-code";
+  a.className="wrap";
   a.innerHTML=`<div class="top">${BRAND}<button class="iconbtn" id="logout" aria-label="Se déconnecter">${IC.user}</button></div>
   <div class="auth"><h1>${enroll?"Activer la double authentification":"Code de sécurité"}</h1>
   <p class="sub" style="margin:0">${enroll?"Les comptes de l'équipe donnent accès à des données de santé. Une étape de sécurité supplémentaire est obligatoire, une seule fois par appareil et par connexion.":"Ouvrez votre application d'authentification et entrez le code à 6 chiffres affiché pour « Centre Médical Prince de Liège »."}</p>
@@ -798,7 +813,7 @@ function renderMfa(a){
     const {data:lf}=await sb.auth.mfa.listFactors();
     if(enroll){
       for(const f of (lf?.all||[])) if(f.status!=="verified") await sb.auth.mfa.unenroll({factorId:f.id});
-      const {data,error}=await sb.auth.mfa.enroll({factorType:"totp",issuer:"Centre Médical Prince de Liège",friendlyName:"CMPL "+new Date().toISOString().slice(0,16)});
+      const {data,error}=await sb.auth.mfa.enroll({factorType:"totp",issuer:"Centre Médical Prince de Liège",friendlyName:"CMPL "+new Date().toISOString().slice(0,19)+" "+Math.random().toString(36).slice(2,6)});
       if(error){ console.error("MFA enroll",error); msg("La préparation du code a échoué (erreur "+(error.status||"?")+(error.code?" "+error.code:"")+"). "+(error.message&&error.message!=="{}"?frError(error):"")+" Réessayez dans un instant ; si cela persiste, prévenez l'administrateur."); return; }
       factorId=data.id;
       const raw=String(data.totp.qr_code||""), svg=raw.replace(/^data:image\/svg\+xml;[^,]*,/,""), qrSrc=svg.trim().startsWith("<")?"data:image/svg+xml;charset=utf-8,"+encodeURIComponent(svg):raw;
@@ -850,6 +865,52 @@ function updateBadges(n=badgeCount()){
   document.title = n ? `(${n}) ${BASE_TITLE}` : BASE_TITLE;
   setFavicon(n);
   try{ if(navigator.setAppBadge){ (n?navigator.setAppBadge(n):navigator.clearAppBadge()).catch(()=>{}); } }catch(e){}
+}
+// ---------- Notifications push (téléphone et ordinateur, même app fermée) ----------
+const IS_IOS=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
+const IS_STANDALONE=matchMedia("(display-mode: standalone)").matches||navigator.standalone===true;
+let pushSynced=false;
+function pushState(){
+  if(IS_IOS&&!IS_STANDALONE&&!("PushManager" in window)) return "ios-browser";
+  if(!("serviceWorker" in navigator)||!("PushManager" in window)||!("Notification" in window)) return "unsupported";
+  return Notification.permission;   // default | granted | denied
+}
+const b64uToBytes=s=>{ s=s.replace(/-/g,"+").replace(/_/g,"/"); while(s.length%4) s+="="; return Uint8Array.from(atob(s),c=>c.charCodeAt(0)); };
+const bytesToB64u=buf=>btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+async function pushSubscribe(){
+  const {data:key,error}=await sb.rpc("push_public_key"); if(error||!key) return "nokey";
+  const reg=await navigator.serviceWorker.ready;
+  let sub=await reg.pushManager.getSubscription();
+  const old=sub&&sub.options&&sub.options.applicationServerKey;
+  if(sub&&old&&bytesToB64u(old)!==key){ await sub.unsubscribe(); sub=null; }
+  if(!sub) sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64uToBytes(key)});
+  const j=sub.toJSON();
+  const {error:e2}=await sb.rpc("push_register",{p_endpoint:j.endpoint,p_p256dh:j.keys.p256dh,p_auth:j.keys.auth});
+  return e2?"error":"ok";
+}
+async function pushForget(){
+  pushSynced=false;
+  try{ if(!("serviceWorker" in navigator)) return; const reg=await navigator.serviceWorker.getRegistration(); const sub=reg&&await reg.pushManager.getSubscription();
+    if(sub){ await sb.rpc("push_unregister",{p_endpoint:sub.endpoint}); await sub.unsubscribe(); } }catch(e){}
+}
+function pushBlockHTML(staff){
+  const st=pushState();
+  if(st==="unsupported") return "";
+  if(st==="ios-browser") return `<div class="pref"><span><b>Notifications sur l'iPhone</b><small>Pour recevoir les notifications, ajoutez d'abord l'app à l'écran d'accueil : bouton Partager, puis « Sur l'écran d'accueil ». Ouvrez ensuite l'app depuis cette icône.</small></span></div>`;
+  if(st==="granted") return `<div class="pref"><span><b>Notifications sur cet appareil ✓</b><small>${staff?"Vous êtes prévenu ici, au rythme choisi ci-dessus, même app fermée. Sans nom de patient ni information médicale.":"Vous êtes prévenu ici, même app fermée, avec le nombre de nouveautés sur l'icône. Sans aucune information médicale."}</small></span></div>`;
+  if(st==="denied") return `<div class="pref"><span><b>Notifications bloquées sur cet appareil</b><small>Vous pouvez les autoriser dans les réglages du téléphone ou du navigateur.</small></span></div>`;
+  return `<div class="pref"><span><b>Notifications sur cet appareil</b><small>${staff?"Recevez une alerte sur ce téléphone ou cet ordinateur pour les nouvelles demandes et les messages de patients, au rythme choisi ci-dessus, même app fermée. Sans nom de patient ni information médicale.":"Soyez prévenu ici dès que le centre vous écrit, même app fermée, avec le nombre de nouveautés sur l'icône de l'app, comme WhatsApp. Sans aucune information médicale. Votre appareil va vous demander l'autorisation."}</small><button class="btn ghost" id="pushon" style="margin-top:8px">Activer</button></span></div>`;
+}
+function bindPush(){
+  const b=$("#pushon"); if(!b) return;
+  b.onclick=async()=>{ b.disabled=true;
+    try{
+      const p=await Notification.requestPermission();
+      if(p!=="granted"){ toast("Notifications refusées : vous pouvez les autoriser dans les réglages du téléphone."); render(); return; }
+      const r=await pushSubscribe(); pushSynced=true; lastBadge=-1; updateBadges();
+      toast(r==="ok"?"Notifications activées":"Notifications pas encore disponibles. Réessayez plus tard.");
+    }catch(e){ toast("Activation impossible sur cet appareil."); }
+    render(); };
 }
 // Onglet en arrière-plan : le compteur se met à jour toutes les 2 minutes, sans recharger l'écran
 setInterval(async()=>{ if(!document.hidden||!S.me||S.me.status!=="active") return;
@@ -969,7 +1030,7 @@ function renderBlocked(a){
   <div class="closed"><b>Compte non validé</b><span>Ce compte n'a pas pu être validé. Contactez le secrétariat au 02 781 18 75.</span></div>`;
   $("#logout").onclick=logout;
 }
-async function logout(reason){ await sb.auth.signOut(); updateBadges(0); const keep=savedLang(); if(keep&&keep!==L) applyLang(keep); S.session=null; S.me=null; S.mfa=null; S.screen="home"; S.cscreen="inbox"; try{ localStorage.removeItem("cmpl_last_active"); }catch(e){} render(); if(typeof reason==="string") toast(reason); }
+async function logout(reason){ if(typeof reason!=="string") await pushForget(); await sb.auth.signOut(); updateBadges(0); const keep=savedLang(); if(keep&&keep!==L) applyLang(keep); S.session=null; S.me=null; S.mfa=null; S.screen="home"; S.cscreen="inbox"; try{ localStorage.removeItem("cmpl_last_active"); }catch(e){} render(); if(typeof reason==="string") toast(reason); }
 
 /* =====================================================================
    PATIENT
@@ -982,13 +1043,15 @@ function renderPatient(a){
   if(sc==="notifs") return patientNotifs(a);
   if(sc==="news") return patientNews(a);
   if(sc==="account") return patientAccount(a);
-  return patientHome(a);
+  if(sc==="help") return patientHelp(a);
+  patientHome(a);
+  if(!tourDone()) setTimeout(()=>{ if(S.me&&S.me.role==="patient"&&S.screen==="home"&&!tourDone()) openTour(); },400);
 }
 function topBar(){
   const unread=S.notifs.filter(n=>!n.read_at).length;
-  return `<div class="top">${BRAND}<div class="menu"><button class="iconbtn bell" id="bell" aria-label="Notifications">${IC.bell}${unread?`<span class="badge">${unread}</span>`:""}</button><button class="iconbtn" id="acct" aria-label="Mon compte">${AV.get(S.me.id)?avatarHTML(AV.get(S.me.id),"",42):IC.user}</button></div></div>`;
+  return `<div class="top">${BRAND}<div class="menu"><button class="iconbtn" id="help" aria-label="Aide">${IC.help}</button><button class="iconbtn bell" id="bell" aria-label="Notifications">${IC.bell}${unread?`<span class="badge">${unread}</span>`:""}</button><button class="iconbtn" id="acct" aria-label="Mon compte">${AV.get(S.me.id)?avatarHTML(AV.get(S.me.id),"",42):IC.user}</button></div></div>`;
 }
-function bindTop(){ $("#bell").onclick=()=>{S.screen="notifs";render()}; $("#acct").onclick=()=>{S.screen="account";render()}; }
+function bindTop(){ $("#help").onclick=()=>{S.screen="help";render();scrollTo(0,0)}; $("#bell").onclick=()=>{S.screen="notifs";render()}; $("#acct").onclick=()=>{S.screen="account";render()}; }
 function patientHome(a){
   const pinned=S.news.filter(n=>n.pinned), others=S.news.filter(n=>!n.pinned);
   const fk=famKids(), who=S.who&&(S.who==="me"||fk.some(c=>c.id===S.who))?S.who:"all";
@@ -1043,12 +1106,11 @@ function patientNotifs(a){
   a.innerHTML=`<div class="convhead"><button class="back" id="back" aria-label="Retour">${IC.back}</button><div><h2>Notifications</h2></div></div>
   <label class="pref"><input type="checkbox" id="emailnotif" ${S.me.email_notify!==false?"checked":""}><span><b>Me prévenir par e-mail</b><small>Un e-mail court quand le centre vous écrit, sans aucune information médicale : il vous invite simplement à ouvrir l'application.</small></span></label>
   <label class="pref"><input type="checkbox" id="newspush" ${S.me.news_push?"checked":""}><span><b>Annonces importantes du centre</b><small>Fermetures exceptionnelles, campagnes de vaccination. Uniquement si vous cochez cette case. Les réponses à vos demandes restent toujours notifiées.</small></span></label>
-  ${("setAppBadge" in navigator)&&("Notification" in window)&&Notification.permission!=="granted"?`<div class="pref"><span><b>Pastille sur l'icône de l'app</b><small>Affiche le nombre de nouvelles notifications sur l'icône de l'app, comme WhatsApp. Votre téléphone va vous demander l'autorisation.</small><button class="btn ghost" id="badgeon" style="margin-top:8px">Activer</button></span></div>`:""}
+  ${pushBlockHTML(false)}
   ${S.notifs.some(n=>!n.read_at)?`<div class="btnrow readall"><button class="btn ghost" id="readall">✓ Tout marquer comme lu</button></div>`:""}
   <div class="list">${S.notifs.length?S.notifs.map(n=>`<button class="row nrow ${n.read_at?"":"unread"}" data-n="${n.id}"><div class="ic">${n.announcement_id?IC.news:IC.bell}</div><div><b>${esc(n.title)}</b><small style="white-space:normal">${esc(n.body)}</small><small>${fmt(n.created_at)}</small></div><span></span></button>`).join(""):`<div class="empty">Aucune notification.</div>`}</div>`;
   $("#back").onclick=()=>{S.screen="home";render()};
-  const bo=$("#badgeon"); if(bo) bo.onclick=async()=>{ try{ const p=await Notification.requestPermission();
-      if(p==="granted"){ lastBadge=-1; updateBadges(); toast("Pastille activée"); render(); } else toast("Pastille refusée : vous pouvez l'autoriser dans les réglages du téléphone."); }catch(e){ toast("Pastille refusée : vous pouvez l'autoriser dans les réglages du téléphone."); } };
+  bindPush();
   const ra=$("#readall"); if(ra) ra.onclick=async()=>{ ra.disabled=true; const now=new Date().toISOString();
     if(await run(()=>sb.from("notifications").update({read_at:now}).eq("user_id",S.me.id).is("read_at",null),"Toutes les notifications sont marquées comme lues")){ S.notifs.forEach(n=>{ if(!n.read_at) n.read_at=now; }); render(); } else ra.disabled=false; };
   $("#emailnotif").onchange=async e=>{ const v=e.target.checked; if(await run(()=>sb.from("profiles").update({email_notify:v}).eq("id",S.me.id),v?"Vous serez prévenu par e-mail":"Plus d'e-mail de notification")) S.me.email_notify=v; else e.target.checked=!v; };
@@ -1056,6 +1118,64 @@ function patientNotifs(a){
   $$("[data-n]").forEach(b=>b.onclick=async()=>{ const n=S.notifs.find(x=>x.id===+b.dataset.n);
     if(!n.read_at){ await sb.from("notifications").update({read_at:new Date().toISOString()}).eq("id",n.id); n.read_at=new Date().toISOString(); }
     if(n.request_id) openRequest(n.request_id); else if(n.announcement_id){ S.openNews=n.announcement_id; S.screen="news"; render(); } else render(); });
+}
+/* ---------- visite guidée et aide (patients) ---------- */
+const TOUR=[
+ {ic:"bell",t:"Bienvenue dans l'app du Centre Médical Prince de Liège",x:"Découvrez en une minute tout ce que vous pouvez faire avec l'app. Touchez « Suivant »."},
+ {ic:"rdv",t:"Demander un rendez-vous",x:"Choisissez le type de consultation et le motif. Le secrétariat vous propose ensuite un moment, directement dans la conversation."},
+ {ic:"question",t:"Poser une question",x:"Écrivez à un prestataire du centre : par message, photo ou message vocal. Réponse dans les 24 à 72 heures, pendant les heures d'ouverture."},
+ {ic:"prescription",t:"Renouveler un médicament",x:"Choisissez votre traitement habituel. Si le médecin accepte, la prescription est électronique : votre pharmacien la retrouve avec votre carte d'identité."},
+ {ic:"document",t:"Documents, résultats et rapports",x:"Envoyez un résultat ou un courrier, signalez un examen dont vous attendez le résultat, ou demandez un rapport médical."},
+ {ic:"bell",t:"Vos réponses",x:"Les réponses arrivent dans « Mes demandes ». La cloche en haut vous prévient des nouveautés. Activez les notifications pour être prévenu même quand l'app est fermée."},
+ {ic:"user",t:"Ma famille et mon compte",x:"Dans Mon compte (en haut à droite) : ajoutez vos enfants de moins de 16 ans pour faire des demandes en leur nom, et choisissez la langue de l'app."},
+ {ic:"alert",t:"Important : pas pour les urgences",x:"L'app n'est pas faite pour les urgences. Urgence vitale : appelez le 112. Pour une question urgente pendant les heures d'ouverture, appelez le centre au 02 781 18 75."}
+];
+const tourKey = () => "cmpl_tour_"+(S.me?.id||"");
+function tourDone(){ if(!S.me||S.me.status!=="active"||S.me.tour_done_at) return true; try{ return localStorage.getItem(tourKey())==="1"; }catch(e){ return false; } }
+function markTourDone(){ if(!S.me) return; const now=new Date().toISOString(); S.me.tour_done_at=S.me.tour_done_at||now;
+  try{ localStorage.setItem(tourKey(),"1"); }catch(e){}
+  sb.from("profiles").update({tour_done_at:now}).eq("id",S.me.id).then(()=>{},()=>{}); }
+function openTour(){
+  if(document.querySelector(".tour")) return;
+  let i=0; const v=document.createElement("div"); v.className="tour"; v.setAttribute("role","dialog"); v.setAttribute("aria-modal","true"); v.setAttribute("aria-label","Visite guidée");
+  const close=()=>{ markTourDone(); v.remove(); removeEventListener("keydown",key); };
+  const key=e=>{ if(e.key==="Escape") close(); else if(e.key==="ArrowRight"&&i<TOUR.length-1){ i++; paint(); } else if(e.key==="ArrowLeft"&&i>0){ i--; paint(); } };
+  const paint=()=>{ const st=TOUR[i], last=i===TOUR.length-1;
+    v.innerHTML=`<div class="tourbox"><button type="button" class="linkbtn tourskip" id="t-skip">${last?"Fermer":"Passer"}</button>
+     <div class="touric ${st.ic==="alert"?"warn":""}">${IC[st.ic]||IC.bell}</div>
+     <h2>${esc(st.t)}</h2><p>${esc(st.x)}</p>
+     <div class="tourdots" aria-hidden="true">${TOUR.map((_,k)=>`<span class="${k===i?"on":""}"></span>`).join("")}</div>
+     <p class="hint tourstep">Étape ${i+1} sur ${TOUR.length}</p>
+     <div class="btnrow">${i?`<button type="button" class="btn ghost" id="t-prev">Précédent</button>`:""}<button type="button" class="btn" id="t-next">${last?"C'est parti":"Suivant"}</button></div>
+     ${last?`<p class="hint">Vous pouvez revoir cette visite à tout moment : bouton Aide (?) en haut de l'écran.</p>`:""}</div>`;
+    v.querySelector("#t-skip").onclick=close;
+    const pv=v.querySelector("#t-prev"); if(pv) pv.onclick=()=>{ i--; paint(); };
+    v.querySelector("#t-next").onclick=()=>{ if(last) close(); else { i++; paint(); } };
+    v.querySelector("#t-next").focus(); };
+  paint(); document.body.appendChild(v); addEventListener("keydown",key);
+}
+const FAQ=[
+ ["Puis-je utiliser l'app en cas d'urgence ?","Non. Urgence vitale : appelez le 112. Pour une question urgente pendant les heures d'ouverture, appelez le centre au 02 781 18 75."],
+ ["Dans combien de temps aurai-je une réponse ?","Dans les 24 heures pour une demande urgente (un symptôme, un rendez-vous pour aujourd'hui), dans les 72 heures pour le reste. Ces délais comptent uniquement les heures d'ouverture du centre."],
+ ["Qui lit mes messages ?","Uniquement l'équipe du centre : le prestataire concerné et le secrétariat. Vos données restent en Europe, sont protégées et ne sont jamais vendues."],
+ ["Comment prendre rendez-vous ?","Touchez « Demander un rendez-vous », choisissez la consultation et le motif. Le secrétariat vous répond dans la conversation avec une proposition. Vous pouvez aussi réserver en ligne sur Rosa (rosa.be)."],
+ ["Pourquoi ma demande est-elle passée par le secrétariat ?","Certains prestataires préfèrent que les demandes passent d'abord par le secrétariat. C'est aussi le cas si vous n'avez encore jamais consulté ce prestataire. Le secrétariat lit votre demande et la transmet à la bonne personne."],
+ ["Comment renouveler un médicament ?","Touchez « Renouveler un médicament », tapez les premières lettres du nom, choisissez la boîte, puis envoyez. Si le médecin accepte, votre pharmacien retrouve la prescription avec votre carte d'identité. Vos médicaments déjà accordés apparaissent sur l'accueil : un bouton permet de les redemander."],
+ ["Comment envoyer une photo, un document ou un message vocal ?","Dans une conversation : le trombone pour une photo ou un PDF, l'icône de scanner pour photographier un document papier, et le micro pour un message vocal. Pour le vocal : touchez le micro une fois, parlez, puis touchez ➤ pour envoyer."],
+ ["Comment faire une demande pour mon enfant ?","Dans Mon compte → Ma famille, ajoutez votre enfant de moins de 16 ans. Après validation par le centre, choisissez son prénom au début de chaque demande."],
+ ["Comment être prévenu d'une réponse ?","Par e-mail (sans aucune information médicale) et par notification sur votre téléphone. Réglez-les dans Notifications (la cloche). Sur iPhone, ajoutez d'abord l'app à l'écran d'accueil."],
+ ["Une conversation a disparu, pourquoi ?","Pour protéger vos données, les conversations sont effacées 15 jours après leur clôture. Vous recevez un rappel 2 jours avant : ouvrez-la et touchez « Enregistrer la conversation (PDF) » si vous souhaitez la garder."],
+ ["Comment changer la langue de l'app ?","Dans Mon compte, rubrique « Langue de l'application ». Les messages du centre restent écrits en français."],
+ ["J'ai oublié mon mot de passe","Sur l'écran de connexion, touchez « Mot de passe oublié ? » et suivez le lien reçu par e-mail."],
+ ["Comment supprimer mon compte ?","Dans Mon compte, rubrique « Mes données ». Vous pouvez aussi y télécharger une copie de vos données."]
+];
+function patientHelp(a){
+  a.innerHTML=`<div class="convhead"><button class="back" id="back" aria-label="Retour">${IC.back}</button><div><h2>Aide</h2><small>Questions fréquentes</small></div></div>
+  <section class="card helptour"><h3>Visite guidée</h3><p class="hint">Revoyez en une minute ce que l'app peut faire pour vous.</p><button class="btn" id="tourgo">Revoir la visite guidée</button></section>
+  <div class="faqlist">${FAQ.map(([q,r])=>`<details class="faq"><summary>${esc(q)}</summary><p>${esc(r)}</p></details>`).join("")}</div>
+  <section class="card helpcontact"><h3>Une autre question ?</h3><p>Appelez le secrétariat pendant les heures d'ouverture du centre : <a href="tel:+3227811875" translate="no">02 781 18 75</a></p><p class="hint">Urgence vitale : appelez le 112.</p></section>`;
+  $("#back").onclick=()=>{S.screen="home";render()};
+  $("#tourgo").onclick=()=>openTour();
 }
 function patientAccount(a){
   const m=S.me;
@@ -1351,6 +1471,7 @@ function renderStaff(a){
    <button data-cs="inbox" aria-pressed="${sc==="inbox"}">Demandes<span class="n">${S.reqs.filter(awaitingStaff).length||""}</span></button>
    <button data-cs="compose" aria-pressed="${sc==="compose"}">Écrire à un patient</button>
    <button data-cs="tasks" aria-pressed="${sc==="tasks"}">Tâches<span class="n">${myTasks().length||""}</span></button>
+   <button data-cs="inventory" aria-pressed="${sc==="inventory"}">Inventaire<span class="n">${invOpen()||""}</span></button>
    ${isDesk()?`<button data-cs="accounts" aria-pressed="${sc==="accounts"}">Comptes à valider<span class="n">${(S.pending.length+(S.pendingKids||[]).length)||""}</span></button>`:""}
    ${isDesk()?`<button data-cs="news" aria-pressed="${sc==="news"}">Actualités</button>`:""}
    ${S.me.role==="admin"?`<button data-cs="team" aria-pressed="${sc==="team"}">Équipe</button>`:""}
@@ -1359,12 +1480,12 @@ function renderStaff(a){
    <a class="navlink" href="${ROSA_PRO_URL}" target="_blank" rel="noopener" title="Ouvre votre agenda Rosa (connexion avec votre propre compte Rosa)">Mon agenda Rosa ↗</a>
   </div>`;
   let body="";
-  if(sc==="compose") body=composeHTML(); else if(sc==="tasks") body=tasksHTML(); else if(sc==="accounts") body=accountsHTML(); else if(sc==="news") body=newsAdminHTML(); else if(sc==="team") body=teamHTML(); else if(sc==="settings") body=settingsHTML(); else body=inboxHTML();
+  if(sc==="compose") body=composeHTML(); else if(sc==="inventory") body=inventoryHTML(); else if(sc==="tasks") body=tasksHTML(); else if(sc==="accounts") body=accountsHTML(); else if(sc==="news") body=newsAdminHTML(); else if(sc==="team") body=teamHTML(); else if(sc==="settings") body=settingsHTML(); else body=inboxHTML();
   a.innerHTML=nav+body;
   $("#logout").onclick=logout;
   $("#reload").onclick=async()=>{ await refresh(); toast("Actualisé"); };
-  $$("[data-cs]").forEach(b=>b.onclick=()=>{ S.cscreen=b.dataset.cs; render(); });
-  if(sc==="compose") bindCompose(); else if(sc==="tasks") bindTasks(); else if(sc==="accounts") bindAccounts(); else if(sc==="news") bindNewsAdmin(); else if(sc==="team") bindTeam(); else if(sc==="settings") bindSettings(); else bindInbox();
+  $$("[data-cs]").forEach(b=>b.onclick=()=>{ if(CREC&&b.dataset.cs!=="compose") composeRecStop(false); S.cscreen=b.dataset.cs; render(); });
+  if(sc==="compose") bindCompose(); else if(sc==="inventory") bindInventory(); else if(sc==="tasks") bindTasks(); else if(sc==="accounts") bindAccounts(); else if(sc==="news") bindNewsAdmin(); else if(sc==="team") bindTeam(); else if(sc==="settings") bindSettings(); else bindInbox();
 }
 
 /* ----- durée estimée des rendez-vous de médecine générale (visible par l'équipe seulement) ----- */
@@ -1494,18 +1615,23 @@ function composeHTML(){
    <h3>2. Message</h3>
    <label class="fld" for="cp-subj">Sujet<select id="cp-subj">${SUBJECTS.map(x=>`<option ${x===C.subject?"selected":""}>${x}</option>`).join("")}</select></label>
    <label class="fld" for="cp-body">Message au patient<textarea id="cp-body" rows="5" maxlength="4000" placeholder="Ex. Vos résultats de prise de sang sont normaux. Vous les trouverez en pièce jointe.">${esc(C.body)}</textarea></label>
-   <div class="filelist">${C.files.map((f,i)=>`<div class="fileitem">${f.kind==="image"?`<img src="${f.url}" alt="">`:IC.doc}<span><b>${esc(f.name)}</b><small>${f.pages?f.pages+" page"+(f.pages>1?"s":"")+" · ":""}${kb(f.blob.size)}</small></span><button type="button" class="linkbtn" data-cprm="${i}">Retirer</button></div>`).join("")}</div>
+   <div class="filelist">${C.files.map((f,i)=>`<div class="fileitem">${f.kind==="image"?`<img src="${f.url}" alt="">`:f.kind==="audio"?IC.mic:IC.doc}<span><b>${esc(f.name)}</b><small>${f.kind==="audio"?dur(f.duration)+" · ":""}${f.pages?f.pages+" page"+(f.pages>1?"s":"")+" · ":""}${kb(f.blob.size)}</small>${f.kind==="audio"?`<audio controls preload="metadata" src="${f.url}"></audio>`:""}</span><button type="button" class="linkbtn" data-cprm="${i}">Retirer</button></div>`).join("")}</div>
+   ${CREC?`<div class="cprec" role="status"><span class="recdot" aria-hidden="true"></span><span id="cp-rtime" class="rtime">${dur(Math.floor((Date.now()-CREC.t0)/1000))}</span><span>Enregistrement en cours… (3 min max.)</span><button type="button" class="btn" id="cp-rstop">Terminer</button><button type="button" class="linkbtn" id="cp-rcancel">Annuler</button></div>`:""}
    <input type="file" id="cp-file" accept="image/*,application/pdf" multiple hidden>
-   ${C.files.length<5?`<div class="btnrow"><button type="button" class="btn ghost" id="cp-pick">${IC.clip} Joindre un PDF ou une photo</button><button type="button" class="btn ghost" id="cp-scan">${IC.scan} Scanner</button></div>`:""}
+   ${C.files.length<5&&!CREC?`<div class="btnrow"><button type="button" class="btn ghost" id="cp-pick">${IC.clip} Joindre un PDF ou une photo</button><button type="button" class="btn ghost" id="cp-scan">${IC.scan} Scanner</button>${canRecord()&&!C.files.some(f=>f.kind==="audio")?`<button type="button" class="btn ghost" id="cp-mic">${IC.mic} Message vocal</button>`:""}</div>`:""}
+   <p class="hint" style="margin:0">Le texte est facultatif si vous joignez un message vocal ou un document.</p>
    <h3>3. Réponse</h3>
    <label class="chk2"><input type="radio" name="cp-r" value="1" ${C.reply?"checked":""}> Le patient peut répondre</label>
    <label class="chk2"><input type="radio" name="cp-r" value="0" ${C.reply?"":"checked"}> Pour information (classée d'emblée, le patient peut la lire mais pas répondre)</label>
-   <div class="btnrow"><button class="btn" id="cp-send" ${pt&&C.body.trim()?"":"disabled"}>${pt?`Envoyer à ${esc(`${pt.first_name||""} ${pt.last_name||""}`.trim())}`:"Choisissez d'abord le patient"}</button><button type="button" class="btn ghost" id="cp-reset">Effacer</button></div>
+   <div class="btnrow"><button class="btn" id="cp-send" ${pt&&(C.body.trim()||C.files.length)&&!CREC?"":"disabled"}>${pt?`Envoyer à ${esc(`${pt.first_name||""} ${pt.last_name||""}`.trim())}`:"Choisissez d'abord le patient"}</button><button type="button" class="btn ghost" id="cp-reset">Effacer</button></div>
   </div>`;
 }
 function bindCompose(){
   const C=S.compose;
-  const upd=()=>{ const b=$("#cp-send"); if(b) b.disabled=!(C.patient&&C.body.trim()); };
+  const upd=()=>{ const b=$("#cp-send"); if(b) b.disabled=!(C.patient&&(C.body.trim()||C.files.length))||!!CREC; };
+  const mic=$("#cp-mic"); if(mic) mic.onclick=()=>composeRecStart();
+  const rs=$("#cp-rstop"); if(rs) rs.onclick=()=>composeRecStop(true);
+  const rc=$("#cp-rcancel"); if(rc) rc.onclick=()=>composeRecStop(false);
   $("#cp-subj").onchange=e=>C.subject=e.target.value;
   $("#cp-body").oninput=e=>{ C.body=e.target.value; upd(); };
   $$("[name=cp-r]").forEach(r=>r.onchange=()=>C.reply=r.value==="1");
@@ -1521,8 +1647,8 @@ function bindCompose(){
   inp.onchange=async()=>{ for(const f of [...inp.files].slice(0,5-C.files.length)){ try{ C.files.push(await prepFile(f,"compose")); }catch(e){ toast(e.message); } } inp.value=""; render(); };
   const sc=$("#cp-scan"); if(sc) sc.onclick=()=>openScanner(pend=>{ C.files.push(pend); render(); });
   $$("[data-cprm]").forEach(b=>b.onclick=()=>{ const f=C.files.splice(+b.dataset.cprm,1)[0]; if(f&&f.url) URL.revokeObjectURL(f.url); render(); });
-  $("#cp-reset").onclick=()=>{ C.files.forEach(f=>f.url&&URL.revokeObjectURL(f.url)); S.compose=null; render(); };
-  const send=$("#cp-send"); send.onclick=async()=>{ send.disabled=true; send.textContent="Envoi…";
+  $("#cp-reset").onclick=()=>{ if(CREC) composeRecStop(false); C.files.forEach(f=>f.url&&URL.revokeObjectURL(f.url)); S.compose=null; render(); };
+  const send=$("#cp-send"); send.onclick=async()=>{ if(CREC) return; send.disabled=true; send.textContent="Envoi…";
     const r=await run(()=>sb.rpc("staff_start_conversation",{p_patient:C.patient.child?null:C.patient.id,p_subject:C.subject,p_body:C.body.trim(),p_child:C.patient.child?C.patient.id:null}));
     if(!r){ send.disabled=false; send.textContent="Réessayer"; return; }
     const id=r.data; let okAll=true;
@@ -1532,6 +1658,107 @@ function bindCompose(){
     C.files.forEach(f=>f.url&&URL.revokeObjectURL(f.url)); S.compose=null;
     if(C.patient.child) S.children[C.patient.id]=C.patient; else S.profiles[C.patient.id]=C.patient; S.cscreen="inbox"; S.archive=!C.reply; await refresh();
     const nr=S.reqs.find(x=>x.id===id); if(nr){ S.tab=nr.queue; S.sel=id; render(); } };
+}
+
+/* ----- message vocal dans « Écrire à un patient » ----- */
+let CREC=null;
+async function composeRecStart(){
+  if(CREC) return;
+  if(!canRecord()) return toast("L'enregistrement vocal n'est pas disponible sur cet appareil.");
+  let stream; try{ stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}}); }
+  catch(e){ return toast("Le micro n'est pas autorisé. Autorisez-le dans les réglages du navigateur."); }
+  const type=recType(); let mr;
+  try{ mr=new MediaRecorder(stream, type?{mimeType:type}:undefined); }
+  catch(e){ try{ mr=new MediaRecorder(stream); }catch(e2){ stream.getTracks().forEach(t=>t.stop()); return toast("L'enregistrement vocal n'est pas disponible sur cet appareil."); } }
+  const chunks=[], t0=Date.now(); mr.ondataavailable=e=>{ if(e.data&&e.data.size) chunks.push(e.data); };
+  CREC={mr,stream,chunks,t0,type,tick:setInterval(()=>{ const s=Math.floor((Date.now()-t0)/1000), el=$("#cp-rtime"); if(el) el.textContent=dur(s); if(s>=180) composeRecStop(true); },250)};
+  mr.start(1000); render();
+}
+function composeRecStop(keep){
+  const R=CREC; if(!R) return; CREC=null; clearInterval(R.tick);
+  const ms=Date.now()-R.t0;
+  R.mr.onstop=async()=>{ R.stream.getTracks().forEach(t=>t.stop());
+    if(!keep||!S.compose) return render();
+    if(!R.chunks.length) await new Promise(r=>setTimeout(r,400));
+    if(!R.chunks.length){ toast("L'enregistrement n'a pas fonctionné sur cet appareil. Réessayez."); return render(); }
+    if(ms<800){ toast("Message vocal trop court."); return render(); }
+    const mime=((R.mr.mimeType||R.type||"audio/webm").split(";")[0]).replace("audio/x-m4a","audio/mp4").replace("audio/aac","audio/mp4");
+    const blob=new Blob(R.chunks,{type:mime});
+    S.compose.files.push({key:"compose",kind:"audio",mime,name:"Message vocal",blob,url:URL.createObjectURL(blob),duration:Math.max(1,Math.round(ms/1000))});
+    render(); };
+  try{ R.mr.stop(); }catch(e){ R.stream.getTracks().forEach(t=>t.stop()); render(); }
+}
+
+/* ----- inventaire (équipe) ----- */
+const INV_ST={a_commander:"À commander",commande:"Commandé",recu:"Reçu"};
+const invOpen = () => (S.inventory||[]).filter(i=>i.status==="a_commander").length;
+const INVPH=new Map();
+function invPhoto(id){
+  if(INVPH.has(id)) return INVPH.get(id);
+  const p=(async()=>{ const {data,error}=await sb.rpc("get_inventory_photo",{p_id:id}); if(error||!data||!data[0]) throw error||new Error("photo");
+    const d=data[0], bin=atob(d.data), u8=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u8[i]=bin.charCodeAt(i);
+    return URL.createObjectURL(new Blob([u8],{type:d.mime})); })();
+  INVPH.set(id,p); p.catch(()=>INVPH.delete(id)); return p;
+}
+async function loadInventory(){
+  const [it,ph]=await Promise.all([sb.from("inventory_items").select("*").order("created_at",{ascending:false}).limit(300),
+    sb.from("inventory_photos").select("id,item_id").limit(900)]);
+  if(!it.error) S.inventory=it.data||[]; if(!ph.error) S.invPhotos=ph.data||[];
+}
+const newInv = () => ({title:"",qty:"",notes:"",urgent:false,photos:[],tab:"a_commander"});
+function inventoryHTML(){
+  const I=S.inv||(S.inv=newInv());
+  const all=S.inventory||[], n=st=>all.filter(i=>i.status===st).length;
+  const list=all.filter(i=>i.status===I.tab).sort((a,b)=>(b.urgent-a.urgent)||new Date(b.created_at)-new Date(a.created_at));
+  const phs=id=>(S.invPhotos||[]).filter(p=>p.item_id===id);
+  return `<div class="chead"><div><h1>Inventaire</h1><p>Le matériel et les consommables qui manquent au centre. Toute l'équipe voit cette liste ; le secrétariat passe commande et met à jour le statut.</p></div></div>
+  <div class="inv">
+   <section class="card invform"><h3>Signaler un besoin</h3>
+    <label class="fld" for="inv-title">Ce qu'il faut<input id="inv-title" maxlength="200" autocomplete="off" placeholder="Ex. gel d'échographie" value="${esc(I.title)}"></label>
+    <div class="row2"><label class="fld" for="inv-qty">Quantité (facultatif)<input id="inv-qty" maxlength="60" autocomplete="off" placeholder="Ex. 2 flacons de 250 ml" value="${esc(I.qty)}"></label>
+     <label class="chk2 invurg"><input type="checkbox" id="inv-urg" ${I.urgent?"checked":""}> Urgent</label></div>
+    <label class="fld" for="inv-notes">Précisions (facultatif)<textarea id="inv-notes" rows="2" maxlength="1000" placeholder="Marque, référence, fournisseur, taille…">${esc(I.notes)}</textarea></label>
+    <div class="invphotos">${I.photos.map((p,i)=>`<div class="invph"><img src="${p.url}" alt="Photo ${i+1}"><button type="button" class="invrm" data-invrm="${i}" aria-label="Retirer la photo">✕</button></div>`).join("")}
+     ${I.photos.length<3?`<button type="button" class="btn ghost" id="inv-pick">${IC.scan} Ajouter une photo</button>`:""}</div>
+    <input type="file" id="inv-file" accept="image/*" hidden>
+    <div class="btnrow"><button class="btn" id="inv-add" ${I.title.trim()?"":"disabled"}>Ajouter à la liste</button></div>
+   </section>
+   <div class="tabs">${Object.entries(INV_ST).map(([k,l])=>`<button class="tab" data-invtab="${k}" aria-pressed="${I.tab===k}">${l}${n(k)?`<span class="n">${n(k)}</span>`:""}</button>`).join("")}</div>
+   <div class="list invlist">${list.length?list.map(it=>`<div class="invitem${it.urgent&&it.status!=="recu"?" isurg":""}">
+     <div class="invtop"><b>${esc(it.title)}</b>${it.urgent&&it.status!=="recu"?`<span class="invtag">Urgent</span>`:""}${it.quantity?`<span class="invqty">${esc(it.quantity)}</span>`:""}</div>
+     ${it.notes?`<p class="invnotes">${esc(it.notes)}</p>`:""}
+     ${phs(it.id).length?`<div class="invphotos">${phs(it.id).map(p=>`<button type="button" class="invph" data-invph="${p.id}" aria-label="Agrandir la photo"><img alt=""></button>`).join("")}</div>`:""}
+     <small class="invmeta">Demandé par ${esc(teamName(it.created_by))} · ${fmt(it.created_at)}${it.status!=="a_commander"&&it.status_at?` · ${INV_ST[it.status]} ${fmt(it.status_at)}${it.status_by?` (${esc(teamName(it.status_by))})`:""}`:""}</small>
+     <div class="btnrow">${it.status==="a_commander"?`<button class="btn" data-invst="commande" data-id="${it.id}">Marquer commandé</button>`:""}${it.status==="commande"?`<button class="btn" data-invst="recu" data-id="${it.id}">Marquer reçu</button>`:""}${it.status!=="a_commander"?`<button class="btn ghost" data-invst="a_commander" data-id="${it.id}">Remettre à commander</button>`:""}${it.created_by===S.me.id||isDesk()?`<button class="linkbtn" data-invdel="${it.id}">Supprimer</button>`:""}</div>
+    </div>`).join(""):`<div class="empty">${I.tab==="a_commander"?"Rien à commander pour l'instant.":I.tab==="commande"?"Aucune commande en cours.":"Rien de reçu ces 30 derniers jours."}</div>`}</div>
+   <p class="hint">Les éléments reçus disparaissent de la liste après 30 jours.</p>
+  </div>`;
+}
+function bindInventory(){
+  const I=S.inv, t=$("#inv-title"), add=$("#inv-add");
+  t.oninput=()=>{ I.title=t.value; add.disabled=!I.title.trim(); };
+  $("#inv-qty").oninput=e=>{ I.qty=e.target.value; };
+  $("#inv-notes").oninput=e=>{ I.notes=e.target.value; };
+  $("#inv-urg").onchange=e=>{ I.urgent=e.target.checked; };
+  const f=$("#inv-file"), pk=$("#inv-pick"); if(pk) pk.onclick=()=>f.click();
+  f.onchange=async()=>{ const x=f.files[0]; f.value=""; if(!x) return;
+    try{ const blob=await shrinkImage(x); if(blob.size>3*1048576) throw 0; I.photos.push({blob,url:URL.createObjectURL(blob)}); render(); }
+    catch(e){ toast("Cette photo n'a pas pu être lue. Essayez une autre photo."); } };
+  $$("[data-invrm]").forEach(b=>b.onclick=()=>{ const ph=I.photos.splice(+b.dataset.invrm,1)[0]; if(ph) URL.revokeObjectURL(ph.url); render(); });
+  add.onclick=async()=>{ add.disabled=true; add.textContent="Ajout…";
+    const r=await run(()=>sb.rpc("add_inventory_item",{p_title:I.title,p_quantity:I.qty||null,p_notes:I.notes||null,p_urgent:I.urgent}));
+    if(!r){ add.disabled=false; add.textContent="Ajouter à la liste"; return; }
+    let okAll=true;
+    for(const ph of I.photos){ const d=await blobToB64(ph.blob); if(!await run(()=>sb.rpc("add_inventory_photo",{p_item:r.data,p_mime:"image/jpeg",p_data:d}))){ okAll=false; break; } }
+    I.photos.forEach(ph=>URL.revokeObjectURL(ph.url)); S.inv=newInv();
+    toast(okAll?"Ajouté à l'inventaire":"Ajouté, mais une photo n'a pas pu être envoyée."); await loadInventory(); render(); };
+  $$("[data-invtab]").forEach(b=>b.onclick=()=>{ I.tab=b.dataset.invtab; render(); });
+  $$("[data-invst]").forEach(b=>b.onclick=async()=>{ b.disabled=true;
+    if(await run(()=>sb.rpc("set_inventory_status",{p_id:+b.dataset.id,p_status:b.dataset.invst}),"Statut mis à jour")){ await loadInventory(); render(); } else b.disabled=false; });
+  $$("[data-invdel]").forEach(b=>b.onclick=async()=>{
+    if(b.dataset.sure!=="1"){ b.dataset.sure="1"; b.textContent="Confirmer la suppression"; return; }
+    b.disabled=true; if(await run(()=>sb.rpc("delete_inventory_item",{p_id:+b.dataset.invdel}),"Supprimé")){ await loadInventory(); render(); } else b.disabled=false; });
+  $$("[data-invph]").forEach(async b=>{ try{ const u=await invPhoto(+b.dataset.invph); b.querySelector("img").src=u; b.onclick=()=>openViewer(u); }catch(e){ b.classList.add("failed"); } });
 }
 
 /* ----- tâches (équipe) ----- */
@@ -1712,7 +1939,11 @@ function settingsHTML(){
     <label class="fld">Haute priorité (à voir en moins de 24 h)${sel("s-haute",s.haute)}</label>
     <label class="fld">Pas pressé (à voir en moins de 72 h)${sel("s-normale",s.normale)}</label></div>
     <p class="hint">« 2 fois par jour » : à 11:00 et à 16:00. « Résumé du matin » : à 9:00. Rien n'est envoyé quand le centre est fermé.</p>
-    <label class="chk2"><input type="checkbox" id="s-mail" ${s.by_email?"checked":""}> Aussi par e-mail</label></section>
+    <label class="chk2"><input type="checkbox" id="s-mail" ${s.by_email?"checked":""}> Aussi par e-mail</label>
+    ${pushBlockHTML(true)}</section>
+   ${S.me.provider_id?`<section class="card"><h3>Contact par les patients</h3>
+    <label class="chk2"><input type="checkbox" id="s-direct" ${P.byId(S.me.provider_id)?.direct_contact!==false?"checked":""}> Les patients peuvent m'écrire directement</label>
+    <p class="hint">Décoché : les questions, demandes de prescription, de rapport et les documents qui vous sont destinés arrivent d'abord au secrétariat, qui vous les transfère si nécessaire. Dans tous les cas, un patient qui dit ne vous avoir jamais consulté passe par le secrétariat. Les rendez-vous passent toujours par le secrétariat.</p></section>`:""}
    <section class="card"><h3>En cas d'absence</h3>
     <label class="chk2"><input type="checkbox" id="s-away" ${s.away?"checked":""}> Je suis absent(e)</label>
     <div id="s-awaybox" class="awaybox" ${s.away?"":"hidden"}>
@@ -1723,7 +1954,7 @@ function settingsHTML(){
      <p class="hint" id="s-msghint" ${s.away_message?"":"hidden"}>Envoyé une seule fois par conversation, signé « ${esc(provName(S.me.provider_id))} · message automatique ». Il ne compte pas comme une réponse : la demande reste à traiter.</p>`:""}
     </div></section>
    <div class="btnrow"><button class="btn" id="s-save">Enregistrer</button></div>
-   <p class="hint">« Aussi par e-mail » : un résumé envoyé à votre adresse de connexion, sans nom de patient ni contenu médical. Les notifications sur le téléphone seront activées à une étape suivante.</p>
+   <p class="hint">« Aussi par e-mail » : un résumé envoyé à votre adresse de connexion, sans nom de patient ni contenu médical.</p>
   </div>`;
 }
 function awayDefaultText(){
@@ -1732,7 +1963,9 @@ function awayDefaultText(){
   return `Bonjour,\nJe suis absent(e)${until}. Votre message a bien été reçu${fw?` et sera traité par ${(fw.first_name||"")+" "+(fw.last_name||"")}`:" et sera traité à mon retour"}.\nPour une question qui ne peut pas attendre, appelez le secrétariat au 02 781 18 75. Urgence vitale : 112.`;
 }
 function bindSettings(){
-  bindPhotoCard();
+  bindPhotoCard(); bindPush();
+  const dc=$("#s-direct"); if(dc) dc.onchange=async()=>{ const v=dc.checked;
+    if(await run(()=>sb.rpc("set_my_direct_contact",{p_ok:v}),v?"Les patients peuvent vous écrire directement":"Les demandes passeront d'abord par le secrétariat")){ const pr=P.byId(S.me.provider_id); if(pr) pr.direct_contact=v; } else dc.checked=!v; };
   const away=$("#s-away"), box=$("#s-awaybox"), am=$("#s-amsg"), msg=$("#s-msg"), hint=$("#s-msghint");
   if(msg) msg.dataset.auto=msg.value.trim()?"":"1";
   const fill=()=>{ if(msg&&msg.dataset.auto) msg.value=awayDefaultText(); };
@@ -1766,11 +1999,11 @@ sb.auth.onAuthStateChange((event, session)=>{
 })();
 // Actualisation automatique (toutes les 60 s, et au retour sur l'app), sans perdre ce qui est en cours d'écriture
 let busy=false;
-async function autoRefresh(){ if(busy||!S.session||S.loading||document.hidden) return; const el=document.activeElement;
+async function autoRefresh(){ if(busy||!S.session||S.loading||document.hidden||S.mfa) return; const el=document.activeElement;
   if(el&&(el.tagName==="TEXTAREA"||el.tagName==="INPUT"||el.tagName==="SELECT")) return;
-  if(S.screen==="flow"||S.rec||S.pend||S.editNews||S.cscreen==="compose"||S.cscreen==="settings"||S.cscreen==="tasks"||document.querySelector(".viewer,.scanner")) return; busy=true; try{ await refresh(); } finally{ busy=false; } }
+  if(S.screen==="flow"||S.rec||S.pend||S.editNews||S.cscreen==="compose"||S.cscreen==="settings"||S.cscreen==="tasks"||S.cscreen==="inventory"&&S.inv&&(S.inv.title||S.inv.photos.length)||CREC||document.querySelector(".viewer,.scanner,.tour")) return; busy=true; try{ await refresh(); } finally{ busy=false; } }
 setInterval(autoRefresh, 60000);
 document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) autoRefresh(); });
 if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
-console.log("CMPL app version 20261016j");
+console.log("CMPL app version 20261017b");
 })();
