@@ -1203,7 +1203,8 @@ function patientAccount(a){
     <label class="fld" for="delconf">Pour confirmer, tapez SUPPRIMER<input id="delconf" autocomplete="off"></label>
     <div class="btnrow"><button class="btn danger" id="delgo" disabled>Supprimer définitivement</button><button class="linkbtn" id="delno">Annuler</button></div></div>
   </section>
-  <div class="btnrow" style="margin-top:18px"><button class="btn ghost" id="logout">Se déconnecter</button></div>`;
+  <div class="btnrow" style="margin-top:18px"><button class="btn ghost" id="logout">Se déconnecter</button></div>
+  ${versionHTML()}`;
   $("#back").onclick=()=>{S.cdraft=null;S.screen="home";render()};
   $("#logout").onclick=logout;
   $("#export").onclick=exportMyData;
@@ -1467,6 +1468,8 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
+const APP_VERSION="20261017d";
+const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
 const isGestion = () => S.me.role==="gestion";
@@ -1967,6 +1970,7 @@ function settingsHTML(){
     </div></section>
    <div class="btnrow"><button class="btn" id="s-save">Enregistrer</button></div>
    <p class="hint">« Aussi par e-mail » : un résumé envoyé à votre adresse de connexion, sans nom de patient ni contenu médical.</p>
+   ${versionHTML()}
   </div>`;
 }
 function awayDefaultText(){
@@ -2017,5 +2021,5 @@ async function autoRefresh(){ if(busy||!S.session||S.loading||document.hidden||S
 setInterval(autoRefresh, 60000);
 document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) autoRefresh(); });
 if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
-console.log("CMPL app version 20261017d");
+console.log("CMPL app version "+APP_VERSION);
 })();

@@ -566,3 +566,4 @@ small.qty{font-size:inherit;color:var(--muted)}
 .helpcontact a{color:var(--accent);font-weight:700}
 .invform input:not([type=checkbox]),.invform textarea{font:inherit;color:var(--ink);background:var(--surface);border:1.5px solid var(--line);border-radius:10px;padding:10px 12px;width:100%;box-sizing:border-box}
 .invform input:focus,.invform textarea:focus{border-color:var(--accent);outline:none}
+.appver{text-align:center;margin-top:14px;font-size:12px;opacity:.7}
