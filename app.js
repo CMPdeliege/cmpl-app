@@ -147,6 +147,8 @@ const P = {
   fromLabel: l => S.providers.find(p=>P.label(p)===l || p.display_name===l)
 };
 const provName = id => P.byId(id)?.display_name || "";
+// À qui s'adresse la conversation : prestataire, Administration ou Secrétariat
+const reqWho = r => provName(r.provider_id) || (r.queue==="administration"?"Administration":"Secrétariat");
 
 /* ---------- horaires ---------- */
 function isOpen(d){ const h=S.hours[d.getDay()]; if(!h) return false; const x=d.getHours()*60+d.getMinutes(); return x>=h[0] && x<h[1]; }
@@ -301,7 +303,7 @@ function attHTML(a){
 }
 function chatHTML(r, viewer){
   const mine = m => viewer==="patient" ? m.from_patient : !m.from_patient;
-  const dest = provName(r.provider_id)||"Secrétariat";
+  const dest = reqWho(r);
   let h=`<div class="chat" id="chat">`, day="", who="";
   const sep = d => { const l=dayLabel(d); if(l!==day){ day=l; who=""; h+=`<div class="day"><span>${esc(l)}</span></div>`; } };
   if(viewer==="patient" && !r.purged_at && r.type!=="centre"){
@@ -538,7 +540,7 @@ async function conversationPdf(r, who){
   y-=10; rule(); y-=6;
   para(TYPES[r.type]?.title||"Conversation",{size:15,bold:true,gap:6});
   para(`Patient : ${who.name}${who.birth?` · né(e) le ${who.birth}`:""}`,{size:10,color:GREY});
-  para(`Avec : ${provName(r.provider_id)||"Secrétariat"} · Commencée le ${fmtDate(r.created_at)}${r.closed_at?` · Clôturée le ${fmtDate(r.closed_at)}`:""}`,{size:10,color:GREY});
+  para(`Avec : ${reqWho(r)} · Commencée le ${fmtDate(r.created_at)}${r.closed_at?` · Clôturée le ${fmtDate(r.closed_at)}`:""}`,{size:10,color:GREY});
   para(`Document enregistré le ${new Date().toLocaleString("fr-BE")}`,{size:10,color:GREY});
   const ans=Object.entries(r.answers||{}).filter(([k,v])=>!HIDDEN_KEYS.has(k)&&v);
   if(ans.length&&r.type!=="centre"){ rule(); para("Votre demande",{size:11.5,bold:true,gap:5});
@@ -736,8 +738,8 @@ async function loadStaff(){
   tasks.push(sb.from("profiles").select("id,first_name,last_name,role,provider_id,status,created_at").neq("role","patient").then(r=>S.team=r.data||[]));
   tasks.push(sb.from("motif_durations").select("motif,minutes").then(r=>{ S.durations=Object.fromEntries((r.data||[]).map(d=>[d.motif,d.minutes])); }));
   tasks.push(sb.from("staff_settings").select("*").eq("user_id",S.me.id).maybeSingle().then(r=>S.settings=r.data));
-  if(role==="secretariat"||role==="admin") tasks.push(sb.from("announcements").select("*").order("published_at",{ascending:false}).limit(100).then(r=>S.allNews=r.data||[]));
-  if(role==="secretariat"||role==="admin") tasks.push(sb.rpc("news_audience").then(r=>S.audience=r.data));
+  if(role==="secretariat"||role==="admin"||role==="gestion") tasks.push(sb.from("announcements").select("*").order("published_at",{ascending:false}).limit(100).then(r=>S.allNews=r.data||[]));
+  if(role==="secretariat"||role==="admin"||role==="gestion") tasks.push(sb.rpc("news_audience").then(r=>S.audience=r.data));
   if(role==="secretariat"||role==="admin") tasks.push(sb.from("children").select("id,first_name,last_name,birth_date,status,created_by,created_at").eq("status","pending").is("removed_at",null).order("created_at").then(r=>S.pendingKids=r.data||[]));
   tasks.push(sb.from("tasks").select("*").order("created_at",{ascending:false}).limit(500).then(r=>S.tasks=r.data||[]));
   tasks.push(loadInventory());
@@ -750,6 +752,7 @@ async function loadStaff(){
   await Promise.all([loadProviderAvatars(), loadAvatars([S.me.id, ...ids, ...S.team.map(t=>t.id)])]);
   // Le premier onglet utile selon le rôle
   if(role==="provider") S.tab="prestataires";
+  if(role==="gestion") S.tab="administration";
 }
 async function refresh(){
   await loadPublic();
@@ -1081,7 +1084,7 @@ function patientHome(a){
   <div class="sechead"><h2>${fk.length?"Demandes":"Mes demandes"}</h2></div>
   <div class="list">${mine.length?mine.map(r=>{const ms=msgsOf(r),last=ms[ms.length-1],unread=S.notifs.some(n=>n.request_id===r.id&&!n.read_at&&n.title!=="Demande bien reçue");
     const prev=r.purged_at?"Contenu effacé":last?(last.from_patient?"Vous : ":"")+msgPreview(last):summaryLine(r.answers);
-    return `<button class="row chatrow ${unread?"unread":""}" data-req="${r.id}"><div class="ic">${IC[r.type]}</div><div><b>${esc(provName(r.provider_id)||"Secrétariat")} · ${TYPES[r.type].label}${forTag(r)}</b><small>${esc(prev)}</small></div><div class="rside"><small>${fmt(last?last.created_at:r.created_at)}</small>${unread?`<span class="dot" aria-label="Nouveau message"></span>`:`<span class="pill st-${stClassP(r)}">${stLabelP(r)}</span>`}</div></button>`}).join(""):`<div class="empty">Aucune demande pour l'instant.</div>`}</div>`;
+    return `<button class="row chatrow ${unread?"unread":""}" data-req="${r.id}"><div class="ic">${IC[r.type]}</div><div><b>${esc(reqWho(r))} · ${TYPES[r.type].label}${forTag(r)}</b><small>${esc(prev)}</small></div><div class="rside"><small>${fmt(last?last.created_at:r.created_at)}</small>${unread?`<span class="dot" aria-label="Nouveau message"></span>`:`<span class="pill st-${stClassP(r)}">${stLabelP(r)}</span>`}</div></button>`}).join(""):`<div class="empty">Aucune demande pour l'instant.</div>`}</div>`;
   bindTop();
   $$("[data-start]").forEach(b=>b.onclick=()=>startFlow(b.dataset.start));
   $$("[data-consent]").forEach(b=>b.onclick=async()=>{ const ok=b.dataset.consent==="1";
@@ -1289,7 +1292,7 @@ function bindFamily(){
 async function exportMyData(){
   await loadPatient();
   const strip=r=>({ demande:r.id, type:TYPES[r.type]?.label||r.type, envoyee_le:r.created_at, statut:stLabelP(r), cloturee_le:r.closed_at, effacee_le:r.purged_at,
-    destinataire:provName(r.provider_id)||"Secrétariat", reponses:Object.fromEntries(Object.entries(r.answers||{}).filter(([k])=>!HIDDEN_KEYS.has(k)).map(([k,v])=>[LABELS[k]||k,v])),
+    destinataire:reqWho(r), reponses:Object.fromEntries(Object.entries(r.answers||{}).filter(([k])=>!HIDDEN_KEYS.has(k)).map(([k,v])=>[LABELS[k]||k,v])),
     medicaments:(r.request_items||[]).map(i=>({medicament:i.label,boites:i.quantity||1,decision:i.decision})),
     messages:msgsOf(r).map(m=>({de:m.from_patient?"Vous":m.author_label,le:m.created_at,texte:m.body,pieces_jointes:(m.attachments||[]).map(a=>({type:a.kind,nom:a.name,taille_octets:a.size}))})) });
   const data={ exporte_le:new Date().toISOString(), source:"Application du Centre Médical Prince de Liège (app.cmpl.be)",
@@ -1446,7 +1449,7 @@ function patientReq(a){
   const items=(r.request_items||[]), key="p"+r.id;
   const itemsHTML = r.type==="prescription"&&items.some(i=>i.decision) ? `<div class="itemlist">${items.map(i=>`<div><span>${esc(i.label)}<small class="qty">${qtyText(i.quantity||1)}</small></span><span class="dtag ${i.decision==="accorde"?"ok":"no"}">${i.decision==="accorde"?"Prescrit":i.decision?"Non renouvelé":"En attente"}</span></div>`).join("")}</div>` : "";
   a.className="wrap chatpage";
-  a.innerHTML=`<div class="convhead sticky"><button class="back" id="back" aria-label="Retour">${IC.back}</button>${PAV.get(r.provider_id)?avatarHTML(PAV.get(r.provider_id),"",40):`<div class="ic avatar">${IC[r.type]}</div>`}<div style="min-width:0"><h2>${esc(provName(r.provider_id)||"Secrétariat")}</h2><small>${TYPES[r.type].label}${r.child_id?` · pour ${esc(childFirst(r.child_id))}`:""} · ${stLabelP(r)}</small></div></div>
+  a.innerHTML=`<div class="convhead sticky"><button class="back" id="back" aria-label="Retour">${IC.back}</button>${PAV.get(r.provider_id)?avatarHTML(PAV.get(r.provider_id),"",40):`<div class="ic avatar">${IC[r.type]}</div>`}<div style="min-width:0"><h2>${esc(reqWho(r))}</h2><small>${TYPES[r.type].label}${r.child_id?` · pour ${esc(childFirst(r.child_id))}`:""} · ${stLabelP(r)}</small></div></div>
   ${chatHTML(r,"patient")}${itemsHTML}
   ${r.purged_at||r.status==="traite"?`<div class="closed"><b>${r.purged_at?"Conversation effacée":"Conversation clôturée par le centre"}</b><span>${r.purged_at?"":`Vous pouvez la relire jusqu'au ${fmtDate(purgeDate(r))}, date à laquelle elle sera effacée. <b>Pour la garder, enregistrez-la en PDF.</b> `}Pour une suite ou une autre question, ouvrez une nouvelle demande.</span>${r.purged_at?"":`<div class="btnrow savepdf"><button class="btn ghost" id="savepdf">${IC.doc} Enregistrer la conversation (PDF)</button></div>`}<div class="btnrow"><button class="btn" id="newq">Nouvelle question</button><button class="btn ghost" id="newr">Demander un rendez-vous</button></div></div>`
   :`${composerHTML(key)}<p class="hint center small">Lu pendant les heures d'ouverture. Urgence vitale : appelez le 112.</p>`}`;
@@ -1464,8 +1467,10 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",patient:"Patient"};
+const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
+const isGestion = () => S.me.role==="gestion";
+const canPub = () => isDesk()||isGestion();
 function renderStaff(a){
   a.className="wrap wide";
   const sc=S.cscreen;
@@ -1476,8 +1481,8 @@ function renderStaff(a){
    <button data-cs="tasks" aria-pressed="${sc==="tasks"}">Tâches<span class="n">${myTasks().length||""}</span></button>
    <button data-cs="inventory" aria-pressed="${sc==="inventory"}">Inventaire<span class="n">${invOpen()||""}</span></button>
    ${isDesk()?`<button data-cs="accounts" aria-pressed="${sc==="accounts"}">Comptes à valider<span class="n">${(S.pending.length+(S.pendingKids||[]).length)||""}</span></button>`:""}
-   ${isDesk()?`<button data-cs="news" aria-pressed="${sc==="news"}">Actualités</button>`:""}
-   ${S.me.role==="admin"?`<button data-cs="team" aria-pressed="${sc==="team"}">Équipe</button>`:""}
+   ${canPub()?`<button data-cs="news" aria-pressed="${sc==="news"}">Actualités</button>`:""}
+   ${S.me.role==="admin"||isGestion()?`<button data-cs="team" aria-pressed="${sc==="team"}">Équipe</button>`:""}
    <button data-cs="settings" aria-pressed="${sc==="settings"}">Mon profil</button>
    <button id="reload">Actualiser</button>
    <a class="navlink" href="${ROSA_PRO_URL}" target="_blank" rel="noopener" title="Ouvre votre agenda Rosa (connexion avec votre propre compte Rosa)">Mon agenda Rosa ↗</a>
@@ -1521,7 +1526,7 @@ function inboxHTML(){
   const nShort=S.reqs.filter(r=>r.queue===S.tab&&r.status!=="traite"&&isShort(r)&&(S.tab!=="prestataires"||S.provFilter==="tous"||r.provider_id===S.provFilter)).length;
   return `<div class="chead"><div><h1>Demandes des patients</h1><p>${now.toLocaleDateString(LOC,{weekday:"long",day:"numeric",month:"long"})} · ${isOpen(now)?'<span class="state on">Ouvert</span>':`<span class="state off">Fermé · réouverture ${fmtWhen(nextOpen(now))}</span>`}</p></div>
    <div class="counts"><div class="count"><b>${open.filter(r=>r.priority==="haute"&&awaitingStaff(r)).length}</b>haute priorité</div><div class="count"><b>${open.filter(r=>r.status==="nouveau").length}</b>nouvelles</div><div class="count"><b>${open.filter(newPatientMsg).length}</b>messages patients</div><div class="count ${late?"urg":""}"><b>${late}</b>en retard</div></div></div>
-  ${queues.length>1?`<div class="tabs">${queues.map(q=>`<button class="tab" data-tab="${q}" aria-pressed="${S.tab===q}">${q==="secretariat"?"Secrétariat":"Prestataires"}<span class="n">${S.reqs.filter(r=>r.queue===q&&r.status!=="traite").length}</span></button>`).join("")}</div>`:""}
+  ${queues.length>1?`<div class="tabs">${queues.map(q=>`<button class="tab" data-tab="${q}" aria-pressed="${S.tab===q}">${q==="secretariat"?"Secrétariat":q==="administration"?"Administration":"Prestataires"}<span class="n">${S.reqs.filter(r=>r.queue===q&&r.status!=="traite").length}</span></button>`).join("")}</div>`:""}
   ${S.tab==="prestataires"&&provs.length>1?`<div class="tabs">${["tous",...provs].map(id=>{const k=S.reqs.filter(r=>r.provider_id===id&&r.queue==="prestataires"&&r.status!=="traite").length;return `<button class="tab" data-pf="${id}" aria-pressed="${S.provFilter===id}" style="font-weight:400">${id==="tous"?"Tous":esc(provName(id))}${id!=="tous"&&k?`<span class="n">${k}</span>`:""}</button>`}).join("")}</div>`:""}
   <div class="seg" role="group" aria-label="Filtrer" style="margin-bottom:10px"><button id="f-open" aria-pressed="${!S.archive}">À traiter</button><button id="f-arch" aria-pressed="${S.archive}">Classées (${nArch})</button></div>${!S.archive&&(nShort||S.short)?` <button class="tab shortbtn" id="f-short" aria-pressed="${!!S.short}" title="Rendez-vous de médecine générale de 10 minutes ou moins">⏱ Rendez-vous courts (≤ 10 min)<span class="n">${nShort}</span></button>`:""}
   <div class="pane">
@@ -1539,13 +1544,13 @@ function detailHTML(){
   const canClose=isRx?allDecided:(staffWrote||!!draft.trim());
   const todo=items.filter(i=>!i.decision);
   const closeBtn=!isRx?"Clôturer et classer":!allDecided?`Décidez pour chaque médicament (${todo.filter(i=>dec[i.id]).length}/${todo.length})`:todo.some(i=>dec[i.id]==="accorde")?"Valider la prescription et classer":"Envoyer le refus et classer";
-  const transferOpts=[`<option value="">Secrétariat</option>`,...S.providers.map(pv=>`<option value="${pv.id}" ${pv.id===r.provider_id?"selected":""}>${esc(P.label(pv))}</option>`)].join("");
+  const transferOpts=[`<option value="">Secrétariat</option>`,`<option value="__admin" ${r.queue==="administration"?"selected":""}>Administration</option>`,...S.providers.map(pv=>`<option value="${pv.id}" ${pv.id===r.provider_id?"selected":""}>${esc(P.label(pv))}</option>`)].join("");
   return `<div class="detail">
    <div class="dhead">${r.child_id?avatarHTML(null,reqName(r),52):avatarHTML(AV.get(r.patient_id),patientName(r.patient_id),52)}<div><h2>${esc(reqName(r))}</h2>
     ${r.child_id?`<div class="pinfo"><span>Né(e) le <b>${fmtDate(S.children[r.child_id]?.birth_date)}</b></span><span>Enfant de <b>${esc(patientName(r.patient_id))}</b></span><span>Tél. parent <b>${esc(p.phone||"—")}</b></span></div>`
     :`<div class="pinfo"><span>Né(e) le <b>${fmtDate(p.birth_date)}</b></span><span>Tél. <b>${esc(p.phone||"—")}</b></span></div>`}
     ${extraContactsHTML(p)}
-    <div class="meta" style="margin-top:6px"><span class="tag">${TYPES[r.type].label}</span>${durHTML(r)}<span class="pill st-${stClass(r)}">${stLabel(r)}</span><span>Reçue ${fmt(r.created_at)} · ${esc(provName(r.provider_id)||"Secrétariat")}</span></div></div></div>
+    <div class="meta" style="margin-top:6px"><span class="tag">${TYPES[r.type].label}</span>${durHTML(r)}<span class="pill st-${stClass(r)}">${stLabel(r)}</span><span>Reçue ${fmt(r.created_at)} · ${esc(reqWho(r))}</span></div></div></div>
    ${open?`<div class="prioedit"><span class="hint">Priorité</span>${["haute","normale"].map(k=>`<button class="dec p-${k}" aria-pressed="${r.priority===k}" data-prio="${k}">${PRIO_LABEL[k]}</button>`).join("")}</div><div>${dueHTML(r)}</div>`:""}
    ${r.purged_at?"":`<dl class="qa">${Object.entries(r.answers||{}).filter(([k])=>!HIDDEN_KEYS.has(k)).map(([k,v])=>`<div><dt>${esc(LABELS[k]||k)}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>`}
    ${items.some(i=>i.decision)?`<div class="itemlist">${items.filter(i=>i.decision).map(i=>`<div><span>${esc(i.label)}<small class="qty">${qtyText(i.quantity||1)}</small></span><span class="dtag ${i.decision==="accorde"?"ok":"no"}">${i.decision==="accorde"?"Accordé":"Refusé"}</span></div>`).join("")}</div>`:""}
@@ -1590,7 +1595,9 @@ function bindDetail(){
     if(await run(()=>sb.rpc("close_request",{p_id:r.id,p_body:text||null,p_decisions:decisions}),"Conversation classée")){ S.drafts[key]=""; delete S.drafts["d"+r.id]; clearPend(); await refresh(); } else close.disabled=false; };
   const tk=$("#take"); if(tk) tk.onclick=async()=>{ if(await run(()=>sb.rpc("take_request",{p_id:r.id}),"Demande prise en charge")) await refresh(); };
   $("#dotr").onclick=async()=>{ const v=$("#tr").value||null;
-    if(await run(()=>sb.rpc("transfer_request",{p_id:r.id,p_provider:v}),`Transférée : ${v?provName(v):"Secrétariat"}`)){ S.sel=null; await refresh(); } };
+    const ok = v==="__admin" ? await run(()=>sb.rpc("transfer_to_administration",{p_id:r.id}),"Transférée : Administration")
+                             : await run(()=>sb.rpc("transfer_request",{p_id:r.id,p_provider:v}),`Transférée : ${v?provName(v):"Secrétariat"}`);
+    if(ok){ S.sel=null; await refresh(); } };
 }
 
 /* ----- écrire en premier à un patient ----- */
@@ -1608,7 +1615,7 @@ async function searchPatients(words){
 const patientPickRow = p => `<button type="button" class="row" data-pick="${p.id}"><div class="ic">${IC.user}</div><div><b>${esc(`${p.first_name||""} ${p.last_name||""}`)}</b><small>Né(e) le ${fmtDate(p.birth_date)} · ${p.child?"Enfant (via ses parents)":`Tél. ${esc(p.phone||"—")}`}</small></div><span></span></button>`;
 function composeHTML(){
   const C=S.compose||(S.compose={patient:null,subject:SUBJECTS[0],body:"",files:[],reply:true,q:""}), pt=C.patient;
-  const who=S.me.provider_id?provName(S.me.provider_id):"Secrétariat";
+  const who=S.me.provider_id?provName(S.me.provider_id):isGestion()?"Administration":"Secrétariat";
   return `<div class="chead"><div><h1>Écrire à un patient</h1><p>Pour un patient qui a un compte validé dans l'app. Il reçoit une notification neutre, sans contenu médical. Envoyé au nom de : <b>${esc(who)}</b>.</p></div></div>
   <div class="compose card">
    <h3>1. Destinataire</h3>
@@ -1732,7 +1739,7 @@ function inventoryHTML(){
      ${it.notes?`<p class="invnotes">${esc(it.notes)}</p>`:""}
      ${phs(it.id).length?`<div class="invphotos">${phs(it.id).map(p=>`<button type="button" class="invph" data-invph="${p.id}" aria-label="Agrandir la photo"><img alt=""></button>`).join("")}</div>`:""}
      <small class="invmeta">Demandé par ${esc(teamName(it.created_by))} · ${fmt(it.created_at)}${it.status!=="a_commander"&&it.status_at?` · ${INV_ST[it.status]} ${fmt(it.status_at)}${it.status_by?` (${esc(teamName(it.status_by))})`:""}`:""}</small>
-     <div class="btnrow">${it.status==="a_commander"?`<button class="btn" data-invst="commande" data-id="${it.id}">Marquer commandé</button>`:""}${it.status==="commande"?`<button class="btn" data-invst="recu" data-id="${it.id}">Marquer reçu</button>`:""}${it.status!=="a_commander"?`<button class="btn ghost" data-invst="a_commander" data-id="${it.id}">Remettre à commander</button>`:""}${it.created_by===S.me.id||isDesk()?`<button class="linkbtn" data-invdel="${it.id}">Supprimer</button>`:""}</div>
+     <div class="btnrow">${it.status==="a_commander"?`<button class="btn" data-invst="commande" data-id="${it.id}">Marquer commandé</button>`:""}${it.status==="commande"?`<button class="btn" data-invst="recu" data-id="${it.id}">Marquer reçu</button>`:""}${it.status!=="a_commander"?`<button class="btn ghost" data-invst="a_commander" data-id="${it.id}">Remettre à commander</button>`:""}${it.created_by===S.me.id||isDesk()||isGestion()?`<button class="linkbtn" data-invdel="${it.id}">Supprimer</button>`:""}</div>
     </div>`).join(""):`<div class="empty">${I.tab==="a_commander"?"Rien à commander pour l'instant.":I.tab==="commande"?"Aucune commande en cours.":"Rien de reçu ces 30 derniers jours."}</div>`}</div>
    <p class="hint">Les éléments reçus disparaissent de la liste après 30 jours.</p>
   </div>`;
@@ -1853,15 +1860,17 @@ function bindAccounts(){
 /* ----- équipe (administrateur) ----- */
 function teamHTML(){
   const provOpts=sel=>`<option value="">— prestataire —</option>`+S.providers.map(p=>`<option value="${p.id}" ${p.id===sel?"selected":""}>${esc(P.label(p))}</option>`).join("");
-  return `<div class="chead"><div><h1>Équipe</h1><p>Chaque membre de l'équipe crée d'abord son compte dans l'app (« Créer un compte »). Retrouvez-le ensuite ci-dessous et donnez-lui son rôle.</p></div></div>
-  <section class="card" style="margin-bottom:12px"><h3>Donner un rôle à un compte</h3>
+  const adm=S.me.role==="admin";
+  return `<div class="chead"><div><h1>Équipe</h1><p>${adm?"Chaque membre de l'équipe crée d'abord son compte dans l'app (« Créer un compte »). Retrouvez-le ensuite ci-dessous et donnez-lui son rôle.":"Les membres de l'équipe du centre et leur rôle. Seul l'administrateur peut ajouter ou retirer quelqu'un."}</p></div></div>
+  ${adm?`<section class="card" style="margin-bottom:12px"><h3>Donner un rôle à un compte</h3>
    <label class="fld" for="t-search">Nom de la personne inscrite<input id="t-search" type="text" placeholder="Tapez au moins 2 lettres du nom"></label>
-   <div id="t-results"></div></section>
-  <div class="list">${S.team.map(t=>`<div class="medrow">${avatarHTML(AV.get(t.id),`${t.first_name||""} ${t.last_name||""}`,32)}<div><b>${esc((t.first_name||"")+" "+(t.last_name||""))}</b><small>${ROLE_LABEL[t.role]}${t.provider_id?" · "+esc(provName(t.provider_id)):""}</small></div><div class="acts">${t.id!==S.me.id?`<button class="linkbtn" style="font-size:12px;color:var(--muted)" data-demote="${t.id}">Retirer de l'équipe</button>`:""}</div></div>`).join("")}</div>
-  <template id="t-row"><div class="person" style="border-top:1px solid var(--line);padding-top:10px;margin-top:10px"><b class="t-name"></b><div class="pgrid"><label>Rôle<select class="t-role"><option value="secretariat">Secrétariat</option><option value="provider">Prestataire</option><option value="admin">Administrateur</option></select></label><label>Prestataire<select class="t-prov">${provOpts("")}</select></label></div><div class="btnrow"><button class="btn t-go">Enregistrer</button></div></div></template>`;
+   <div id="t-results"></div></section>`:""}
+  <div class="list">${S.team.map(t=>`<div class="medrow">${avatarHTML(AV.get(t.id),`${t.first_name||""} ${t.last_name||""}`,32)}<div><b>${esc((t.first_name||"")+" "+(t.last_name||""))}</b><small>${ROLE_LABEL[t.role]}${t.provider_id?" · "+esc(provName(t.provider_id)):""}</small></div><div class="acts">${adm&&t.id!==S.me.id?`<button class="linkbtn" style="font-size:12px;color:var(--muted)" data-demote="${t.id}">Retirer de l'équipe</button>`:""}</div></div>`).join("")}</div>
+  <template id="t-row"><div class="person" style="border-top:1px solid var(--line);padding-top:10px;margin-top:10px"><b class="t-name"></b><div class="pgrid"><label>Rôle<select class="t-role"><option value="secretariat">Secrétariat</option><option value="provider">Prestataire</option><option value="gestion">Administration (gestion du centre)</option><option value="admin">Administrateur</option></select></label><label>Prestataire<select class="t-prov">${provOpts("")}</select></label></div><div class="btnrow"><button class="btn t-go">Enregistrer</button></div></div></template>`;
 }
 function bindTeam(){
   const inp=$("#t-search"), out=$("#t-results"); let timer;
+  if(!inp) return;
   inp.oninput=()=>{ clearTimeout(timer); timer=setTimeout(async()=>{ const q=inp.value.trim(); out.innerHTML=""; if(q.length<2) return;
     const {data}=await sb.from("profiles").select("id,first_name,last_name,birth_date,role").or(`first_name.ilike.*${q.replace(/[*%,().]/g,"")}*,last_name.ilike.*${q.replace(/[*%,().]/g,"")}*`).limit(10);
     (data||[]).forEach(p=>{ const node=$("#t-row").content.cloneNode(true);
@@ -2008,5 +2017,5 @@ async function autoRefresh(){ if(busy||!S.session||S.loading||document.hidden||S
 setInterval(autoRefresh, 60000);
 document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) autoRefresh(); });
 if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
-console.log("CMPL app version 20261017c");
+console.log("CMPL app version 20261017d");
 })();
