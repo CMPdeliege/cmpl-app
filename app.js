@@ -1621,7 +1621,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261019b";
+const APP_VERSION="20261019c";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -2108,7 +2108,9 @@ function settingsHTML(){
    <section class="card"><h3>Quand me prévenir</h3><div class="pgrid">
     <label class="fld">Haute priorité (à voir en moins de 24 h)${sel("s-haute",s.haute)}</label>
     <label class="fld">Pas pressé (à voir en moins de 72 h)${sel("s-normale",s.normale)}</label></div>
-    <p class="hint">« 2 fois par jour » : à 11:00 et à 16:00. « Résumé du matin » : à 9:00. Rien n'est envoyé quand le centre est fermé.</p>
+    <p class="hint">« 2 fois par jour » : à 11:00 et à 16:00. « Résumé du matin » : à 9:00.</p>
+    <label class="chk2"><input type="checkbox" id="s-after" ${s.after_hours?"checked":""}> Me prévenir aussi en dehors des heures d'ouverture (soirs, week-ends, jours de fermeture)</label>
+    <p class="hint">Décoché : rien n'est envoyé quand le centre est fermé ; les alertes arrivent à la réouverture.</p>
     <label class="chk2"><input type="checkbox" id="s-mail" ${s.by_email?"checked":""}> Aussi par e-mail</label>
     ${pushBlockHTML(true)}</section>
    ${S.me.provider_id?`<section class="card"><h3>Contact par les patients</h3>
@@ -2145,7 +2147,7 @@ function bindSettings(){
   if(am){ am.onchange=()=>{ msg.hidden=hint.hidden=!am.checked; if(am.checked){ if(!msg.value.trim()){ msg.dataset.auto="1"; fill(); } msg.focus(); } };
     msg.oninput=()=>{ msg.dataset.auto=""; }; }
   $("#s-save").onclick=async()=>{
-    const row={user_id:S.me.id,haute:$("#s-haute").value,normale:$("#s-normale").value,by_email:$("#s-mail").checked,
+    const row={user_id:S.me.id,haute:$("#s-haute").value,normale:$("#s-normale").value,by_email:$("#s-mail").checked,after_hours:$("#s-after").checked,
       away:away.checked,away_until:$("#s-until").value||null,forward_to:$("#s-fw").value||null,
       away_message:am&&am.checked&&msg.value.trim()?msg.value.trim():null};
     if(row.away&&!row.forward_to&&!row.away_message) return toast(am?"Choisissez un collègue, ou activez le message automatique.":"Choisissez le collègue qui recevra vos notifications.");
