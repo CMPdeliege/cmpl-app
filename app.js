@@ -955,7 +955,19 @@ function updateBadges(n=badgeCount()){
 // ---------- Notifications push (téléphone et ordinateur, même app fermée) ----------
 const IS_IOS=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
 // Dans l'app iPhone / Android (App Store, Google Play) : notifications natives et Face ID
-const CAP = () => (window.Capacitor&&window.Capacitor.Plugins)||{};
+// Accès aux modules natifs de l'app (la page vient d'app.cmpl.be : on passe directement par le pont Capacitor)
+function capPlugin(name, methods){
+  const C=window.Capacitor; if(!C||typeof C.nativePromise!=="function") return null;
+  const p={};
+  for(const m of methods) p[m]=(opts)=>C.nativePromise(name,m,opts||{});
+  p.addListener=(eventName,cb)=>{ const id=C.nativeCallback(name,"addListener",{eventName},cb);
+    return Promise.resolve({remove:()=>C.nativeCallback(name,"removeListener",{callbackId:id,eventName})}); };
+  return p;
+}
+const CAP = () => { if(CAP.c) return CAP.c; const c={};
+  const pn=capPlugin("PushNotifications",["checkPermissions","requestPermissions","register","unregister","removeAllDeliveredNotifications"]);
+  const sec=capPlugin("CMPLSecure",["available","save","load","remove","setBadge"]);
+  if(pn) c.PushNotifications=pn; if(sec) c.CMPLSecure=sec; return CAP.c=c; };
 const IS_NATIVE=/CMPLApp/.test(navigator.userAgent)||!!(window.Capacitor&&window.Capacitor.isNativePlatform&&window.Capacitor.isNativePlatform());
 const IS_STANDALONE=IS_NATIVE||matchMedia("(display-mode: standalone)").matches||navigator.standalone===true;
 let pushSynced=false;
@@ -1579,7 +1591,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261018b";
+const APP_VERSION="20261018c";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
