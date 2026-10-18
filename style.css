@@ -574,3 +574,9 @@ small.qty{font-size:inherit;color:var(--muted)}
 
 /* iPhone : un champ en dessous de 16 px fait zoomer la page quand on tape dedans (et elle ne revient pas) */
 @media (pointer:coarse){input,select,textarea{font-size:max(16px,1em)!important}}
+
+/* mot de passe : bouton « œil » */
+.pwwrap{position:relative;display:block}
+.pwwrap input{padding-inline-end:46px!important}
+.pweye{position:absolute;inset-inline-end:4px;top:50%;transform:translateY(-50%);width:40px;height:40px;border:0;background:transparent;color:var(--muted);display:grid;place-items:center;cursor:pointer;border-radius:10px}
+.pweye:hover{color:var(--ink)}

@@ -183,7 +183,7 @@ const childFirst = id => childInfo(id)?.first_name || "votre enfant";
 // Prestataire choisi dans le formulaire (ou seul prestataire de la spécialité)
 const chosenProv = a => { let p=a.medecin?P.fromLabel(a.medecin):null; if(!p&&a.specialite&&P.of(a.specialite).length===1) p=P.of(a.specialite)[0]; return p||null; };
 const DEJA_VU = {id:"deja_vu",kind:"choice",q:()=>`Avez-vous déjà consulté ${chosenProv(S.answers)?.display_name||"ce prestataire"} ?`,options:["Oui","Non, jamais"],
-  when:a=>{ const p=chosenProv(a); return !!p&&p.direct_contact!==false; }};
+  when:a=>!!chosenProv(a)};
 const VIA_SECR = {kind:"note",q:"Votre demande sera d'abord lue par le secrétariat, qui la transmettra au bon prestataire.",
   when:a=>{ const p=chosenProv(a); return !!p&&(p.direct_contact===false||a.deja_vu==="Non, jamais"); }};
 const POUR_STEP = {id:"pour",kind:"choice",q:"C'est pour qui ?",options:()=>pourOptions(),when:()=>kids().length>0};
@@ -195,10 +195,10 @@ const FLOWS={
   {id:"medecin",kind:"choice",q:"Avec qui ?",options:a=>[...P.of(a.specialite).map(P.label),"Peu importe, le premier disponible"],when:a=>P.of(a.specialite).length>1},
   // Médecine générale : motif, délai, détails, lieu
   {id:"motif",kind:"choice",q:"Quel est le motif principal ?",options:GP_MOTIFS,when:isGP},
-  {id:"delai",kind:"choice",q:"Pour quand ?",options:["Aujourd'hui","Dans les prochains jours","Pas pressé (cette semaine ou plus tard)"],when:isGP},
+  {id:"delai",kind:"choice",q:"Pour quand ?",options:["Dès que possible","Dans les prochains jours","Pas pressé (cette semaine ou plus tard)"],when:isGP},
   {id:"details",kind:"text",q:"Décrivez en quelques mots ce qui vous amène.",placeholder:"Ex. toux depuis 5 jours, un peu de fièvre le soir",optional:true,when:isGP},
   // Autres prestataires (spécialiste, dentiste, psychologue…) : première fois ou non, et la raison
-  {id:"premiere",kind:"choice",q:"Est-ce la première fois que vous consultez ce prestataire ?",options:["Oui, c'est la première fois","Non, je l'ai déjà consulté"],when:a=>!isGP(a)},
+  {id:"premiere",kind:"choice",q:"Est-ce la première fois que vous consultez ce prestataire ?",options:["Oui, c'est la première fois","Non, je l'ai déjà consulté"],when:a=>!isGP(a)&&!chosenProv(a)},
   {id:"raison",kind:"text",q:"Pour quelle raison souhaitez-vous ce rendez-vous ?",placeholder:"Ex. contrôle annuel, douleur au genou depuis 2 semaines",when:a=>!isGP(a)},
   {id:"moment",kind:"multi",q:"Quels moments vous conviennent ? Vous pouvez en choisir plusieurs.",options:["Matin","Midi","Après-midi","Fin de journée","Peu importe"],exclusive:"Peu importe"},
   {id:"lieu",kind:"choice",q:"Vous préférez :",options:["Consultation au centre","Visite à domicile","Téléconsultation"],when:isGP}
@@ -243,6 +243,7 @@ FLOWS.document=[
 ];
 // Après le choix du prestataire : « Avez-vous déjà consulté… ? » (sauf rendez-vous et secrétariat)
 ["question","prescription","rapport","document"].forEach(k=>{ const i=FLOWS[k].findIndex(s=>s.id==="medecin"); FLOWS[k].splice(i+1,0,DEJA_VU); FLOWS[k].push(VIA_SECR); });
+{ const i=FLOWS.rdv.findIndex(s=>s.id==="medecin"); FLOWS.rdv.splice(i+1,0,DEJA_VU); }
 ["question","prescription","rapport","resultats","document"].forEach(k=>FLOWS[k].unshift(POUR_STEP));
 FLOWS.rdv.push(KID_NOTE); FLOWS.question.push(KID_NOTE);
 const LABELS={doc:"Document",fichiers:"Fichiers",note:"Message",de:"De",pour:"Pour",specialite:"Consultation",medecin:"Prestataire",motif:"Motif",delai:"Pour quand",details:"Détails",moment:"Disponibilités",lieu:"Lieu",
@@ -372,7 +373,7 @@ function attLoad(id){
   if(ATT.has(id)) return ATT.get(id);
   const p=(async()=>{ const {data,error}=await sb.rpc("get_attachment",{p_id:id}); if(error) throw error;
     const bin=atob(data.data), u8=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u8[i]=bin.charCodeAt(i);
-    return {url:URL.createObjectURL(new Blob([u8],{type:data.mime})), mime:data.mime, name:data.name}; })();
+    const blob=new Blob([u8],{type:data.mime}); return {url:URL.createObjectURL(blob), blob, mime:data.mime, name:data.name}; })();
   ATT.set(id,p); p.catch(()=>ATT.delete(id)); return p;
 }
 function hydrateAtt(){
@@ -381,6 +382,7 @@ function hydrateAtt(){
     try{ const a=await attLoad(+el.dataset.att); el.classList.remove("loading");
       if(el.dataset.kind==="image"){ const img=el.querySelector("img"); img.onload=scrollChat; img.src=a.url; el.onclick=()=>openViewer(a.url); }
       else if(el.dataset.kind==="audio"){ const au=el.querySelector("audio"); au.onerror=()=>{ if(!el.querySelector(".attfail")) el.insertAdjacentHTML("beforeend",`<a class="attfail" href="${a.url}" download="message-vocal.${a.mime.includes("webm")?"webm":a.mime.includes("ogg")?"ogg":"m4a"}">Lecture impossible ici : télécharger le message vocal</a>`); }; au.src=a.url; }
+      else if(IS_NATIVE&&SEC()){ el.href="#"; el.removeAttribute("download"); el.onclick=async e=>{ e.preventDefault(); try{ await nativePreview(a.blob, a.name); }catch(err){ console.error(err); toast("Ce document n'a pas pu être ouvert."); } }; }
       else { el.href=a.url; el.target="_blank"; el.rel="noopener"; }
     }catch(e){ console.error(e); el.classList.remove("loading"); el.classList.add("failed"); el.insertAdjacentHTML("beforeend",`<small class="attfail">Pièce jointe indisponible</small>`); }
   });
@@ -587,7 +589,9 @@ async function conversationPdf(r, who){
   return new Blob(parts,{type:"application/pdf"});
 }
 // Sur téléphone : feuille de partage (Enregistrer dans Fichiers, etc.) ; sur ordinateur : téléchargement
+async function nativePreview(blob,name){ const data=await blobToB64(blob); await SEC().preview({data,name:name||"document.pdf"}); }
 async function saveFile(blob,name){
+  if(IS_NATIVE&&SEC()){ try{ await nativePreview(blob,name); return; }catch(e){ console.error(e); } }
   const file=new File([blob],name,{type:blob.type});
   if(matchMedia("(pointer:coarse)").matches&&navigator.canShare&&navigator.canShare({files:[file]})){
     try{ await navigator.share({files:[file],title:name}); return; } catch(e){ if(e.name==="AbortError") return; } }
@@ -769,6 +773,7 @@ async function refresh(){
   }
   if(S.me.status==="active"){ if(S.me.role==="patient") await loadPatient(); else await loadStaff(); }
   render();
+  if(S.me.status==="active") startRealtime();
   if(IS_NATIVE&&S.me.status==="active"&&!pushSynced){ pushSynced=true; nativePushInit().then(()=>{ if(nativePush!=="unsupported") render(); }); }
   else if(S.me.status==="active"&&!pushSynced&&pushState()==="granted"){ pushSynced=true; pushSubscribe().catch(()=>{ pushSynced=false; }); }
 }
@@ -966,7 +971,7 @@ function capPlugin(name, methods){
 }
 const CAP = () => { if(CAP.c) return CAP.c; const c={};
   const pn=capPlugin("PushNotifications",["checkPermissions","requestPermissions","register","unregister","removeAllDeliveredNotifications"]);
-  const sec=capPlugin("CMPLSecure",["available","save","load","remove","setBadge"]);
+  const sec=capPlugin("CMPLSecure",["available","save","load","remove","setBadge","preview"]);
   if(pn) c.PushNotifications=pn; if(sec) c.CMPLSecure=sec; return CAP.c=c; };
 const IS_NATIVE=/CMPLApp/.test(navigator.userAgent)||!!(window.Capacitor&&window.Capacitor.isNativePlatform&&window.Capacitor.isNativePlatform());
 const IS_STANDALONE=IS_NATIVE||matchMedia("(display-mode: standalone)").matches||navigator.standalone===true;
@@ -1090,7 +1095,7 @@ function renderAuth(a){
      <label class="fld" for="f-last">Nom<input id="f-last" autocomplete="family-name" required></label></div>
      <div class="row2"><label class="fld" for="f-birth">Date de naissance<input id="f-birth" type="date" required></label>
      <label class="fld" for="f-phone">Téléphone<input id="f-phone" type="tel" autocomplete="tel" placeholder="04xx xx xx xx" required></label></div>`:""}
-    <label class="fld" for="f-email">Adresse e-mail<input id="f-email" type="email" autocomplete="email" required></label>
+    <label class="fld" for="f-email">Adresse e-mail<input id="f-email" type="email" autocomplete="${m==="signup"?"email":"username"}" autocapitalize="none" spellcheck="false" required></label>
     ${m!=="forgot"?`<label class="fld" for="f-pass">Mot de passe${m==="signup"?" (8 caractères minimum)":""}<input id="f-pass" type="password" autocomplete="${m==="signup"?"new-password":"current-password"}" required></label>`:""}
     ${m==="signup"?`<label class="chkline"><input type="checkbox" id="f-ok"> <span>J'ai lu les informations sur la protection de mes données et j'accepte qu'elles soient utilisées pour communiquer avec le centre.</span></label>${PRIVACY}`:""}
     <div id="f-msg"></div>
@@ -1101,7 +1106,7 @@ function renderAuth(a){
    ${m!=="signup"?PRIVACY:""}
    ${BANNER112}
   </div>`;
-  bindLangPicker();
+  bindLangPicker(); addEyes(a);
   $("#m-login").onclick=()=>{S.authMode="login";render()};
   $("#m-signup").onclick=()=>{S.authMode="signup";render()};
   const fg=$("#m-forgot"); if(fg) fg.onclick=()=>{S.authMode="forgot";render()};
@@ -1132,10 +1137,22 @@ function renderAuth(a){
     btn.disabled=false;
   };
 }
+// Bouton « œil » pour voir le mot de passe tapé
+const EYE='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYE_OFF='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 5.2A10.4 10.4 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4.1M6.1 6.1C3.6 7.8 2 12 2 12s3.6 7 10 7a9.7 9.7 0 0 0 4-.9"/></svg>';
+function addEyes(root){
+  (root||document).querySelectorAll('input[type="password"]:not([data-eye])').forEach(inp=>{
+    inp.dataset.eye="1"; const w=document.createElement("span"); w.className="pwwrap"; inp.parentNode.insertBefore(w,inp); w.appendChild(inp);
+    const b=document.createElement("button"); b.type="button"; b.className="pweye"; b.innerHTML=EYE; b.setAttribute("aria-label","Afficher le mot de passe"); w.appendChild(b);
+    b.onclick=()=>{ const show=inp.type==="password"; inp.type=show?"text":"password"; b.innerHTML=show?EYE_OFF:EYE;
+      b.setAttribute("aria-label",show?"Masquer le mot de passe":"Afficher le mot de passe"); inp.focus({preventScroll:true}); };
+  });
+}
 function renderRecovery(a){
   a.className="wrap";
   a.innerHTML=`<div class="top">${BRAND}</div><div class="auth"><h1>Nouveau mot de passe</h1>
   <form class="form" id="recform"><label class="fld" for="r-pass">Nouveau mot de passe (8 caractères minimum)<input id="r-pass" type="password" autocomplete="new-password"></label><div id="r-msg"></div><button class="btn full" type="submit">Enregistrer</button></form></div>`;
+  addEyes(a);
   $("#recform").onsubmit=async e=>{ e.preventDefault(); const p=$("#r-pass").value;
     if(p.length<8){ $("#r-msg").innerHTML=`<div class="err">Le mot de passe doit contenir au moins 8 caractères.</div>`; return; }
     const {error}=await sb.auth.updateUser({password:p});
@@ -1158,7 +1175,7 @@ function renderBlocked(a){
   <div class="closed"><b>Compte non validé</b><span>Ce compte n'a pas pu être validé. Contactez le secrétariat au 02 781 18 75.</span></div>`;
   $("#logout").onclick=logout;
 }
-async function logout(reason){ if(typeof reason!=="string") await pushForget(); await sb.auth.signOut(); updateBadges(0); const keep=savedLang(); if(keep&&keep!==L) applyLang(keep); S.session=null; S.me=null; S.mfa=null; S.screen="home"; S.cscreen="inbox"; try{ localStorage.removeItem("cmpl_last_active"); }catch(e){} render(); if(typeof reason==="string") toast(reason); }
+async function logout(reason){ if(typeof reason!=="string") await pushForget(); stopRealtime(); await sb.auth.signOut(); updateBadges(0); const keep=savedLang(); if(keep&&keep!==L) applyLang(keep); S.session=null; S.me=null; S.mfa=null; S.screen="home"; S.cscreen="inbox"; try{ localStorage.removeItem("cmpl_last_active"); }catch(e){} render(); if(typeof reason==="string") toast(reason); }
 
 /* =====================================================================
    PATIENT
@@ -1591,7 +1608,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261018c";
+const APP_VERSION="20261019a";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -2122,6 +2139,40 @@ function bindSettings(){
     if(row.away_until&&row.away_until<new Date().toISOString().slice(0,10)) return toast("La date de retour est déjà passée.");
     if(await run(()=>sb.from("staff_settings").upsert(row),"Enregistré")) S.settings=row;
   };
+}
+
+/* ---------- temps réel : les nouveaux messages arrivent instantanément ---------- */
+let RT=null, rtTimer=null; const RTQ=new Set();
+function startRealtime(){
+  if(RT||!sb.channel||!S.session||!S.me||S.me.status!=="active") return;
+  try{
+    RT=sb.channel("cmpl-"+S.me.id)
+      .on("postgres_changes",{event:"INSERT",schema:"public",table:"messages"},p=>rtQueue(p.new&&p.new.request_id))
+      .on("postgres_changes",{event:"*",schema:"public",table:"requests"},p=>rtQueue(p.new&&p.new.id))
+      .on("postgres_changes",{event:"INSERT",schema:"public",table:"notifications"},()=>rtQueue(null))
+      .subscribe();
+  }catch(e){ console.error(e); RT=null; }
+}
+function stopRealtime(){ if(RT){ try{ sb.removeChannel(RT); }catch(e){} RT=null; } }
+function rtQueue(id){ if(id) RTQ.add(id); clearTimeout(rtTimer); rtTimer=setTimeout(rtFlush,400); }
+async function rtFlush(){
+  if(!S.me) return; const ids=[...RTQ]; RTQ.clear(); const pat=S.me.role==="patient";
+  try{
+    if(ids.length){ const {data,error}=await sb.from("requests").select(REQ_SELECT).in("id",ids); if(error) throw error;
+      for(const r of data||[]){ const i=S.reqs.findIndex(x=>x.id===r.id); if(i>=0) S.reqs[i]=r; else S.reqs.unshift(r); } }
+    if(pat){ const {data}=await sb.from("notifications").select("*").eq("user_id",S.me.id).order("created_at",{ascending:false}).limit(50); if(data) S.notifs=data; }
+  }catch(e){ console.error(e); return; }
+  const openId = pat ? (S.screen==="req"?S.openReq:null) : (S.cscreen==="inbox"?S.sel:null);
+  const el=document.activeElement, typing=!!(el&&(el.tagName==="TEXTAREA"||el.tagName==="INPUT"||el.tagName==="SELECT"));
+  const busy = S.screen==="flow" || S.editNews || (!pat && ["compose","settings","tasks","inventory"].includes(S.cscreen));
+  if(typing||REC||CREC||S.pend||document.querySelector(".viewer,.scanner,.tour")){
+    // en pleine saisie : on ne met à jour que le fil de la conversation ouverte (le texte en cours reste intact)
+    const chat=$("#chat"), r=openId&&ids.includes(openId)&&S.reqs.find(x=>x.id===openId);
+    if(chat&&r){ const t=document.createElement("div"); t.innerHTML=chatHTML(r,pat?"patient":"centre"); chat.replaceWith(t.firstElementChild); hydrateAtt(); scrollChat(); }
+    updateBadges();
+  } else if(!busy) render(); else updateBadges();
+  if(pat&&openId&&ids.includes(openId)){ const unread=S.notifs.filter(n=>n.request_id===openId&&!n.read_at);
+    if(unread.length){ const now=new Date().toISOString(); await sb.from("notifications").update({read_at:now}).in("id",unread.map(n=>n.id)); unread.forEach(n=>n.read_at=now); updateBadges(); } }
 }
 
 /* =====================================================================
