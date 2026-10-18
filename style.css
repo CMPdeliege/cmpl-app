@@ -21,6 +21,8 @@
   --warn:#f0b65a; --warn-soft:#3a2b12; --danger:#ff8a80; --danger-soft:#3d1a17; --ok:#8fd18f; --ok-soft:#1b331c; --info:#8cc3ef; --info-soft:#16293a;
   color-scheme:dark}
 *{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+html,body{overflow-x:hidden;max-width:100%}
 body{background:var(--bg);color:var(--ink);font-family:var(--font-body);font-size:16px;line-height:1.5;padding-inline:16px;padding-block:12px 40px}
 h1,h2,h3{font-family:var(--font-display);line-height:1.15;text-wrap:balance;margin:0}
 button,input,textarea{font:inherit;color:inherit}

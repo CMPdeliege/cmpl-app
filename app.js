@@ -5,6 +5,19 @@
    Toute la sécurité est appliquée par la base (règles d'accès Supabase) :
    l'app ne fait qu'afficher ce que la base autorise.
    ===================================================================== */
+/* App iPhone : la page garde toujours exactement la largeur de l'écran
+   (WKWebView garde parfois un mauvais zoom au démarrage, après le clavier ou au retour dans l'app) */
+if(/CMPLApp/.test(navigator.userAgent)){
+  const VP="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, viewport-fit=cover";
+  const fitScreen=()=>{ const m=document.querySelector('meta[name=viewport]'); if(!m) return;
+    m.setAttribute("content",VP+", user-scalable=no"); requestAnimationFrame(()=>m.setAttribute("content",VP));
+    if(window.scrollX) window.scrollTo(0,window.scrollY); };
+  fitScreen(); addEventListener("load",fitScreen); addEventListener("pageshow",fitScreen);
+  addEventListener("orientationchange",()=>setTimeout(fitScreen,300));
+  document.addEventListener("visibilitychange",()=>{ if(!document.hidden) setTimeout(fitScreen,150); });
+  document.addEventListener("focusout",()=>setTimeout(fitScreen,300));
+}
+
 (() => {
 "use strict";
 const CFG = window.CMPL_CONFIG;
@@ -1608,7 +1621,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261019a";
+const APP_VERSION="20261019b";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
