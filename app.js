@@ -759,7 +759,7 @@ async function refresh(){
   if(!S.session){ S.me=null; render(); return; }
   await loadMe();
   if(!S.me){ render(); return; }
-  syncLang();
+  syncLang(); syncTextSize();
   S.mfa=null;
   if(S.me.status==="active"&&S.me.role!=="patient"){
     if(idleTooLong()){ await logout(IDLE_MSG); return; }
@@ -769,10 +769,22 @@ async function refresh(){
   }
   if(S.me.status==="active"){ if(S.me.role==="patient") await loadPatient(); else await loadStaff(); }
   render();
-  if(S.me.status==="active"&&!pushSynced&&pushState()==="granted"){ pushSynced=true; pushSubscribe().catch(()=>{ pushSynced=false; }); }
+  if(IS_NATIVE&&S.me.status==="active"&&!pushSynced){ pushSynced=true; nativePushInit().then(()=>{ if(nativePush!=="unsupported") render(); }); }
+  else if(S.me.status==="active"&&!pushSynced&&pushState()==="granted"){ pushSynced=true; pushSubscribe().catch(()=>{ pushSynced=false; }); }
 }
 
 // L'équipe travaille toujours en français ; le patient retrouve sa langue sur tous ses appareils
+/* ---------- taille du texte (Normal / Grand / Très grand) ---------- */
+const TEXT_SIZES={normal:["Normal",1],grand:["Grand",1.15],tres_grand:["Très grand",1.3]};
+function applyTextSize(v){ const z=(TEXT_SIZES[v]||TEXT_SIZES.normal)[1]; document.body.style.zoom=z===1?"":String(z);
+  try{ localStorage.setItem("cmpl_ts",TEXT_SIZES[v]?v:"normal"); }catch(e){} }
+try{ const t=localStorage.getItem("cmpl_ts"); if(t&&TEXT_SIZES[t]) applyTextSize(t); }catch(e){}
+function syncTextSize(){ if(S.me&&S.me.text_size&&TEXT_SIZES[S.me.text_size]) applyTextSize(S.me.text_size); }
+const textSizeHTML = () => `<section class="card tscard"><h3>Taille du texte</h3><p class="hint">Pour lire plus facilement. Le choix suit votre compte sur tous vos appareils.</p>
+  <div class="seg tsseg" role="group" aria-label="Taille du texte">${Object.entries(TEXT_SIZES).map(([k,[l]],i)=>`<button type="button" data-ts="${k}" aria-pressed="${(S.me.text_size||"normal")===k}"><span style="font-size:${14+i*3}px">A</span> ${l}</button>`).join("")}</div></section>`;
+function bindTextSize(){ $$("[data-ts]").forEach(b=>b.onclick=async()=>{ const v=b.dataset.ts; const old=S.me.text_size||"normal"; if(v===old) return;
+  S.me.text_size=v; applyTextSize(v); render();
+  const {error}=await sb.from("profiles").update({text_size:v}).eq("id",S.me.id); if(error){ console.error(error); } }); }
 function syncLang(){
   if(S.me.role!=="patient"){ if(L!=="fr") applyLang("fr"); return; }
   const saved=savedLang();
@@ -792,6 +804,59 @@ let lastAct=Date.now(), lastSaved=0;
 setInterval(()=>{ if(S.me&&S.me.role!=="patient"&&S.session&&Date.now()-lastAct>IDLE_MS) logout(IDLE_MSG); },60000);
 
 /* ---------- équipe : double authentification ---------- */
+/* ---------- Face ID (app iPhone) : remplace l'application d'authentification ----------
+   Le secret de double authentification est rangé dans le trousseau de l'iPhone, protégé par Face ID.
+   Après Face ID, l'app calcule elle-même le code à 6 chiffres. */
+const SEC = () => IS_NATIVE ? CAP().CMPLSecure : null;
+let BIO=null;
+async function bioInfo(){ if(BIO) return BIO; const sec=SEC(); if(!sec) return BIO={available:false,type:"none"};
+  try{ BIO=await sec.available(); }catch(e){ BIO={available:false,type:"none"}; } return BIO; }
+const bioName = () => BIO&&BIO.type==="touchid"?"Touch ID":"Face ID";
+const fidKey = () => "cmpl_faceid_"+(S.session?.user?.id||"");
+const faceIdOn = () => { try{ return !!localStorage.getItem(fidKey()); }catch(e){ return false; } };
+function b32decode(str){ const A="ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"; let bits="", out=[];
+  for(const ch of str.replace(/=+$/,"").replace(/\s/g,"").toUpperCase()){ const v=A.indexOf(ch); if(v<0) continue; bits+=v.toString(2).padStart(5,"0"); }
+  for(let i=0;i+8<=bits.length;i+=8) out.push(parseInt(bits.slice(i,i+8),2)); return new Uint8Array(out); }
+async function totpCode(secret, t=Date.now()){
+  const ctr=Math.floor(t/1000/30), msg=new Uint8Array(8); let c=ctr; for(let i=7;i>=0;i--){ msg[i]=c&255; c=Math.floor(c/256); }
+  const key=await crypto.subtle.importKey("raw",b32decode(secret),{name:"HMAC",hash:"SHA-1"},false,["sign"]);
+  const h=new Uint8Array(await crypto.subtle.sign("HMAC",key,msg)), o=h[h.length-1]&15;
+  const n=((h[o]&127)<<24)|(h[o+1]<<16)|(h[o+2]<<8)|h[o+3]; return String(n%1000000).padStart(6,"0"); }
+async function faceIdSetup(){
+  const {data:lf}=await sb.auth.mfa.listFactors();
+  for(const f of (lf?.all||[])) if(f.status!=="verified") await sb.auth.mfa.unenroll({factorId:f.id}).catch(()=>{});
+  const {data,error}=await sb.auth.mfa.enroll({factorType:"totp",issuer:"Centre Médical Prince de Liège",friendlyName:bioName()+" iPhone "+new Date().toISOString().slice(0,19)+" "+Math.random().toString(36).slice(2,6)});
+  if(error) throw error;
+  const v=await sb.auth.mfa.challengeAndVerify({factorId:data.id,code:await totpCode(data.totp.secret)});
+  if(v.error){ await sb.auth.mfa.unenroll({factorId:data.id}).catch(()=>{}); throw v.error; }
+  await SEC().save({key:fidKey(),value:JSON.stringify({f:data.id,s:data.totp.secret})});
+  try{ localStorage.setItem(fidKey(),data.id); }catch(e){}
+}
+async function faceIdSecret(){ const r=await SEC().load({key:fidKey(),reason:"Connexion au Centre Médical Prince de Liège"}); return JSON.parse(r.value); }
+async function faceIdLogin(){ const {f,s:sec}=await faceIdSecret(); const v=await sb.auth.mfa.challengeAndVerify({factorId:f,code:await totpCode(sec)}); if(v.error) throw v.error; }
+async function faceIdForget(unenroll){ const f=(()=>{ try{ return localStorage.getItem(fidKey()); }catch(e){ return null; } })();
+  if(unenroll&&f) await sb.auth.mfa.unenroll({factorId:f}).catch(()=>{});
+  try{ await SEC().remove({key:fidKey()}); }catch(e){} try{ localStorage.removeItem(fidKey()); }catch(e){} }
+function faceIdCardHTML(){
+  if(!IS_NATIVE||!SEC()) return "";
+  if(!BIO){ bioInfo().then(()=>{ if(S.cscreen==="settings") render(); }); return ""; }
+  if(!BIO.available) return "";
+  const n=bioName();
+  return `<section class="card"><h3>${n}</h3>${faceIdOn()?`<p class="hint">${n} est activé sur cet iPhone : il remplace l'application d'authentification pour vous connecter.</p>
+    <div class="btnrow"><button class="btn ghost" id="fid-code">Afficher un code pour l'ordinateur</button><button class="linkbtn" id="fid-off">Désactiver ${n}</button></div><div id="fid-out"></div>`
+   :`<p class="hint">Connectez-vous avec ${n} au lieu de taper le code de l'application d'authentification. Cet iPhone pourra aussi vous afficher le code pour vous connecter sur un ordinateur.</p>
+    <div class="btnrow"><button class="btn" id="fid-on">Activer ${n} sur cet iPhone</button></div>`}</section>`;
+}
+function bindFaceIdCard(){
+  const on=$("#fid-on"), off=$("#fid-off"), cd=$("#fid-code");
+  if(on) on.onclick=async()=>{ on.disabled=true; try{ await faceIdSetup(); toast(bioName()+" activé"); }catch(e){ console.error(e); toast("Activation impossible : "+frError(e)); } render(); };
+  if(off) off.onclick=async()=>{ off.disabled=true; await faceIdForget(true); toast(bioName()+" désactivé"); render(); };
+  if(cd) cd.onclick=async()=>{ try{ const {s:sec}=await faceIdSecret(); const show=async()=>{ const el=$("#fid-out"); if(!el) return clearInterval(tm);
+      const left=30-Math.floor(Date.now()/1000)%30; el.innerHTML=`<p class="fidcode" translate="no">${(await totpCode(sec)).replace(/(\d{3})/,"$1 ")}</p><p class="hint">Valable encore ${left} s. Tapez-le sur l'ordinateur.</p>`; };
+      await show(); const tm=setInterval(show,1000); setTimeout(()=>{ clearInterval(tm); const el=$("#fid-out"); if(el) el.innerHTML=""; },90000);
+    }catch(e){ if(e&&e.code!=="CANCELED") toast(bioName()+" : lecture impossible. Désactivez puis réactivez "+bioName()+"."); } };
+}
+
 function renderMfa(a){
   const enroll=!S.mfa.hasFactor;
   // déjà affiché : ne pas recréer (sinon le code QR déjà scanné serait remplacé par un nouveau)
@@ -802,6 +867,7 @@ function renderMfa(a){
   <div class="auth"><h1>${enroll?"Activer la double authentification":"Code de sécurité"}</h1>
   <p class="sub" style="margin:0">${enroll?"Les comptes de l'équipe donnent accès à des données de santé. Une étape de sécurité supplémentaire est obligatoire, une seule fois par appareil et par connexion.":"Ouvrez votre application d'authentification et entrez le code à 6 chiffres affiché pour « Centre Médical Prince de Liège »."}</p>
   <div class="form">
+   <div id="fid-zone"></div>
    ${enroll?`<ol class="legal" style="margin:0;padding-left:18px"><li>Installez sur votre téléphone une application d'authentification : <b>Google Authenticator</b> ou <b>Microsoft Authenticator</b> (gratuites).</li><li>Dans l'application, choisissez « Ajouter un compte », puis « Scanner un code QR ».</li><li>Scannez le code ci-dessous, puis entrez le code à 6 chiffres affiché.</li></ol>
    <div id="qr" style="display:grid;place-items:center;min-height:200px"><span class="hint">Préparation du code…</span></div>`:""}
    <label class="fld" for="mfa-code">Code à 6 chiffres<input id="mfa-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456"></label>
@@ -812,6 +878,22 @@ function renderMfa(a){
   $("#logout").onclick=()=>logout();
   const msg=t=>$("#mfa-msg").innerHTML=`<div class="err">${esc(t)}</div>`;
   let factorId=null;
+  // App iPhone : Face ID à la place de l'application d'authentification
+  if(IS_NATIVE&&SEC()) bioInfo().then(b=>{ const z=$("#fid-zone"); if(!z||!b.available) return; const n=bioName();
+    if(!enroll&&faceIdOn()){
+      z.innerHTML=`<button class="btn full" id="fid-go">Se connecter avec ${n}</button><p class="hint" style="text-align:center;margin:6px 0 0">ou entrez le code de votre application d'authentification</p>`;
+      const go=async()=>{ const bt=$("#fid-go"); if(bt) bt.disabled=true;
+        try{ await faceIdLogin(); markActive(); lastAct=Date.now(); toast("Connecté"); await refresh(); }
+        catch(e){ if(bt) bt.disabled=false; if(e&&e.code==="CANCELED") return;
+          if(e&&e.code!=="ERROR"){ await faceIdForget(false); z.innerHTML=""; msg(n+" n'est plus configuré sur cet iPhone : entrez le code de votre application, puis réactivez "+n+" dans Mon profil."); }
+          else msg(n+" n'a pas fonctionné. Réessayez ou entrez le code."); } };
+      $("#fid-go").onclick=go; go();
+    } else if(enroll){
+      z.innerHTML=`<button class="btn full" id="fid-new">Activer avec ${n} (recommandé)</button><p class="hint" style="text-align:center;margin:6px 0 0">Rien à installer : ${n} remplace l'application d'authentification sur cet iPhone. Ou utilisez le code QR ci-dessous.</p>`;
+      $("#fid-new").onclick=async e=>{ e.target.disabled=true;
+        try{ await faceIdSetup(); markActive(); lastAct=Date.now(); toast(n+" activé"); await refresh(); }
+        catch(err){ e.target.disabled=false; console.error(err); msg("Activation impossible : "+frError(err)); } };
+    } });
   (async()=>{
     const {data:lf}=await sb.auth.mfa.listFactors();
     if(enroll){
@@ -868,15 +950,36 @@ function updateBadges(n=badgeCount()){
   document.title = n ? `(${n}) ${BASE_TITLE}` : BASE_TITLE;
   setFavicon(n);
   try{ if(navigator.setAppBadge){ (n?navigator.setAppBadge(n):navigator.clearAppBadge()).catch(()=>{}); } }catch(e){}
+  try{ const sec=CAP().CMPLSecure; if(IS_NATIVE&&sec) sec.setBadge({count:n}).catch(()=>{}); }catch(e){}
 }
 // ---------- Notifications push (téléphone et ordinateur, même app fermée) ----------
 const IS_IOS=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
-// Dans l'app iPhone / Android (App Store, Google Play) : les notifications natives arrivent à l'étape suivante
+// Dans l'app iPhone / Android (App Store, Google Play) : notifications natives et Face ID
+const CAP = () => (window.Capacitor&&window.Capacitor.Plugins)||{};
 const IS_NATIVE=/CMPLApp/.test(navigator.userAgent)||!!(window.Capacitor&&window.Capacitor.isNativePlatform&&window.Capacitor.isNativePlatform());
 const IS_STANDALONE=IS_NATIVE||matchMedia("(display-mode: standalone)").matches||navigator.standalone===true;
 let pushSynced=false;
+// --- notifications natives (app iPhone) ---
+let nativePush=null;   // granted | denied | prompt | unsupported
+const NPUSH = () => IS_NATIVE ? CAP().PushNotifications : null;
+const ntokKey = "cmpl_ntoken";
+async function nativePushInit(){
+  const P=NPUSH(); if(!P){ nativePush="unsupported"; return; }
+  if(!nativePushInit.done){ nativePushInit.done=true;
+    try{
+      P.addListener("registration", async t=>{ if(!S.me) return;
+        const {error}=await sb.rpc("register_native_push",{p_token:t.value,p_platform:"ios"}); if(error) console.error(error);
+        try{ localStorage.setItem(ntokKey,t.value); }catch(e){} });
+      P.addListener("registrationError", e=>console.error("notifications",e));
+      P.addListener("pushNotificationActionPerformed", ()=>{ setTimeout(autoRefresh,300); });
+      P.addListener("pushNotificationReceived", ()=>{ setTimeout(autoRefresh,300); });
+    }catch(e){ console.error(e); }
+  }
+  try{ const r=await P.checkPermissions(); nativePush=r.receive==="granted"?"granted":r.receive==="denied"?"denied":"prompt"; }catch(e){ nativePush="unsupported"; }
+  if(nativePush==="granted"&&S.me&&S.me.status==="active") P.register().catch(()=>{});
+}
 function pushState(){
-  if(IS_NATIVE) return "unsupported";
+  if(IS_NATIVE) return nativePush==="granted"?"granted":nativePush==="denied"?"denied":nativePush==="prompt"?"default":"unsupported";
   if(IS_IOS&&!IS_STANDALONE&&!("PushManager" in window)) return "ios-browser";
   if(!("serviceWorker" in navigator)||!("PushManager" in window)||!("Notification" in window)) return "unsupported";
   return Notification.permission;   // default | granted | denied
@@ -896,6 +999,7 @@ async function pushSubscribe(){
 }
 async function pushForget(){
   pushSynced=false;
+  if(IS_NATIVE){ try{ const t=localStorage.getItem(ntokKey); if(t) await sb.rpc("unregister_native_push",{p_token:t}); localStorage.removeItem(ntokKey); }catch(e){} return; }
   try{ if(!("serviceWorker" in navigator)) return; const reg=await navigator.serviceWorker.getRegistration(); const sub=reg&&await reg.pushManager.getSubscription();
     if(sub){ await sb.rpc("push_unregister",{p_endpoint:sub.endpoint}); await sub.unsubscribe(); } }catch(e){}
 }
@@ -910,6 +1014,12 @@ function pushBlockHTML(staff){
 function bindPush(){
   const b=$("#pushon"); if(!b) return;
   b.onclick=async()=>{ b.disabled=true;
+    if(IS_NATIVE){ const P=NPUSH();
+      try{ const r=await P.requestPermissions();
+        if(r.receive!=="granted"){ nativePush="denied"; toast("Notifications refusées : vous pouvez les autoriser dans les réglages du téléphone."); render(); return; }
+        nativePush="granted"; await P.register(); pushSynced=true; lastBadge=-1; updateBadges(); toast("Notifications activées");
+      }catch(e){ toast("Activation impossible sur cet appareil."); }
+      render(); return; }
     try{
       const p=await Notification.requestPermission();
       if(p!=="granted"){ toast("Notifications refusées : vous pouvez les autoriser dans les réglages du téléphone."); render(); return; }
@@ -1187,6 +1297,7 @@ function patientAccount(a){
   const m=S.me;
   a.innerHTML=`<div class="convhead"><button class="back" id="back" aria-label="Retour">${IC.back}</button><div><h2>Mon compte</h2><small>${esc(S.session.user.email)}</small></div></div>
   <section class="card langcard"><h3>Langue de l'application</h3><p class="hint">Les messages restent écrits par le centre en français.</p>${langPickerHTML()}</section>
+  ${textSizeHTML()}
   ${photoCardHTML("Facultatif. Visible uniquement par vous et par l'équipe du centre, pour vous reconnaître.")}
   ${m.status==="active"?familyCardHTML():""}
   ${contactsCardHTML()}
@@ -1213,7 +1324,7 @@ function patientAccount(a){
   $("#delconf").oninput=e=>{ $("#delgo").disabled=e.target.value.trim().toUpperCase()!=="SUPPRIMER"; };
   $("#delgo").onclick=async e=>{ e.target.disabled=true;
     if(await run(()=>sb.rpc("delete_my_account"))){ await logout("Votre compte et ses données ont été supprimés."); } else e.target.disabled=false; };
-  bindPhotoCard(); bindFamily(); bindLangPicker(); bindContacts();
+  bindPhotoCard(); bindFamily(); bindLangPicker(); bindContacts(); bindTextSize();
   $("#acctform").onsubmit=async e=>{ e.preventDefault();
     const upd={first_name:$("#a-first").value.trim(),last_name:$("#a-last").value.trim(),birth_date:$("#a-birth").value||null,phone:$("#a-phone").value.trim()};
     if(await run(()=>sb.from("profiles").update(upd).eq("id",m.id),"Enregistré")) Object.assign(S.me,upd); };
@@ -1468,7 +1579,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261017d";
+const APP_VERSION="20261018b";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -1950,6 +2061,8 @@ function settingsHTML(){
   return `<div class="chead"><div><h1>Mon profil et mes notifications</h1><p>Quand et comment vous êtes prévenu des nouvelles demandes et des messages de patients. Les notifications ne contiennent jamais de donnée médicale.</p></div></div>
   <div class="settings">
    ${photoCardHTML("Facultatif. Visible par les patients dans les conversations, et par l'équipe.")}
+   ${faceIdCardHTML()}
+   ${textSizeHTML()}
    <section class="card"><h3>Quand me prévenir</h3><div class="pgrid">
     <label class="fld">Haute priorité (à voir en moins de 24 h)${sel("s-haute",s.haute)}</label>
     <label class="fld">Pas pressé (à voir en moins de 72 h)${sel("s-normale",s.normale)}</label></div>
@@ -1979,7 +2092,7 @@ function awayDefaultText(){
   return `Bonjour,\nJe suis absent(e)${until}. Votre message a bien été reçu${fw?` et sera traité par ${(fw.first_name||"")+" "+(fw.last_name||"")}`:" et sera traité à mon retour"}.\nPour une question qui ne peut pas attendre, appelez le secrétariat au 02 781 18 75. Urgence vitale : 112.`;
 }
 function bindSettings(){
-  bindPhotoCard(); bindPush();
+  bindPhotoCard(); bindPush(); bindTextSize(); bindFaceIdCard();
   const dc=$("#s-direct"); if(dc) dc.onchange=async()=>{ const v=dc.checked;
     if(await run(()=>sb.rpc("set_my_direct_contact",{p_ok:v}),v?"Les patients peuvent vous écrire directement":"Les demandes passeront d'abord par le secrétariat")){ const pr=P.byId(S.me.provider_id); if(pr) pr.direct_contact=v; } else dc.checked=!v; };
   const away=$("#s-away"), box=$("#s-awaybox"), am=$("#s-amsg"), msg=$("#s-msg"), hint=$("#s-msghint");

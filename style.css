@@ -567,3 +567,7 @@ small.qty{font-size:inherit;color:var(--muted)}
 .invform input:not([type=checkbox]),.invform textarea{font:inherit;color:var(--ink);background:var(--surface);border:1.5px solid var(--line);border-radius:10px;padding:10px 12px;width:100%;box-sizing:border-box}
 .invform input:focus,.invform textarea:focus{border-color:var(--accent);outline:none}
 .appver{text-align:center;margin-top:14px;font-size:12px;opacity:.7}
+.tsseg{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;width:100%;box-sizing:border-box;border-radius:14px;padding:4px}
+.tsseg button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border-radius:10px;padding:8px 4px;line-height:1.15;text-align:center;min-width:0}
+.tsseg button span{font-weight:800;line-height:1}
+.fidcode{font-size:34px;font-weight:800;letter-spacing:.08em;text-align:center;margin:8px 0 0;font-variant-numeric:tabular-nums}
