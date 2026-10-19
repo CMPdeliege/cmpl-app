@@ -934,7 +934,7 @@ function renderMfa(a){
   <p class="hint">Téléphone perdu ou changé ? L'administrateur peut réinitialiser votre double authentification.</p></div>`;
   $("#logout").onclick=()=>logout();
   const msg=t=>$("#mfa-msg").innerHTML=`<div class="err">${esc(t)}</div>`;
-  let factorId=null;
+  let factorId=null, factorIds=[];
   // App iPhone : Face ID à la place de l'application d'authentification
   if(IS_NATIVE&&SEC()) bioInfo().then(b=>{ const z=$("#fid-zone"); if(!z||!b.available) return; const n=bioName();
     if(!enroll&&faceIdOn()){
@@ -961,7 +961,11 @@ function renderMfa(a){
       const raw=String(data.totp.qr_code||""), svg=raw.replace(/^data:image\/svg\+xml;[^,]*,/,""), qrSrc=svg.trim().startsWith("<")?"data:image/svg+xml;charset=utf-8,"+encodeURIComponent(svg):raw;
       $("#qr").innerHTML=`<img src="${esc(qrSrc)}" alt="Code QR à scanner" style="width:200px;height:200px;background:#fff;padding:8px;border-radius:12px"><p class="hint" style="text-align:center;word-break:break-all">Impossible de scanner ? Entrez cette clé : <b>${esc(data.totp.secret)}</b></p>`;
     } else {
-      factorId=(lf?.totp||[]).find(f=>f.status==="verified")?.id;
+      // plusieurs appareils possibles (application d'authentification, Face ID sur iPhone…) :
+      // le code est essayé sur chacun, l'application d'authentification d'abord
+      const vf=(lf?.totp||[]).filter(f=>f.status==="verified");
+      const isBio=f=>/^(Face ID|Touch ID)/.test(f.friendly_name||"");
+      factorIds=[...vf.filter(f=>!isBio(f)),...vf.filter(isBio)].map(f=>f.id); factorId=factorIds[0];
     }
   })();
   $("#mfa-code").focus();
@@ -970,7 +974,8 @@ function renderMfa(a){
     if(code.length!==6) return msg("Entrez les 6 chiffres du code.");
     if(!factorId) return msg("Un instant, la préparation n'est pas terminée. Réessayez dans quelques secondes.");
     e.target.disabled=true;
-    const {error}=await sb.auth.mfa.challengeAndVerify({factorId,code});
+    let error=null;
+    for(const fid of (factorIds.length?factorIds:[factorId])){ ({error}=await sb.auth.mfa.challengeAndVerify({factorId:fid,code})); if(!error) break; if(!/invalid|expired/i.test(error.message||"")) break; }
     if(error){ e.target.disabled=false; return msg(/invalid|expired/i.test(error.message)?"Code incorrect ou expiré. Entrez le code actuellement affiché.":frError(error)); }
     markActive(); lastAct=Date.now(); toast("Accès sécurisé activé"); await refresh();
   };
@@ -1660,7 +1665,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261019g";
+const APP_VERSION="20261019h";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
