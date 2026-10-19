@@ -857,6 +857,20 @@ async function faceIdLogin(){ const {f,s:sec}=await faceIdSecret(); const v=awai
 async function faceIdForget(unenroll){ const f=(()=>{ try{ return localStorage.getItem(fidKey()); }catch(e){ return null; } })();
   if(unenroll&&f) await sb.auth.mfa.unenroll({factorId:f}).catch(()=>{});
   try{ await SEC().remove({key:fidKey()}); }catch(e){} try{ localStorage.removeItem(fidKey()); }catch(e){} }
+/* ---------- diagnostic temporaire de mise en page (app iPhone) ----------
+   Si la page devient plus large que l'écran ou zoomée, un bouton rouge « Diag » apparaît ;
+   une capture de son contenu permet de trouver l'élément en cause. */
+function layoutDiag(){
+  const W=document.documentElement.clientWidth, vv=window.visualViewport, out=[];
+  document.querySelectorAll("#app *").forEach(e=>{ const r=e.getBoundingClientRect(); if(r.width&&(r.right>W+1||r.left<-1)) out.push(`${e.tagName.toLowerCase()}${e.id?"#"+e.id:""}${e.className&&typeof e.className==="string"?"."+e.className.split(" ").slice(0,2).join("."):""}  L${Math.round(r.left)} R${Math.round(r.right)} W${Math.round(r.width)}`); });
+  return {bad:out.length>0||document.documentElement.scrollWidth>W+1||(vv&&Math.abs(vv.scale-1)>0.02)||window.scrollX>0,
+    text:`Version ${APP_VERSION}\nécran ${screen.width}×${screen.height} · dpr ${devicePixelRatio}\ninnerWidth ${innerWidth} · clientWidth ${W} · scrollWidth ${document.documentElement.scrollWidth} · scrollX ${Math.round(scrollX)}\nvisualViewport ${vv?`${Math.round(vv.width)} · zoom ${vv.scale.toFixed(2)} · décalage ${Math.round(vv.offsetLeft)}`:"—"}\nviewport: ${document.querySelector("meta[name=viewport]")?.content}\nécran affiché: ${S.cscreen||S.screen} · zoom texte ${document.body.style.zoom||"1"}\n\nÉléments qui dépassent (${out.length}) :\n${out.slice(0,20).join("\n")||"aucun"}`};
+}
+setTimeout(()=>{ if(IS_NATIVE) setInterval(()=>{ if(!S.me) return; const d=layoutDiag(); let b=$("#diagbtn");
+  if(d.bad&&!b){ document.body.insertAdjacentHTML("beforeend",`<button id="diagbtn" type="button">Diag</button>`); b=$("#diagbtn");
+    b.onclick=()=>{ const t=layoutDiag().text; document.body.insertAdjacentHTML("beforeend",`<div id="diagbox" role="dialog"><button type="button" class="btn" id="diagx">Fermer</button>\n${esc(t)}</div>`); $("#diagx").onclick=()=>$("#diagbox").remove(); }; }
+  else if(!d.bad&&b&&!$("#diagbox")) b.remove(); },2000); },0);
+
 /* ---------- app iPhone de l'équipe : verrouillage par Face ID ----------
    À l'ouverture de l'app et au retour après 5 minutes en arrière-plan, l'écran est masqué
    jusqu'à Face ID (seulement si Face ID est activé pour la connexion). */
@@ -1646,7 +1660,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261019f";
+const APP_VERSION="20261019g";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
