@@ -1091,7 +1091,7 @@ setInterval(async()=>{ if(!document.hidden||!S.me||S.me.status!=="active") retur
   }catch(e){}
 },120000);
 function draw(){
-  const a=app();
+  const a=app(); document.body.classList.remove("hasbar","ddopen");
   if(S.loading){ a.className="wrap"; a.innerHTML=`<div class="loading">Chargement…</div>`; return; }
   if(S.recovery) return renderRecovery(a);
   if(!S.session) return renderAuth(a);
@@ -1646,35 +1646,106 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261019d";
+const APP_VERSION="20261019e";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
 const isGestion = () => S.me.role==="gestion";
 const canPub = () => isDesk()||isGestion();
+/* ----- navigation de l'équipe : 3 onglets + « Écrire » + menu de la photo -----
+   Ordinateur : onglets en haut. Téléphone : barre en bas (comme les apps habituelles). */
+const SI={
+ inbox:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>',
+ tasks:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>',
+ centre:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-6h6v6"/><path d="M10 9h4"/></svg>',
+ pen:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
+ cal:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>',
+ ext:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>',
+ team:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+ box:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg>',
+ ucheck:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="m16 11 2 2 4-4"/></svg>',
+ out:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>',
+ down:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>'
+};
+function centreItems(){
+  const it=[];
+  if(canPub()) it.push({cs:"news",ic:SI.news||IC.news,t:"Actualités",d:"Annonces pour les patients",n:0});
+  if(S.me.role==="admin"||isGestion()) it.push({cs:"team",ic:SI.team,t:"Équipe",d:"Collègues et comptes de l'équipe",n:0});
+  it.push({cs:"inventory",ic:SI.box,t:"Inventaire",d:"Matériel à commander",n:invOpen()});
+  if(isDesk()) it.push({cs:"accounts",ic:SI.ucheck,t:"Comptes à valider",d:"Nouveaux patients",n:S.pending.length+(S.pendingKids||[]).length});
+  return it;
+}
+const badge = n => n?`<span class="sn" aria-label="${n} en attente">${n}</span>`:"";
+function staffNavHTML(sc){
+  const ci=centreItems(), cn=ci.reduce((t,x)=>t+(x.n||0),0), nIn=S.reqs.filter(awaitingStaff).length, nT=myTasks().length;
+  const inCentre=ci.some(x=>x.cs===sc), single=ci.length===1?ci[0]:null;
+  const av=AV.get(S.me.id)?avatarHTML(AV.get(S.me.id),"",36):`<span class="avl">${esc((S.me.first_name||"?").slice(0,1).toUpperCase())}</span>`;
+  const who=`${esc([S.me.first_name,S.me.last_name].filter(Boolean).join(" ")||"")}`;
+  const centreBtn = single
+    ? `<button class="stab" data-cs="${single.cs}" aria-current="${sc===single.cs?"page":"false"}">${single.ic}<span>${single.t}</span>${badge(single.n)}</button>`
+    : `<div class="ddwrap"><button class="stab" id="dd-centre-b" aria-haspopup="true" aria-expanded="false" aria-controls="dd-centre" aria-current="${inCentre?"page":"false"}">${SI.centre}<span>Le centre</span>${badge(cn)}${SI.down}</button>
+       <div class="dd" id="dd-centre" hidden role="menu" aria-label="Le centre"><p class="ddh">Le centre</p>${ci.map(x=>`<button role="menuitem" class="ddi" data-cs="${x.cs}" aria-current="${sc===x.cs?"page":"false"}">${x.ic}<span>${x.t}<small>${x.d}</small></span>${badge(x.n)}</button>`).join("")}</div></div>`;
+  const meMenu=`<div class="dd ddme" id="dd-me" hidden role="menu" aria-label="Mon compte"><p class="ddwho"><b>${who}</b>${ROLE_LABEL[S.me.role]}${S.me.provider_id?` · ${esc(provName(S.me.provider_id))}`:""}</p>
+     <button role="menuitem" class="ddi" data-cs="settings">${IC.bell}<span>Mon profil et notifications</span></button>
+     <button role="menuitem" class="ddi" data-cs="help">${IC.help}<span>Aide</span></button>
+     <a role="menuitem" class="ddi ddrosa" href="${ROSA_PRO_URL}" target="_blank" rel="noopener">${SI.cal}<span>Mon agenda Rosa</span>${SI.ext}</a>
+     <hr><button role="menuitem" class="ddi" id="logout">${SI.out}<span>Se déconnecter</span></button></div>`;
+  return `<header class="top stop">${BRAND}
+   <nav class="snav" aria-label="Navigation de l'équipe">
+    <button class="stab" data-cs="inbox" aria-current="${sc==="inbox"?"page":"false"}">${SI.inbox}<span>Demandes</span>${badge(nIn)}</button>
+    <button class="stab" data-cs="tasks" aria-current="${sc==="tasks"?"page":"false"}">${SI.tasks}<span>Tâches</span>${badge(nT)}</button>
+    ${centreBtn}
+   </nav>
+   <div class="sact">
+    <button class="swrite" data-cs="compose" aria-current="${sc==="compose"?"page":"false"}">${SI.pen}<span><b class="lg">Écrire à un patient</b><b class="sh">Écrire</b></span></button>
+    <a class="srosa" href="${ROSA_PRO_URL}" target="_blank" rel="noopener" title="Ouvre votre agenda Rosa (connexion avec votre propre compte Rosa)">${SI.cal}<span>Rosa</span>${SI.ext}</a>
+    <div class="ddwrap"><button class="savbtn" id="dd-me-b" aria-haspopup="true" aria-expanded="false" aria-controls="dd-me" aria-label="Mon compte : ${who}" aria-current="${["settings","help"].includes(sc)?"page":"false"}">${av}</button>${meMenu}</div>
+   </div>
+  </header>
+  <nav class="sbar" aria-label="Navigation de l'équipe">
+   <button data-cs="inbox" aria-current="${sc==="inbox"?"page":"false"}">${SI.inbox}<span>Demandes</span>${badge(nIn)}</button>
+   <button data-cs="tasks" aria-current="${sc==="tasks"?"page":"false"}">${SI.tasks}<span>Tâches</span>${badge(nT)}</button>
+   <button class="sfab" data-cs="compose" aria-current="${sc==="compose"?"page":"false"}"><i>${SI.pen}</i><span>Écrire</span></button>
+   ${single?`<button data-cs="${single.cs}" aria-current="${sc===single.cs?"page":"false"}">${single.ic}<span>${single.t}</span>${badge(single.n)}</button>`
+     :`<button data-dd="dd-centre" aria-current="${inCentre?"page":"false"}">${SI.centre}<span>Le centre</span>${badge(cn)}</button>`}
+   <button data-dd="dd-me" aria-current="${["settings","help"].includes(sc)?"page":"false"}">${IC.user}<span>Moi</span></button>
+  </nav><div class="ddback" hidden></div>`;
+}
+function closeDD(){ $$(".dd").forEach(d=>d.hidden=true); $$("[aria-expanded]").forEach(b=>b.setAttribute("aria-expanded","false")); const bk=$(".ddback"); if(bk) bk.hidden=true; document.body.classList.remove("ddopen"); }
+function openDD(id){ const d=$("#"+id); if(!d) return; const was=!d.hidden; closeDD(); if(was) return;
+  d.hidden=false; const b=$("#"+id+"-b"); if(b) b.setAttribute("aria-expanded","true"); const bk=$(".ddback"); if(bk) bk.hidden=false; document.body.classList.add("ddopen");
+  const f=d.querySelector(".ddi"); if(f) f.focus({preventScroll:true}); }
+document.addEventListener("keydown",e=>{ if(e.key==="Escape"&&$(".dd:not([hidden])")) closeDD(); });
+document.addEventListener("click",e=>{ if(!$(".dd:not([hidden])")) return; if(e.target.closest(".dd,[data-dd],#dd-centre-b,#dd-me-b")) return; closeDD(); });
+function staffHelpHTML(){
+  const Q=[
+   ["Répondre à un patient","Ouvrez la demande dans « Demandes », écrivez votre message en bas (texte, photo, document ou message vocal), puis Envoyer. Quand tout est réglé, touchez « Clôturer »."],
+   ["Transmettre une demande à un collègue","Dans la demande, touchez « Transférer » et choisissez le collègue. Il est prévenu tout de suite."],
+   ["Écrire à un patient qui n'a rien demandé","Bouton « Écrire à un patient » (en haut sur ordinateur, au centre de la barre sur téléphone), puis cherchez le patient."],
+   ["Être prévenu sur mon téléphone","Mon profil et notifications → « Quand me prévenir » et « Activer les notifications ». Vous pouvez aussi choisir d'être prévenu en dehors des heures d'ouverture."],
+   ["Je suis absent(e)","Mon profil et notifications → « En cas d'absence » : vos alertes peuvent être renvoyées à un collègue, avec un message automatique pour les patients."],
+   ["Le menu « Le centre »","Il regroupe ce qui concerne tout le centre : Actualités, Équipe, Inventaire, Comptes à valider (selon votre rôle). Le chiffre rouge indique ce qui attend."],
+   ["Face ID sur l'iPhone","Dans l'app iPhone : Mon profil et notifications → Face ID. Ensuite l'app se déverrouille avec votre visage, sans code."],
+   ["Un problème avec l'app","Prévenez l'administrateur du centre en précisant l'écran concerné (une capture d'écran aide beaucoup)."]];
+  return `<div class="chead"><div><h1>Aide</h1><p>Les réponses aux questions les plus fréquentes de l'équipe.</p></div></div>
+  <div class="settings">${Q.map(([q,r])=>`<details class="faq card"><summary>${q}</summary><p>${r}</p></details>`).join("")}${versionHTML()}</div>`;
+}
 function renderStaff(a){
-  a.className="wrap wide";
+  a.className="wrap wide staff";
   const sc=S.cscreen;
-  const nav=`<div class="top">${BRAND}<div class="menu">${AV.get(S.me.id)?avatarHTML(AV.get(S.me.id),"",34):""}<span class="who">${esc(S.me.first_name||"")} · ${ROLE_LABEL[S.me.role]}${S.me.provider_id?` · ${esc(provName(S.me.provider_id))}`:""}</span><button class="iconbtn" id="logout" aria-label="Se déconnecter" title="Se déconnecter">${IC.user}</button></div></div>
-  <div class="nav">
-   <button data-cs="inbox" aria-pressed="${sc==="inbox"}">Demandes<span class="n">${S.reqs.filter(awaitingStaff).length||""}</span></button>
-   <button data-cs="compose" aria-pressed="${sc==="compose"}">Écrire à un patient</button>
-   <button data-cs="tasks" aria-pressed="${sc==="tasks"}">Tâches<span class="n">${myTasks().length||""}</span></button>
-   <button data-cs="inventory" aria-pressed="${sc==="inventory"}">Inventaire<span class="n">${invOpen()||""}</span></button>
-   ${isDesk()?`<button data-cs="accounts" aria-pressed="${sc==="accounts"}">Comptes à valider<span class="n">${(S.pending.length+(S.pendingKids||[]).length)||""}</span></button>`:""}
-   ${canPub()?`<button data-cs="news" aria-pressed="${sc==="news"}">Actualités</button>`:""}
-   ${S.me.role==="admin"||isGestion()?`<button data-cs="team" aria-pressed="${sc==="team"}">Équipe</button>`:""}
-   <button data-cs="settings" aria-pressed="${sc==="settings"}">Mon profil</button>
-   <button id="reload">Actualiser</button>
-   <a class="navlink" href="${ROSA_PRO_URL}" target="_blank" rel="noopener" title="Ouvre votre agenda Rosa (connexion avec votre propre compte Rosa)">Mon agenda Rosa ↗</a>
-  </div>`;
+  const nav=staffNavHTML(sc);
   let body="";
-  if(sc==="compose") body=composeHTML(); else if(sc==="inventory") body=inventoryHTML(); else if(sc==="tasks") body=tasksHTML(); else if(sc==="accounts") body=accountsHTML(); else if(sc==="news") body=newsAdminHTML(); else if(sc==="team") body=teamHTML(); else if(sc==="settings") body=settingsHTML(); else body=inboxHTML();
+  if(sc==="compose") body=composeHTML(); else if(sc==="inventory") body=inventoryHTML(); else if(sc==="tasks") body=tasksHTML(); else if(sc==="accounts") body=accountsHTML(); else if(sc==="news") body=newsAdminHTML(); else if(sc==="team") body=teamHTML(); else if(sc==="settings") body=settingsHTML(); else if(sc==="help") body=staffHelpHTML(); else body=inboxHTML();
+  document.body.classList.add("hasbar"); document.body.classList.remove("ddopen");
   a.innerHTML=nav+body;
-  $("#logout").onclick=logout;
-  $("#reload").onclick=async()=>{ await refresh(); toast("Actualisé"); };
-  $$("[data-cs]").forEach(b=>b.onclick=()=>{ if(CREC&&b.dataset.cs!=="compose") composeRecStop(false); S.cscreen=b.dataset.cs; render(); });
-  if(sc==="compose") bindCompose(); else if(sc==="inventory") bindInventory(); else if(sc==="tasks") bindTasks(); else if(sc==="accounts") bindAccounts(); else if(sc==="news") bindNewsAdmin(); else if(sc==="team") bindTeam(); else if(sc==="settings") bindSettings(); else bindInbox();
+  $("#logout").onclick=()=>{ closeDD(); logout(); };
+  const c=$("#dd-centre-b"); if(c) c.onclick=e=>{ e.stopPropagation(); openDD("dd-centre"); };
+  $("#dd-me-b").onclick=e=>{ e.stopPropagation(); openDD("dd-me"); };
+  $$("[data-dd]").forEach(b=>b.onclick=e=>{ e.stopPropagation(); openDD(b.dataset.dd); });
+  const bk=$(".ddback"); if(bk) bk.onclick=closeDD;
+  $$(".ddrosa").forEach(l=>l.addEventListener("click",()=>closeDD()));
+  $$("[data-cs]").forEach(b=>b.onclick=()=>{ closeDD(); if(CREC&&b.dataset.cs!=="compose") composeRecStop(false); S.cscreen=b.dataset.cs; render(); window.scrollTo(0,0); });
+  if(sc==="compose") bindCompose(); else if(sc==="inventory") bindInventory(); else if(sc==="tasks") bindTasks(); else if(sc==="accounts") bindAccounts(); else if(sc==="news") bindNewsAdmin(); else if(sc==="team") bindTeam(); else if(sc==="settings") bindSettings(); else if(sc==="help") {} else bindInbox();
 }
 
 /* ----- durée estimée des rendez-vous de médecine générale (visible par l'équipe seulement) ----- */
