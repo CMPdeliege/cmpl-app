@@ -1280,7 +1280,8 @@ function patientAbsences(a){
   const item=p=>{ const ab=provAbs(p.id), now=ab.find(x=>x.starts<=t);
     return `<details class="faq absprov"><summary><span translate="no">${esc(p.display_name)}</span>${now?`<span class="pill st-encours">Absent(e) en ce moment</span>`:ab.length?`<span class="pill st-wait">Absence prévue</span>`:""}</summary>
       ${ab.length?`<ul>${ab.map(x=>`<li>${esc(absSentence(p.display_name,x))}</li>`).join("")}</ul>`:`<p>Aucune absence prévue dans les 3 prochains mois.</p>`}</details>`; };
-  a.innerHTML=`<div class="convhead"><button class="back" id="back" aria-label="Retour">${IC.back}</button><div><h2>Absences des prestataires</h2><small>Touchez un prestataire pour voir ses dates d'absence.</small></div></div>
+  a.innerHTML=`<div class="convhead"><button class="back" id="back" aria-label="Retour">${IC.back}</button><div><h2>Absences des prestataires</h2><small>Cliquez sur un prestataire pour voir ses dates d'absence.</small></div></div>
+  <p class="hint absnote">Certains congés peuvent être prévus mais pas encore encodés dans l'application.</p>
   ${specs.map(sp=>`<h3 class="abspec">${esc(sp)}</h3><div class="faqlist">${list.filter(p=>p.specialty===sp).map(item).join("")}</div>`).join("")}
   <section class="card helpcontact"><p>Pour une demande qui ne peut pas attendre, le secrétariat peut vous aider : 02 781 18 75.</p><p class="hint">Urgence vitale : appelez le 112.</p></section>`;
   $("#back").onclick=()=>{S.screen="home";render()};
@@ -1698,7 +1699,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261019j";
+const APP_VERSION="20261019k";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";

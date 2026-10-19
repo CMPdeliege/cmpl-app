@@ -673,3 +673,4 @@ select,input,textarea{max-width:100%}
 .absprov summary>span:first-child{flex:1 1 auto;min-width:0}
 .absprov summary .pill{flex:none}
 .absprov ul{margin:6px 0 4px;padding-left:18px;font-size:14px}
+.absnote{margin:12px 0 0}
