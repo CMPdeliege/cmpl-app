@@ -431,12 +431,13 @@ function scrollChat(){
 
 /* ----- barre d'écriture : texte, pièce jointe, message vocal ----- */
 function composerHTML(key){
-  const draft=S.drafts[key]||"", pf=S.pend&&S.pend.key===key?S.pend:null;
+  const draft=S.drafts[key]||"", pf=S.pend&&S.pend.key===key?S.pend:null, tpl=/^s\d/.test(key);
   return `<div class="chatbar" id="chatbar">
    ${pf?`<div class="attprev">${pf.kind==="image"?`<img src="${pf.url}" alt="">`:IC.doc}<span><b>${esc(pf.name)}</b><small>${kb(pf.blob.size)} · prêt à envoyer</small></span><button type="button" class="cbtn sm" id="c-unatt" aria-label="Retirer la pièce jointe">✕</button></div>`:""}
    <div class="cbrow" id="cbrow">
     <button type="button" class="cbtn" id="c-att" aria-label="Joindre une photo ou un PDF" title="Photo ou PDF">${IC.clip}</button>
     <button type="button" class="cbtn" id="c-scan" aria-label="Scanner un document" title="Scanner un document">${IC.scan}</button>
+    ${tpl?`<button type="button" class="cbtn tplb" id="c-tpl" aria-label="Réponses types" title="Réponses types" aria-haspopup="true">${SI.tpl}</button>`:""}
     <input type="file" id="c-file" accept="image/*,application/pdf" hidden>
     <textarea id="c-text" rows="1" maxlength="4000" placeholder="${pf?"Ajouter un message (facultatif)":"Écrire un message"}" aria-label="Message">${esc(draft)}</textarea>
     <button type="button" class="cbtn go" id="c-go"></button>
@@ -780,6 +781,7 @@ async function loadStaff(){
   tasks.push(sb.from("tasks").select("*").order("created_at",{ascending:false}).limit(500).then(r=>S.tasks=r.data||[]));
   tasks.push(loadInventory());
   tasks.push(loadLeaves());
+  tasks.push(loadTeam());
   await Promise.all(tasks);
   // enfants (demandes, tâches) et parents à afficher
   const kidIds=[...new Set([...S.reqs.map(r=>r.child_id),...(S.tasks||[]).map(t=>t.child_id)].filter(Boolean))].filter(id=>!S.children[id]);
@@ -1699,7 +1701,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261019k";
+const APP_VERSION="20261019l";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -1718,12 +1720,19 @@ const SI={
  box:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg>',
  ucheck:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="m16 11 2 2 4-4"/></svg>',
  out:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>',
+ chat:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+ tpl:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 13h5"/></svg>',
+ book:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/><path d="M8 7h8M8 11h6"/></svg>',
+ phone:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/></svg>',
+ link:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>',
  down:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>'
 };
 function centreItems(){
   const it=[];
   if(canPub()) it.push({cs:"news",ic:SI.news||IC.news,t:"Actualités",d:"Annonces pour les patients",n:0});
   if(S.me.role==="admin"||isGestion()) it.push({cs:"team",ic:SI.team,t:"Équipe",d:"Collègues et comptes de l'équipe",n:0});
+  it.push({cs:"tasks",ic:SI.tasks,t:"Tâches",d:"Ce que l'équipe doit faire",n:myTasks().length,mob:true});
+  it.push({cs:"binder",ic:SI.book,t:"Classeur",d:"Numéros utiles, procédures, documents",n:0});
   it.push({cs:"inventory",ic:SI.box,t:"Inventaire",d:"Matériel à commander",n:invOpen()});
   it.push({cs:"leaves",ic:SI.cal,t:"Congés",d:"Absences et congés de l'équipe",n:0});
   if(isDesk()) it.push({cs:"accounts",ic:SI.ucheck,t:"Comptes à valider",d:"Nouveaux patients",n:S.pending.length+(S.pendingKids||[]).length});
@@ -1731,22 +1740,24 @@ function centreItems(){
 }
 const badge = n => n?`<span class="sn" aria-label="${n} en attente">${n}</span>`:"";
 function staffNavHTML(sc){
-  const ci=centreItems(), cn=ci.reduce((t,x)=>t+(x.n||0),0), nIn=S.reqs.filter(awaitingStaff).length, nT=myTasks().length;
-  const inCentre=ci.some(x=>x.cs===sc), single=ci.length===1?ci[0]:null;
+  const ci=centreItems(), ciD=ci.filter(x=>!x.mob), cn=ciD.reduce((t,x)=>t+(x.n||0),0), cnM=ci.reduce((t,x)=>t+(x.n||0),0), nIn=S.reqs.filter(awaitingStaff).length, nT=myTasks().length, nM=teamUnread();
+  const inCentre=ciD.some(x=>x.cs===sc), inCentreM=ci.some(x=>x.cs===sc), single=null;
   const av=AV.get(S.me.id)?avatarHTML(AV.get(S.me.id),"",36):`<span class="avl">${esc((S.me.first_name||"?").slice(0,1).toUpperCase())}</span>`;
   const who=`${esc([S.me.first_name,S.me.last_name].filter(Boolean).join(" ")||"")}`;
   const centreBtn = single
     ? `<button class="stab" data-cs="${single.cs}" aria-current="${sc===single.cs?"page":"false"}">${single.ic}<span>${single.t}</span>${badge(single.n)}</button>`
     : `<div class="ddwrap"><button class="stab" id="dd-centre-b" aria-haspopup="true" aria-expanded="false" aria-controls="dd-centre" aria-current="${inCentre?"page":"false"}">${SI.centre}<span>Le centre</span>${badge(cn)}${SI.down}</button>
-       <div class="dd" id="dd-centre" hidden role="menu" aria-label="Le centre"><p class="ddh">Le centre</p>${ci.map(x=>`<button role="menuitem" class="ddi" data-cs="${x.cs}" aria-current="${sc===x.cs?"page":"false"}">${x.ic}<span>${x.t}<small>${x.d}</small></span>${badge(x.n)}</button>`).join("")}</div></div>`;
+       <div class="dd" id="dd-centre" hidden role="menu" aria-label="Le centre"><p class="ddh">Le centre</p>${ci.map(x=>`<button role="menuitem" class="ddi${x.mob?" mobonly":""}" data-cs="${x.cs}" aria-current="${sc===x.cs?"page":"false"}">${x.ic}<span>${x.t}<small>${x.d}</small></span>${badge(x.n)}</button>`).join("")}</div></div>`;
   const meMenu=`<div class="dd ddme" id="dd-me" hidden role="menu" aria-label="Mon compte"><p class="ddwho"><b>${who}</b>${ROLE_LABEL[S.me.role]}${S.me.provider_id?` · ${esc(provName(S.me.provider_id))}`:""}</p>
      <button role="menuitem" class="ddi" data-cs="settings">${IC.bell}<span>Mon profil et notifications</span></button>
+     <button role="menuitem" class="ddi" data-cs="templates">${SI.tpl}<span>Mes réponses types</span></button>
      <button role="menuitem" class="ddi" data-cs="help">${IC.help}<span>Aide</span></button>
      <a role="menuitem" class="ddi ddrosa" href="${ROSA_PRO_URL}" target="_blank" rel="noopener">${SI.cal}<span>Mon agenda Rosa</span>${SI.ext}</a>
      <hr><button role="menuitem" class="ddi" id="logout">${SI.out}<span>Se déconnecter</span></button></div>`;
   return `<header class="top stop">${BRAND}
    <nav class="snav" aria-label="Navigation de l'équipe">
     <button class="stab" data-cs="inbox" aria-current="${sc==="inbox"?"page":"false"}">${SI.inbox}<span>Demandes</span>${badge(nIn)}</button>
+    <button class="stab" data-cs="messages" aria-current="${sc==="messages"?"page":"false"}">${SI.chat}<span>Messages</span>${badge(nM)}</button>
     <button class="stab" data-cs="tasks" aria-current="${sc==="tasks"?"page":"false"}">${SI.tasks}<span>Tâches</span>${badge(nT)}</button>
     ${centreBtn}
    </nav>
@@ -1758,11 +1769,11 @@ function staffNavHTML(sc){
   </header>
   <nav class="sbar" aria-label="Navigation de l'équipe">
    <button data-cs="inbox" aria-current="${sc==="inbox"?"page":"false"}">${SI.inbox}<span>Demandes</span>${badge(nIn)}</button>
-   <button data-cs="tasks" aria-current="${sc==="tasks"?"page":"false"}">${SI.tasks}<span>Tâches</span>${badge(nT)}</button>
+   <button data-cs="messages" aria-current="${sc==="messages"?"page":"false"}">${SI.chat}<span>Messages</span>${badge(nM)}</button>
    <button class="sfab" data-cs="compose" aria-current="${sc==="compose"?"page":"false"}"><i>${SI.pen}</i><span>Écrire</span></button>
    ${single?`<button data-cs="${single.cs}" aria-current="${sc===single.cs?"page":"false"}">${single.ic}<span>${single.t}</span>${badge(single.n)}</button>`
-     :`<button data-dd="dd-centre" aria-current="${inCentre?"page":"false"}">${SI.centre}<span>Le centre</span>${badge(cn)}</button>`}
-   <button data-dd="dd-me" aria-current="${["settings","help"].includes(sc)?"page":"false"}">${IC.user}<span>Moi</span></button>
+     :`<button data-dd="dd-centre" aria-current="${inCentreM?"page":"false"}">${SI.centre}<span>Le centre</span>${badge(cnM)}</button>`}
+   <button data-dd="dd-me" aria-current="${["settings","help","templates"].includes(sc)?"page":"false"}">${IC.user}<span>Moi</span></button>
   </nav><div class="ddback" hidden></div>`;
 }
 function closeDD(){ $$(".dd").forEach(d=>d.hidden=true); $$("[aria-expanded]").forEach(b=>b.setAttribute("aria-expanded","false")); const bk=$(".ddback"); if(bk) bk.hidden=true; document.body.classList.remove("ddopen"); }
@@ -1779,6 +1790,223 @@ function leavesHTML(){
   <div class="settings">${rows.length?`<section class="card"><ul class="leavelist">${rows.map(x=>`<li class="${x.starts<=t?"now":""}"><b>${who(x)}</b><span>${when(x)}${x.kind==="absence"?" · absence imprévue":""}</span>${x.forward_name?`<small>Notifications renvoyées vers ${esc(x.forward_name)}</small>`:""}</li>`).join("")}</ul></section>`:`<div class="empty">Aucun congé ni absence prévus.</div>`}
   <div class="btnrow"><button class="btn ghost" data-cs="settings">Gérer mes congés</button></div></div>`;
 }
+/* =====================================================================
+   MESSAGERIE DE L'ÉQUIPE · RÉPONSES TYPES · CLASSEUR
+   ===================================================================== */
+S.tthread=null; S.team2={threads:[],members:[],msgs:[]}; S.tpls=[]; S.binder=[]; S.bfilter="tout"; S.bq=""; S.bedit=null;
+async function loadTeam(){
+  try{
+    const since=new Date(Date.now()-90*864e5).toISOString();
+    const [t,m,g,tp,b]=await Promise.all([
+      sb.from("team_threads").select("*").order("last_at",{ascending:false}),
+      sb.from("team_members").select("thread_id,user_id,last_read_at"),
+      sb.from("team_messages").select("id,thread_id,author_id,body,request_id,file_mime,file_name,file_size,created_at").gte("created_at",since).order("created_at").limit(3000),
+      sb.from("reply_templates").select("*").order("title"),
+      sb.from("binder_items").select("id,category,title,body,phone,url,file_mime,file_name,file_size,updated_by,updated_at,created_at").order("title")]);
+    S.team2={threads:t.data||[],members:m.data||[],msgs:g.data||[]}; S.tpls=tp.data||[]; S.binder=b.data||[];
+  }catch(e){ console.error(e); }
+}
+const staffName = id => { const t=(S.team||[]).find(x=>x.id===id); if(!t) return "Ancien membre"; return (t.provider_id?provName(t.provider_id):"")||`${t.first_name||""} ${t.last_name||""}`.trim()||ROLE_LABEL[t.role]; };
+const staffInitials = id => { const n=staffName(id).replace(/^Dr\.?\s+/,""); return n.split(/\s+/).filter(Boolean).slice(0,2).map(w=>w[0]).join("").toUpperCase()||"?"; };
+const tMembers = tid => S.team2.members.filter(m=>m.thread_id===tid);
+const tMsgs = tid => S.team2.msgs.filter(m=>m.thread_id===tid);
+function tTitle(t){ if(t.kind!=="direct") return t.title||"Groupe"; const o=tMembers(t.id).find(m=>m.user_id!==S.me.id); return o?staffName(o.user_id):"Conversation"; }
+function tUnread(t){ const me=tMembers(t.id).find(m=>m.user_id===S.me.id); if(!me) return 0; return tMsgs(t.id).filter(m=>m.author_id!==S.me.id&&m.created_at>me.last_read_at).length; }
+const teamUnread = () => (S.team2.threads||[]).reduce((n,t)=>n+tUnread(t),0);
+function tPreview(m){ if(!m) return "Aucun message"; const who=m.author_id===S.me.id?"Vous":staffName(m.author_id).split(" ").slice(-1)[0];
+  const what=m.body||(m.file_mime?(m.file_mime.startsWith("audio")?"🎤 Message vocal":m.file_mime==="application/pdf"?"📄 "+(m.file_name||"PDF"):"📷 Photo"):m.request_id?"📋 Demande jointe":""); return `${who} : ${what}`; }
+const avColor = s => ["#702629","#8a6d33","#1d5a8a","#2e6b2f","#6b3d7a","#9a5b00"][[...String(s)].reduce((a,c)=>a+c.charCodeAt(0),0)%6];
+function tAvatar(t){ if(t.kind==="direct"){ const o=tMembers(t.id).find(m=>m.user_id!==S.me.id); if(o&&AV.get(o.user_id)) return avatarHTML(AV.get(o.user_id),"",40); return `<span class="tav" style="background:${avColor(o?.user_id||t.id)}">${esc(o?staffInitials(o.user_id):"?")}</span>`; }
+  const ini=(t.title||"G").split(/\s+/).slice(0,2).map(w=>w[0]).join("").toUpperCase(); return `<span class="tav grp" style="background:${avColor(t.title||t.id)}">${esc(ini)}</span>`; }
+const tSorted = () => S.team2.threads.slice().sort((a,b)=>{ const la=tMsgs(a.id).slice(-1)[0], lb=tMsgs(b.id).slice(-1)[0]; return (lb?.created_at||b.last_at).localeCompare(la?.created_at||a.last_at); });
+function reqCardHTML(id){ const r=S.reqs.find(x=>x.id===id);
+  if(!r) return `<div class="treq off">📋 Demande non accessible ou effacée</div>`;
+  return `<button type="button" class="treq" data-openreq="${r.id}">📋<span><b>${esc(reqName(r))} · ${TYPES[r.type].label}</b><small>« ${esc(summaryLine(r.answers))} » · ouvrir ›</small></span></button>`; }
+function tMsgHTML(m){ const mine=m.author_id===S.me.id;
+  const file=m.file_mime?(m.file_mime.startsWith("image")?`<button type="button" class="tfile img" data-tfile="${m.id}" data-kind="image"><span class="loading">Photo…</span></button>`
+    :m.file_mime.startsWith("audio")?`<div class="tfile" data-tfile="${m.id}" data-kind="audio"><audio controls preload="none"></audio></div>`
+    :`<a class="tfile pdf" href="#" data-tfile="${m.id}" data-kind="pdf">📄 ${esc(m.file_name||"document.pdf")}</a>`):"";
+  return `<div class="tm ${mine?"me":""}">${mine?"":`<span class="who">${esc(staffName(m.author_id))}</span>`}${m.body?`<p>${esc(m.body)}</p>`:""}${m.request_id?reqCardHTML(m.request_id):""}${file}<small>${fmt(m.created_at)}</small></div>`; }
+function teamHTML2(){
+  const list=tSorted(), cur=S.team2.threads.find(t=>t.id===S.tthread)||null;
+  const listHTML=`<div class="tlist"><button type="button" class="tnew" id="t-new">+ Nouvelle conversation</button>
+    ${list.length?list.map(t=>{ const u=tUnread(t), last=tMsgs(t.id).slice(-1)[0]; return `<button type="button" class="trow ${t.id===S.tthread?"on":""} ${u?"unread":""}" data-thread="${t.id}">${tAvatar(t)}<span class="tx"><b>${esc(tTitle(t))}</b><small>${esc(tPreview(last))}</small></span><span class="tside"><small>${last?fmt(last.created_at):""}</small>${u?`<span class="sn">${u}</span>`:""}</span></button>`; }).join(""):`<div class="empty">Aucune conversation.</div>`}</div>`;
+  const thHTML=cur?`<div class="tthread"><div class="thd"><button type="button" class="back tback" id="t-back" aria-label="Retour aux conversations">${IC.back}</button>${tAvatar(cur)}<div class="thinfo"><b>${esc(tTitle(cur))}</b><small>${esc(tMembers(cur.id).map(m=>m.user_id===S.me.id?"vous":staffName(m.user_id)).join(", "))}</small></div>
+      ${cur.kind==="group"?`<button type="button" class="linkbtn" id="t-addm">Ajouter</button><button type="button" class="linkbtn" id="t-leave">Quitter</button>`:""}</div>
+      <div class="tmsgs" id="tmsgs">${tMsgs(cur.id).map(tMsgHTML).join("")||`<p class="hint center">Écrivez le premier message.</p>`}</div>
+      ${S.tattach&&S.tattach.thread===cur.id?`<div class="tattach">${reqCardHTML(S.tattach.id)}<button type="button" class="linkbtn" id="t-unreq">Retirer</button></div>`:""}
+      <div class="tcomp"><button type="button" class="cbtn" id="t-req" title="Joindre une demande de patient" aria-label="Joindre une demande de patient">📋</button>${composerHTML("t"+cur.id)}</div>
+      <p class="hint small">Messages effacés après 90 jours. Ne remplace pas le dossier médical.</p></div>`
+    :`<div class="tthread empty-th"><p class="hint center">Choisissez une conversation, ou créez-en une nouvelle.</p></div>`;
+  return `<div class="chead"><div><h1>Messages de l'équipe</h1><p>Conversations à deux ou en groupe. Jamais visibles par les patients.</p></div></div>
+  <div class="tpane ${cur?"open":""}">${listHTML}${thHTML}</div>`;
+}
+let teamRtTimer=null;
+function teamRt(){ clearTimeout(teamRtTimer); teamRtTimer=setTimeout(async()=>{ if(!S.me||S.me.role==="patient") return; await loadTeam();
+  const el=document.activeElement, typing=!!(el&&(el.tagName==="TEXTAREA"||el.tagName==="INPUT"));
+  if(S.cscreen==="messages"&&S.tthread){ await sb.rpc("team_read",{p_thread:S.tthread}).then(()=>{ const me=tMembers(S.tthread).find(m=>m.user_id===S.me.id); if(me) me.last_read_at=new Date().toISOString(); }); }
+  if(S.cscreen==="messages"&&typing&&$("#tmsgs")){ const t=S.team2.threads.find(x=>x.id===S.tthread); if(t){ $("#tmsgs").innerHTML=tMsgs(t.id).map(tMsgHTML).join(""); hydrateTeam(); tScroll(); } updateBadges(); }
+  else if(S.cscreen==="messages"&&!S.pend&&!REC&&!CREC) render(); else updateBadges();
+ },500); }
+const tScroll = () => { const b=$("#tmsgs"); if(b) b.scrollTop=b.scrollHeight; };
+const TFILES=new Map();
+async function teamFile(id){ if(TFILES.has(id)) return TFILES.get(id);
+  const p=(async()=>{ const {data,error}=await sb.rpc("team_file",{p_id:id}); if(error) throw error; const d=(data||[])[0]; if(!d) throw new Error("absent");
+    const bin=atob(d.data), u8=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u8[i]=bin.charCodeAt(i);
+    const blob=new Blob([u8],{type:d.mime}); return {blob,url:URL.createObjectURL(blob),name:d.name,mime:d.mime}; })();
+  TFILES.set(id,p); p.catch(()=>TFILES.delete(id)); return p; }
+function hydrateTeam(){ $$("[data-tfile]:not([data-ready])").forEach(async el=>{ el.dataset.ready="1";
+  try{ const f=await teamFile(+el.dataset.tfile);
+    if(el.dataset.kind==="image"){ el.innerHTML=`<img src="${f.url}" alt="Photo">`; el.onclick=()=>openViewer(f.url); el.querySelector("img").onload=tScroll; }
+    else if(el.dataset.kind==="audio"){ el.querySelector("audio").src=f.url; }
+    else el.onclick=async e=>{ e.preventDefault(); if(IS_NATIVE&&SEC()){ try{ await nativePreview(f.blob,f.name); }catch(_){ toast("Ce document n'a pas pu être ouvert."); } } else window.open(f.url,"_blank","noopener"); };
+  }catch(e){ el.textContent="Fichier indisponible"; } }); }
+function pickColleagues(title, exclude, done, withName){
+  const others=(S.team||[]).filter(t=>t.status==="active"&&t.id!==S.me.id&&!exclude.includes(t.id)).sort((a,b)=>staffName(a.id).localeCompare(staffName(b.id)));
+  const v=document.createElement("div"); v.className="modal"; v.setAttribute("role","dialog"); v.setAttribute("aria-modal","true");
+  v.innerHTML=`<div class="mbox"><h2>${esc(title)}</h2>${withName?`<label class="fld">Nom du groupe (obligatoire si plusieurs collègues)<input id="pc-name" maxlength="60" placeholder="Ex. Médecins, Secrétariat…"></label>`:""}
+    <input id="pc-q" class="pcq" placeholder="Rechercher un collègue…" aria-label="Rechercher un collègue">
+    <div class="pclist">${others.map(t=>`<label class="chk2 pcrow" data-n="${esc(staffName(t.id).toLowerCase())}"><input type="checkbox" value="${t.id}"> ${esc(staffName(t.id))} <small>· ${ROLE_LABEL[t.role]}</small></label>`).join("")||`<p class="hint">Personne d'autre à ajouter.</p>`}</div>
+    <div class="btnrow"><button class="btn" id="pc-ok">Valider</button><button class="btn ghost" id="pc-x">Annuler</button></div></div>`;
+  document.body.appendChild(v); const close=()=>v.remove();
+  v.querySelector("#pc-x").onclick=close; v.onclick=e=>{ if(e.target===v) close(); };
+  v.querySelector("#pc-q").oninput=e=>{ const q=e.target.value.toLowerCase(); v.querySelectorAll(".pcrow").forEach(r=>r.hidden=!r.dataset.n.includes(q)); };
+  v.querySelector("#pc-ok").onclick=async()=>{ const ids=[...v.querySelectorAll(".pcrow input:checked")].map(i=>i.value), name=withName?v.querySelector("#pc-name").value.trim():"";
+    if(!ids.length) return toast("Choisissez au moins un collègue.");
+    if(withName&&ids.length>1&&!name) return toast("Donnez un nom au groupe.");
+    if(await done(ids,name)) close(); };
+  v.querySelector("#pc-q").focus();
+}
+function pickRequest(done){
+  const list=S.reqs.slice().sort((a,b)=>(a.status==="traite")-(b.status==="traite")||new Date(b.created_at)-new Date(a.created_at)).slice(0,200);
+  const v=document.createElement("div"); v.className="modal"; v.setAttribute("role","dialog"); v.setAttribute("aria-modal","true");
+  v.innerHTML=`<div class="mbox"><h2>Joindre une demande</h2><input id="pr-q" class="pcq" placeholder="Nom du patient…" aria-label="Rechercher une demande">
+    <div class="pclist">${list.map(r=>`<button type="button" class="prrow" data-pr="${r.id}" data-n="${esc(reqName(r).toLowerCase())}"><b>${esc(reqName(r))}</b><small>${TYPES[r.type].label} · ${esc(summaryLine(r.answers))} · ${fmt(r.created_at)}</small></button>`).join("")||`<p class="hint">Aucune demande.</p>`}</div>
+    <div class="btnrow"><button class="btn ghost" id="pr-x">Annuler</button></div></div>`;
+  document.body.appendChild(v); const close=()=>v.remove(); v.querySelector("#pr-x").onclick=close; v.onclick=e=>{ if(e.target===v) close(); };
+  v.querySelector("#pr-q").oninput=e=>{ const q=e.target.value.toLowerCase(); v.querySelectorAll(".prrow").forEach(r=>r.hidden=!r.dataset.n.includes(q)); };
+  v.querySelectorAll("[data-pr]").forEach(b=>b.onclick=()=>{ close(); done(+b.dataset.pr); }); v.querySelector("#pr-q").focus();
+}
+function bindTeam2(){
+  $$("[data-thread]").forEach(b=>b.onclick=()=>{ S.tthread=+b.dataset.thread; const me=tMembers(S.tthread).find(m=>m.user_id===S.me.id); if(me) me.last_read_at=new Date().toISOString(); render(); sb.rpc("team_read",{p_thread:S.tthread}).then(()=>{}); });
+  $("#t-new").onclick=()=>pickColleagues("Nouvelle conversation",[],async(ids,name)=>{ const {data,error}=await sb.rpc("team_start",{p_members:ids,p_title:name||null}); if(error){ toast(frError(error)); return false; } await loadTeam(); S.tthread=data; render(); return true; },true);
+  const back=$("#t-back"); if(back) back.onclick=()=>{ S.tthread=null; render(); };
+  const t=S.team2.threads.find(x=>x.id===S.tthread); if(!t) return;
+  hydrateTeam(); requestAnimationFrame(tScroll);
+  const add=$("#t-addm"); if(add) add.onclick=()=>pickColleagues("Ajouter au groupe",tMembers(t.id).map(m=>m.user_id),async ids=>{ if(await run(()=>sb.rpc("team_add",{p_thread:t.id,p_members:ids}),"Ajouté au groupe")){ await loadTeam(); render(); return true; } return false; });
+  const lv=$("#t-leave"); if(lv) lv.onclick=async()=>{ if(!confirmInline(lv,"Quitter ce groupe ?")) return; if(await run(()=>sb.rpc("team_leave",{p_thread:t.id}),"Vous avez quitté le groupe")){ S.tthread=null; await loadTeam(); render(); } };
+  $("#t-req").onclick=()=>pickRequest(id=>{ S.tattach={thread:t.id,id}; render(); $("#c-text")?.focus(); });
+  const ur=$("#t-unreq"); if(ur) ur.onclick=()=>{ S.tattach=null; render(); };
+  $$("[data-openreq]").forEach(b=>b.onclick=()=>{ S.sel=+b.dataset.openreq; const r=S.reqs.find(x=>x.id===S.sel); if(r){ S.tab=r.queue; S.archive=r.status==="traite"; } S.cscreen="inbox"; render(); scrollTo(0,0); });
+  const key="t"+t.id;
+  bindComposer(key, async (text,pend)=>{
+    const req=S.tattach&&S.tattach.thread===t.id?S.tattach.id:null;
+    const args={p_thread:t.id,p_body:text||"",p_request:req,p_mime:null,p_name:null,p_data:null};
+    if(pend){ toast("Envoi…"); args.p_mime=pend.mime; args.p_name=pend.name; args.p_data=await blobToB64(pend.blob); }
+    const {error}=await sb.rpc("team_send",args); if(error){ toast(frError(error)); return false; }
+    S.drafts[key]=""; S.tattach=null; clearPend(); await loadTeam(); render(); return true;
+  });
+}
+// petite confirmation en deux temps (pas de fenêtre système)
+function confirmInline(btn,label){ if(btn.dataset.sure) return true; btn.dataset.sure="1"; const old=btn.textContent; btn.textContent=label+" Touchez à nouveau"; setTimeout(()=>{ if(document.body.contains(btn)){ btn.textContent=old; delete btn.dataset.sure; } },4000); return false; }
+
+/* ----- réponses types ----- */
+const canCentreTpl = () => S.me.role==="secretariat"||S.me.role==="admin";
+function tplFill(body,r){ const first=r?(r.child_id?(S.children?.[r.child_id]?.first_name||""):(S.profiles[r.patient_id]?.first_name||"")):"";
+  return body.replace(/\{pr[ée]nom\}/gi,first).replace(/ ,/g,","); }
+function bindTplPicker(r){
+  const b=$("#c-tpl"); if(!b) return;
+  b.onclick=e=>{ e.stopPropagation(); const old=$("#tplpop"); if(old){ old.remove(); return; }
+    const mine=S.tpls.filter(t=>t.owner_id===S.me.id), centre=S.tpls.filter(t=>!t.owner_id); let tab=mine.length?"mine":"centre";
+    const pop=document.createElement("div"); pop.id="tplpop"; pop.className="tplpop"; pop.setAttribute("role","dialog"); pop.setAttribute("aria-label","Réponses types");
+    const paint=()=>{ const L=tab==="mine"?mine:centre;
+      pop.innerHTML=`<div class="seg"><button type="button" data-tt="mine" aria-pressed="${tab==="mine"}">Mes réponses</button><button type="button" data-tt="centre" aria-pressed="${tab==="centre"}">Réponses du centre</button></div>
+      <div class="tpllist">${L.map(t=>`<button type="button" class="tplit" data-tpl="${t.id}"><b>${esc(t.title)}</b><span>${esc(tplFill(t.body,r).slice(0,140))}</span></button>`).join("")||`<p class="hint">${tab==="mine"?"Vous n'avez pas encore de réponse type.":"Aucune réponse du centre."}</p>`}</div>
+      <button type="button" class="linkbtn" id="tpl-manage">+ Créer une réponse type · Gérer</button>`;
+      pop.querySelectorAll("[data-tt]").forEach(x=>x.onclick=ev=>{ ev.stopPropagation(); tab=x.dataset.tt; paint(); });
+      pop.querySelectorAll("[data-tpl]").forEach(x=>x.onclick=()=>{ const t=S.tpls.find(y=>y.id===+x.dataset.tpl), ta=$("#c-text"); if(!t||!ta) return;
+        const txt=tplFill(t.body,r), st=ta.selectionStart??ta.value.length, en=ta.selectionEnd??ta.value.length;
+        ta.value=ta.value.slice(0,st)+(st&&!/\s$/.test(ta.value.slice(0,st))?"\n":"")+txt+ta.value.slice(en); ta.dispatchEvent(new Event("input")); pop.remove(); ta.focus(); });
+      pop.querySelector("#tpl-manage").onclick=()=>{ pop.remove(); S.cscreen="templates"; render(); scrollTo(0,0); }; };
+    paint(); $("#chatbar").appendChild(pop);
+    const off=ev=>{ if(!pop.contains(ev.target)&&ev.target!==b){ pop.remove(); document.removeEventListener("click",off); } }; setTimeout(()=>document.addEventListener("click",off),0); };
+}
+function templatesHTML(){
+  const mine=S.tpls.filter(t=>t.owner_id===S.me.id), centre=S.tpls.filter(t=>!t.owner_id), ed=S.tedit;
+  const row=t=>`<li><div><b>${esc(t.title)}</b><p>${esc(t.body)}</p></div>${(t.owner_id===S.me.id||(!t.owner_id&&canCentreTpl()))?`<span class="tplact"><button type="button" class="linkbtn" data-tedit="${t.id}">Modifier</button><button type="button" class="linkbtn" data-tdel="${t.id}">Supprimer</button></span>`:""}</li>`;
+  return `<div class="chead"><div><h1>Réponses types</h1><p>Des textes prêts à insérer dans vos réponses aux patients (bouton ${"💬"} à côté de la zone de message). Vous pouvez toujours les modifier avant d'envoyer.</p></div></div>
+  <div class="settings">
+   <section class="card"><h3>${ed&&ed.id?"Modifier la réponse":"Nouvelle réponse type"}</h3>
+    <label class="fld">Titre<input id="tp-title" maxlength="80" value="${esc(ed?.title||"")}" placeholder="Ex. Prescription prête"></label>
+    <label class="fld">Texte<textarea id="tp-body" rows="5" maxlength="2000" placeholder="Bonjour {prénom}, …">${esc(ed?.body||"")}</textarea></label>
+    <p class="hint">Astuce : écrivez <b>{prénom}</b>, il sera remplacé par le prénom du patient.</p>
+    ${canCentreTpl()?`<label class="chk2"><input type="checkbox" id="tp-centre" ${ed&&ed.id&&!ed.owner_id?"checked":""} ${ed&&ed.id?"disabled":""}> Réponse du centre (visible par toute l'équipe)</label>`:""}
+    <div class="btnrow"><button class="btn" id="tp-save">${ed&&ed.id?"Enregistrer":"Ajouter"}</button>${ed?`<button class="btn ghost" id="tp-cancel">Annuler</button>`:""}</div></section>
+   <section class="card"><h3>Mes réponses</h3>${mine.length?`<ul class="tplman">${mine.map(row).join("")}</ul>`:`<p class="hint">Aucune pour l'instant.</p>`}</section>
+   <section class="card"><h3>Réponses du centre</h3>${centre.length?`<ul class="tplman">${centre.map(row).join("")}</ul>`:`<p class="hint">Aucune.</p>`}${canCentreTpl()?"":`<p class="hint">Gérées par l'administrateur et le secrétariat.</p>`}</section>
+  </div>`;
+}
+function bindTemplates(){
+  $("#tp-save").onclick=async()=>{ const title=$("#tp-title").value.trim(), body=$("#tp-body").value.trim(); if(!title||!body) return toast("Indiquez un titre et un texte.");
+    const ed=S.tedit, centre=!!$("#tp-centre")?.checked;
+    const ok = ed&&ed.id ? await run(()=>sb.from("reply_templates").update({title,body,updated_at:new Date().toISOString()}).eq("id",ed.id),"Enregistré")
+                         : await run(()=>sb.from("reply_templates").insert({title,body,owner_id:centre?null:S.me.id}),"Réponse ajoutée");
+    if(ok){ S.tedit=null; await loadTeam(); render(); } };
+  const c=$("#tp-cancel"); if(c) c.onclick=()=>{ S.tedit=null; render(); };
+  $$("[data-tedit]").forEach(b=>b.onclick=()=>{ S.tedit=S.tpls.find(t=>t.id===+b.dataset.tedit)||null; render(); scrollTo(0,0); });
+  $$("[data-tdel]").forEach(b=>b.onclick=async()=>{ if(!confirmInline(b,"Supprimer ?")) return; if(await run(()=>sb.from("reply_templates").delete().eq("id",+b.dataset.tdel),"Supprimée")){ await loadTeam(); render(); } });
+}
+
+/* ----- classeur du centre ----- */
+const BCAT={numero:["Numéros utiles","☎"],procedure:["Procédures","📄"],document:["Documents","📎"]};
+function binderHTML(){
+  const q=S.bq.toLowerCase(), f=S.bfilter, ed=S.bedit;
+  const list=S.binder.filter(b=>(f==="tout"||b.category===f)&&(!q||(b.title+" "+b.body+" "+(b.phone||"")+" "+(b.url||"")).toLowerCase().includes(q)));
+  const form=ed?`<section class="card binform"><h3>${ed.id?"Modifier la fiche":"Nouvelle fiche"}</h3>
+    <div class="pgrid"><label class="fld">Catégorie<select id="bf-cat">${Object.entries(BCAT).map(([k,[l]])=>`<option value="${k}" ${ed.category===k?"selected":""}>${l}</option>`).join("")}</select></label>
+    <label class="fld">Titre<input id="bf-title" maxlength="120" value="${esc(ed.title||"")}" placeholder="Ex. Laboratoire, pharmacie de garde…"></label></div>
+    <label class="fld">Texte (facultatif)<textarea id="bf-body" rows="5" maxlength="8000">${esc(ed.body||"")}</textarea></label>
+    <div class="pgrid"><label class="fld">Téléphone (facultatif)<input id="bf-phone" maxlength="40" value="${esc(ed.phone||"")}" inputmode="tel"></label>
+    <label class="fld">Lien web (facultatif)<input id="bf-url" maxlength="500" value="${esc(ed.url||"")}" placeholder="https://…" inputmode="url"></label></div>
+    <label class="fld">Fichier (photo ou PDF, 10 Mo maximum)<input type="file" id="bf-file" accept="image/*,application/pdf"></label>
+    ${ed.file_name?`<label class="chk2"><input type="checkbox" id="bf-rmfile"> Retirer le fichier actuel (${esc(ed.file_name)})</label>`:""}
+    <div class="btnrow"><button class="btn" id="bf-save">Enregistrer</button><button class="btn ghost" id="bf-cancel">Annuler</button>${ed.id?`<button class="btn ghost danger" id="bf-del">Supprimer</button>`:""}</div></section>`:"";
+  return `<div class="chead"><div><h1>Classeur du centre</h1><p>Numéros utiles, procédures et documents de l'équipe. Visible par toute l'équipe, jamais par les patients.</p></div>${ed?"":`<button class="btn" id="b-add">+ Ajouter</button>`}</div>
+  <div class="settings">${form}
+   <input class="pcq" id="b-q" value="${esc(S.bq)}" placeholder="Rechercher : labo, stérilisation, garde…" aria-label="Rechercher dans le classeur">
+   <div class="tabs" role="group" aria-label="Catégorie">${[["tout","Tout"],...Object.entries(BCAT).map(([k,[l]])=>[k,l])].map(([k,l])=>`<button class="tab" data-bf="${k}" aria-pressed="${f===k}">${l}</button>`).join("")}</div>
+   ${list.length?list.map(b=>`<details class="bincard"><summary><span class="bic">${BCAT[b.category][1]}</span><span class="btx"><b>${esc(b.title)}</b><small>${esc([b.phone,b.url&&b.url.replace(/^https?:\/\//,"").replace(/\/$/,""),b.file_name].filter(Boolean).join(" · ")||BCAT[b.category][0])}</small></span></summary>
+     <div class="bbody">${b.body?`<p>${esc(b.body)}</p>`:""}
+      <div class="btnrow">${b.phone?`<a class="btn ghost" href="tel:${esc(b.phone.replace(/[^0-9+]/g,""))}">${SI.phone} Appeler</a>`:""}${b.url?`<a class="btn ghost" href="${esc(b.url)}" target="_blank" rel="noopener">${SI.link} Ouvrir le site</a>`:""}${b.file_name?`<button type="button" class="btn ghost" data-bfile="${b.id}">📎 ${esc(b.file_name)}</button>`:""}<button type="button" class="linkbtn" data-bedit="${b.id}">Modifier</button></div>
+      <p class="hint small">Mis à jour ${fmt(b.updated_at)}${b.updated_by?` par ${esc(staffName(b.updated_by))}`:""}</p></div></details>`).join("")
+     :`<div class="empty">${S.binder.length?"Aucun résultat.":"Le classeur est vide. Ajoutez la première fiche."}</div>`}
+  </div>`;
+}
+function bindBinder(){
+  const add=$("#b-add"); if(add) add.onclick=()=>{ S.bedit={category:S.bfilter!=="tout"?S.bfilter:"numero"}; render(); scrollTo(0,0); };
+  const q=$("#b-q"); q.oninput=()=>{ S.bq=q.value; const pos=q.selectionStart; render(); const n=$("#b-q"); n.focus(); n.setSelectionRange(pos,pos); };
+  $$("[data-bf]").forEach(b=>b.onclick=()=>{ S.bfilter=b.dataset.bf; render(); });
+  $$("[data-bedit]").forEach(b=>b.onclick=()=>{ S.bedit={...S.binder.find(x=>x.id===+b.dataset.bedit)}; render(); scrollTo(0,0); });
+  $$("[data-bfile]").forEach(b=>b.onclick=async()=>{ b.disabled=true;
+    try{ const {data,error}=await sb.rpc("binder_file",{p_id:+b.dataset.bfile}); if(error) throw error; const d=(data||[])[0]; if(!d) throw new Error("absent");
+      const bin=atob(d.data), u8=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u8[i]=bin.charCodeAt(i); const blob=new Blob([u8],{type:d.mime});
+      if(d.mime.startsWith("image")) openViewer(URL.createObjectURL(blob)); else if(IS_NATIVE&&SEC()) await nativePreview(blob,d.name); else window.open(URL.createObjectURL(blob),"_blank","noopener");
+    }catch(e){ toast("Ce fichier n'a pas pu être ouvert."); } b.disabled=false; });
+  if(!S.bedit) return;
+  $("#bf-cancel").onclick=()=>{ S.bedit=null; render(); };
+  const del=$("#bf-del"); if(del) del.onclick=async()=>{ if(!confirmInline(del,"Supprimer ?")) return; if(await run(()=>sb.rpc("binder_delete",{p_id:S.bedit.id}),"Fiche supprimée")){ S.bedit=null; await loadTeam(); render(); } };
+  $("#bf-save").onclick=async e=>{ const title=$("#bf-title").value.trim(); if(!title) return toast("Indiquez un titre.");
+    let url=$("#bf-url").value.trim(); if(url&&!/^https?:\/\//i.test(url)) url="https://"+url;
+    const args={p_id:S.bedit.id||null,p_category:$("#bf-cat").value,p_title:title,p_body:$("#bf-body").value,p_phone:$("#bf-phone").value,p_url:url||null,p_mime:null,p_name:null,p_data:null,p_remove_file:!!$("#bf-rmfile")?.checked};
+    const f=$("#bf-file").files[0];
+    if(f){ if(f.size>10*1048576) return toast("Fichier trop lourd (10 Mo maximum).");
+      const isPdf=f.type==="application/pdf"||/\.pdf$/i.test(f.name); e.target.disabled=true;
+      try{ const blob=isPdf?f:await shrinkImage(f); args.p_mime=isPdf?"application/pdf":"image/jpeg"; args.p_name=(isPdf?(f.name||"document.pdf"):"photo.jpg").slice(0,120); args.p_data=await blobToB64(blob); }
+      catch(err){ e.target.disabled=false; return toast("Ce fichier n'a pas pu être lu."); } }
+    e.target.disabled=true;
+    if(await run(()=>sb.rpc("binder_save",args),"Fiche enregistrée")){ S.bedit=null; await loadTeam(); render(); } else e.target.disabled=false; };
+}
+
 function staffHelpHTML(){
   const Q=[
    ["Répondre à un patient","Ouvrez la demande dans « Demandes », écrivez votre message en bas (texte, photo, document ou message vocal), puis Envoyer. Quand tout est réglé, touchez « Clôturer »."],
@@ -1786,7 +2014,10 @@ function staffHelpHTML(){
    ["Écrire à un patient qui n'a rien demandé","Bouton « Écrire à un patient » (en haut sur ordinateur, au centre de la barre sur téléphone), puis cherchez le patient."],
    ["Être prévenu sur mon téléphone","Mon profil et notifications → « Quand me prévenir » et « Activer les notifications ». Vous pouvez aussi choisir d'être prévenu en dehors des heures d'ouverture."],
    ["Je suis absent(e)","Mon profil et notifications → « En cas d'absence » : vos alertes peuvent être renvoyées à un collègue, avec un message automatique pour les patients."],
-   ["Le menu « Le centre »","Il regroupe ce qui concerne tout le centre : Actualités, Équipe, Inventaire, Comptes à valider (selon votre rôle). Le chiffre rouge indique ce qui attend."],
+   ["Écrire à un collègue","Onglet « Messages » : conversations à deux ou en groupe, et « Tout le centre ». Le bouton 📋 joint une demande de patient : votre collègue l'ouvre en un clic s'il y a accès. Les messages sont effacés après 90 jours."],
+   ["Réponses types","Dans une demande, le bouton 💬 à côté de la zone de message insère un texte prêt (le prénom du patient est ajouté). Créez les vôtres dans Moi → Mes réponses types."],
+   ["Le classeur du centre","Le centre → Classeur : numéros utiles, procédures et documents. Toute l'équipe peut ajouter et modifier les fiches."],
+   ["Le menu « Le centre »","Il regroupe ce qui concerne tout le centre : Actualités, Équipe, Classeur, Inventaire, Congés, Comptes à valider (selon votre rôle). Le chiffre rouge indique ce qui attend."],
    ["Face ID sur l'iPhone","Dans l'app iPhone : Mon profil et notifications → Face ID. Ensuite l'app se déverrouille avec votre visage, sans code."],
    ["Un problème avec l'app","Prévenez l'administrateur du centre en précisant l'écran concerné (une capture d'écran aide beaucoup)."]];
   return `<div class="chead"><div><h1>Aide</h1><p>Les réponses aux questions les plus fréquentes de l'équipe.</p></div></div>
@@ -1797,7 +2028,7 @@ function renderStaff(a){
   const sc=S.cscreen;
   const nav=staffNavHTML(sc);
   let body="";
-  if(sc==="compose") body=composeHTML(); else if(sc==="inventory") body=inventoryHTML(); else if(sc==="tasks") body=tasksHTML(); else if(sc==="accounts") body=accountsHTML(); else if(sc==="news") body=newsAdminHTML(); else if(sc==="team") body=teamHTML(); else if(sc==="settings") body=settingsHTML(); else if(sc==="help") body=staffHelpHTML(); else if(sc==="leaves") body=leavesHTML(); else body=inboxHTML();
+  if(sc==="compose") body=composeHTML(); else if(sc==="inventory") body=inventoryHTML(); else if(sc==="tasks") body=tasksHTML(); else if(sc==="accounts") body=accountsHTML(); else if(sc==="news") body=newsAdminHTML(); else if(sc==="team") body=teamHTML(); else if(sc==="settings") body=settingsHTML(); else if(sc==="help") body=staffHelpHTML(); else if(sc==="leaves") body=leavesHTML(); else if(sc==="messages") body=teamHTML2(); else if(sc==="templates") body=templatesHTML(); else if(sc==="binder") body=binderHTML(); else body=inboxHTML();
   document.body.classList.add("hasbar"); document.body.classList.remove("ddopen");
   a.innerHTML=nav+body;
   $("#logout").onclick=()=>{ closeDD(); logout(); };
@@ -1807,7 +2038,7 @@ function renderStaff(a){
   const bk=$(".ddback"); if(bk) bk.onclick=closeDD;
   $$(".ddrosa").forEach(l=>l.addEventListener("click",()=>closeDD()));
   $$("[data-cs]").forEach(b=>b.onclick=()=>{ closeDD(); if(CREC&&b.dataset.cs!=="compose") composeRecStop(false); S.cscreen=b.dataset.cs; render(); window.scrollTo(0,0); });
-  if(sc==="compose") bindCompose(); else if(sc==="inventory") bindInventory(); else if(sc==="tasks") bindTasks(); else if(sc==="accounts") bindAccounts(); else if(sc==="news") bindNewsAdmin(); else if(sc==="team") bindTeam(); else if(sc==="settings") bindSettings(); else if(sc==="help"||sc==="leaves") {} else bindInbox();
+  if(sc==="compose") bindCompose(); else if(sc==="inventory") bindInventory(); else if(sc==="tasks") bindTasks(); else if(sc==="accounts") bindAccounts(); else if(sc==="news") bindNewsAdmin(); else if(sc==="team") bindTeam(); else if(sc==="settings") bindSettings(); else if(sc==="help"||sc==="leaves") {} else if(sc==="messages") bindTeam2(); else if(sc==="templates") bindTemplates(); else if(sc==="binder") bindBinder(); else bindInbox();
 }
 
 /* ----- durée estimée des rendez-vous de médecine générale (visible par l'équipe seulement) ----- */
@@ -1902,6 +2133,7 @@ function bindDetail(){
     if(!ok) return false;
     S.drafts[key]=""; clearPend(); await refresh(); return true;
   }, v=>{ if(!isRx) close.disabled=!(msgsOf(r).some(m=>!m.from_patient)||v.trim()); });
+  bindTplPicker(r);
   $$("[data-prio]").forEach(b=>b.onclick=async()=>{ if(await run(()=>sb.rpc("set_request_priority",{p_id:r.id,p_priority:b.dataset.prio}),`Priorité : ${PRIO_LABEL[b.dataset.prio]}`)) await refresh(); });
   $$("[data-dec]").forEach(b=>b.onclick=()=>{ const [id,d]=b.dataset.dec.split(":"); dec[id]=dec[id]===d?undefined:d; if(!dec[id]) delete dec[id]; render(); });
   close.onclick=async()=>{ close.disabled=true; const text=($("#c-text")?.value||"").trim();
@@ -2340,6 +2572,7 @@ function startRealtime(){
       .on("postgres_changes",{event:"INSERT",schema:"public",table:"messages"},p=>rtQueue(p.new&&p.new.request_id))
       .on("postgres_changes",{event:"*",schema:"public",table:"requests"},p=>rtQueue(p.new&&p.new.id))
       .on("postgres_changes",{event:"INSERT",schema:"public",table:"notifications"},()=>rtQueue(null))
+      .on("postgres_changes",{event:"INSERT",schema:"public",table:"team_messages"},()=>teamRt())
       .subscribe();
   }catch(e){ console.error(e); RT=null; }
 }
