@@ -718,7 +718,7 @@ function newsCard(n, full){
    ===================================================================== */
 async function loadPublic(){
   const [pr, oh, nw] = await Promise.all([
-    sb.from("providers").select("id,display_name,specialty,job,is_physician,sort_order,direct_contact").order("sort_order"),
+    sb.from("providers").select("*").order("sort_order"),
     sb.from("opening_hours").select("dow,opens,closes"),
     sb.from("announcements").select("*").order("published_at",{ascending:false}).limit(30)
   ]);
@@ -1646,7 +1646,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261019e";
+const APP_VERSION="20261019f";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -2192,6 +2192,7 @@ function bindNewsAdmin(){
 
 /* ----- mes notifications (équipe) ----- */
 const SETOPTS=["Immédiate","2 fois par jour","Résumé du matin","Aucune"];
+const RDV_MODES=[["secretariat","Au secrétariat uniquement"],["copie","Au secrétariat, et je suis prévenu(e) en copie"],["direct","Directement chez moi"]];
 function settingsHTML(){
   const s=S.settings||{haute:"Immédiate",normale:"2 fois par jour",by_email:false,away:false,forward_to:null};
   const sel=(id,val)=>`<select id="${id}">${SETOPTS.map(o=>`<option ${o===val?"selected":""}>${o}</option>`).join("")}</select>`;
@@ -2211,7 +2212,9 @@ function settingsHTML(){
     ${pushBlockHTML(true)}</section>
    ${S.me.provider_id?`<section class="card"><h3>Contact par les patients</h3>
     <label class="chk2"><input type="checkbox" id="s-direct" ${P.byId(S.me.provider_id)?.direct_contact!==false?"checked":""}> Les patients peuvent m'écrire directement</label>
-    <p class="hint">Décoché : les questions, demandes de prescription, de rapport et les documents qui vous sont destinés arrivent d'abord au secrétariat, qui vous les transfère si nécessaire. Dans tous les cas, un patient qui dit ne vous avoir jamais consulté passe par le secrétariat. Les rendez-vous passent toujours par le secrétariat.</p></section>`:""}
+    <p class="hint">Décoché : les questions, demandes de prescription, de rapport et les documents qui vous sont destinés arrivent d'abord au secrétariat, qui vous les transfère si nécessaire. Dans tous les cas, un patient qui dit ne vous avoir jamais consulté passe par le secrétariat.</p>
+    <label class="fld">Demandes de rendez-vous qui me sont adressées<select id="s-rdv">${RDV_MODES.map(([v,t])=>`<option value="${v}" ${(P.byId(S.me.provider_id)?.rdv_mode||"secretariat")===v?"selected":""}>${t}</option>`).join("")}</select></label>
+    <p class="hint">Seulement quand le patient dit vous avoir déjà consulté (sinon : toujours au secrétariat). « Directement chez moi » : vous fixez le créneau vous-même, ou vous transférez la demande au secrétariat.</p></section>`:""}
    <section class="card"><h3>En cas d'absence</h3>
     <label class="chk2"><input type="checkbox" id="s-away" ${s.away?"checked":""}> Je suis absent(e)</label>
     <div id="s-awaybox" class="awaybox" ${s.away?"":"hidden"}>
@@ -2235,6 +2238,8 @@ function bindSettings(){
   bindPhotoCard(); bindPush(); bindTextSize(); bindFaceIdCard();
   const dc=$("#s-direct"); if(dc) dc.onchange=async()=>{ const v=dc.checked;
     if(await run(()=>sb.rpc("set_my_direct_contact",{p_ok:v}),v?"Les patients peuvent vous écrire directement":"Les demandes passeront d'abord par le secrétariat")){ const pr=P.byId(S.me.provider_id); if(pr) pr.direct_contact=v; } else dc.checked=!v; };
+  const rm=$("#s-rdv"); if(rm){ rm.dataset.prev=rm.value; rm.onchange=async()=>{ const v=rm.value;
+    if(await run(()=>sb.rpc("set_my_rdv_mode",{p_mode:v}),"Enregistré")){ const pr=P.byId(S.me.provider_id); if(pr) pr.rdv_mode=v; rm.dataset.prev=v; } else rm.value=rm.dataset.prev; }; }
   const away=$("#s-away"), box=$("#s-awaybox"), am=$("#s-amsg"), msg=$("#s-msg"), hint=$("#s-msghint");
   if(msg) msg.dataset.auto=msg.value.trim()?"":"1";
   const fill=()=>{ if(msg&&msg.dataset.auto) msg.value=awayDefaultText(); };
