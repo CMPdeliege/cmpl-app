@@ -582,3 +582,8 @@ small.qty{font-size:inherit;color:var(--muted)}
 .pwwrap input{padding-inline-end:46px!important}
 .pweye{position:absolute;inset-inline-end:4px;top:50%;transform:translateY(-50%);width:40px;height:40px;border:0;background:transparent;color:var(--muted);display:grid;place-items:center;cursor:pointer;border-radius:10px}
 .pweye:hover{color:var(--ink)}
+
+/* verrouillage Face ID (app iPhone de l'équipe) */
+.lock{position:fixed;inset:0;z-index:1000;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:24px;padding-top:max(24px,env(safe-area-inset-top))}
+.lockbox{max-width:340px;width:100%;text-align:center;display:flex;flex-direction:column;gap:12px;align-items:center}
+.lockbox img{border-radius:16px}.lockbox h2{margin:4px 0 0}.lockbox p{margin:0 0 8px;color:var(--muted,#666)}

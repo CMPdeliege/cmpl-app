@@ -97,6 +97,7 @@ function frError(e){
   // Réponse vide du serveur (panne, ou e-mail de confirmation impossible à envoyer)
   if(m==="{}"||m==="[object Object]") return `Le serveur n'a pas pu traiter la demande${e&&e.status?` (erreur ${e.status})`:""}. Réessayez dans quelques minutes ; si cela continue, contactez le centre au 02 781 18 75.`;
   const map = [
+    [/CMPL_TROP_INSCRIPTIONS|Database error saving new user/i, "Les inscriptions sont momentanément très nombreuses. Réessayez dans une heure, ou appelez le centre au 02 781 18 75."],
     [/Invalid login credentials/i, "Adresse e-mail ou mot de passe incorrect."],
     [/already registered|already been registered/i, "Un compte existe déjà avec cette adresse."],
     [/Email not confirmed/i, "Confirmez d'abord votre adresse e-mail (lien reçu par e-mail)."],
@@ -781,8 +782,9 @@ async function refresh(){
   if(S.me.status==="active"&&S.me.role!=="patient"){
     if(idleTooLong()){ await logout(IDLE_MSG); return; }
     const {data:aal}=await sb.auth.mfa.getAuthenticatorAssuranceLevel();
-    if(!aal||aal.currentLevel!=="aal2"){ S.mfa={hasFactor:aal&&aal.nextLevel==="aal2"}; render(); return; }
+    if(!aal||aal.currentLevel!=="aal2"){ lockDone=true; S.mfa={hasFactor:aal&&aal.nextLevel==="aal2"}; render(); return; }
     markActive();
+    if(!lockDone){ lockDone=true; setTimeout(lockApp,0); }   // app rouverte avec une session encore valide : Face ID d'abord
   }
   if(S.me.status==="active"){ if(S.me.role==="patient") await loadPatient(); else await loadStaff(); }
   render();
@@ -855,6 +857,29 @@ async function faceIdLogin(){ const {f,s:sec}=await faceIdSecret(); const v=awai
 async function faceIdForget(unenroll){ const f=(()=>{ try{ return localStorage.getItem(fidKey()); }catch(e){ return null; } })();
   if(unenroll&&f) await sb.auth.mfa.unenroll({factorId:f}).catch(()=>{});
   try{ await SEC().remove({key:fidKey()}); }catch(e){} try{ localStorage.removeItem(fidKey()); }catch(e){} }
+/* ---------- app iPhone de l'équipe : verrouillage par Face ID ----------
+   À l'ouverture de l'app et au retour après 5 minutes en arrière-plan, l'écran est masqué
+   jusqu'à Face ID (seulement si Face ID est activé pour la connexion). */
+const LOCK_MS=5*60*1000; let lockDone=false, hiddenAt=0;
+const canLock = () => IS_NATIVE&&!!SEC()&&!!S.me&&S.me.role!=="patient"&&S.me.status==="active"&&faceIdOn();
+async function lockApp(){
+  if(!canLock()||$("#lock")) return;
+  document.body.insertAdjacentHTML("beforeend",`<div id="lock" class="lock" role="dialog" aria-modal="true" aria-labelledby="lock-t"><div class="lockbox">
+    <img src="logo.png" alt="" width="64" height="64"><h2 id="lock-t">App verrouillée</h2><p>Déverrouillez avec ${bioName()} pour voir les données des patients.</p>
+    <button class="btn full" id="lock-go">Déverrouiller avec ${bioName()}</button><button class="btn ghost full" id="lock-out">Se déconnecter</button></div></div>`);
+  app().inert=true;
+  const unlock=()=>{ const l=$("#lock"); if(l) l.remove(); app().inert=false; markActive(); };
+  const go=async()=>{ const b=$("#lock-go"); if(!b||b.disabled) return; b.disabled=true;
+    try{ await faceIdSecret(); unlock(); }catch(e){ if(b) b.disabled=false; } };
+  $("#lock-go").onclick=go;
+  $("#lock-out").onclick=()=>{ unlock(); logout("Vous êtes déconnecté."); };
+  go();
+}
+document.addEventListener("visibilitychange",()=>{
+  if(document.hidden){ hiddenAt=Date.now(); return; }
+  if(hiddenAt&&Date.now()-hiddenAt>LOCK_MS) lockApp();
+  hiddenAt=0;
+});
 function faceIdCardHTML(){
   if(!IS_NATIVE||!SEC()) return "";
   if(!BIO){ bioInfo().then(()=>{ if(S.cscreen==="settings") render(); }); return ""; }
@@ -1621,7 +1646,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261019c";
+const APP_VERSION="20261019d";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
