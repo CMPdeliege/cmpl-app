@@ -1265,6 +1265,7 @@ function renderPatient(a){
   if(sc==="news") return patientNews(a);
   if(sc==="account") return patientAccount(a);
   if(sc==="help") return patientHelp(a);
+  if(sc==="absences") return patientAbsences(a);
   patientHome(a);
   if(!tourDone()) setTimeout(()=>{ if(S.me&&S.me.role==="patient"&&S.screen==="home"&&!tourDone()) openTour(); },400);
 }
@@ -1273,10 +1274,16 @@ function topBar(){
   return `<div class="top">${BRAND}<div class="menu"><button class="iconbtn" id="help" aria-label="Aide">${IC.help}</button><button class="iconbtn bell" id="bell" aria-label="Notifications">${IC.bell}${unread?`<span class="badge">${unread}</span>`:""}</button><button class="iconbtn" id="acct" aria-label="Mon compte">${AV.get(S.me.id)?avatarHTML(AV.get(S.me.id),"",42):IC.user}</button></div></div>`;
 }
 function bindTop(){ $("#help").onclick=()=>{S.screen="help";render();scrollTo(0,0)}; $("#bell").onclick=()=>{S.screen="notifs";render()}; $("#acct").onclick=()=>{S.screen="account";render()}; }
-function absHomeHTML(){
-  const mine=new Set(S.reqs.map(r=>r.provider_id||(r.answers||{}).provider_id).filter(Boolean));
-  const rows=[...mine].flatMap(pid=>{ const p=P.byId(pid); return p?provAbs(pid).slice(0,2).map(x=>absSentence(p.display_name,x)):[]; });
-  return rows.length?`<section class="absbox" aria-labelledby="absh"><h2 id="absh">Absences de vos prestataires</h2><ul>${rows.map(t=>`<li>${esc(t)}</li>`).join("")}</ul></section>`:"";
+function patientAbsences(a){
+  const t=todayISO(), list=P.list();
+  const specs=[...new Set(list.map(p=>p.specialty))];
+  const item=p=>{ const ab=provAbs(p.id), now=ab.find(x=>x.starts<=t);
+    return `<details class="faq absprov"><summary><span translate="no">${esc(p.display_name)}</span>${now?`<span class="pill st-encours">Absent(e) en ce moment</span>`:ab.length?`<span class="pill st-wait">Absence prévue</span>`:""}</summary>
+      ${ab.length?`<ul>${ab.map(x=>`<li>${esc(absSentence(p.display_name,x))}</li>`).join("")}</ul>`:`<p>Aucune absence prévue dans les 3 prochains mois.</p>`}</details>`; };
+  a.innerHTML=`<div class="convhead"><button class="back" id="back" aria-label="Retour">${IC.back}</button><div><h2>Absences des prestataires</h2><small>Touchez un prestataire pour voir ses dates d'absence.</small></div></div>
+  ${specs.map(sp=>`<h3 class="abspec">${esc(sp)}</h3><div class="faqlist">${list.filter(p=>p.specialty===sp).map(item).join("")}</div>`).join("")}
+  <section class="card helpcontact"><p>Pour une demande qui ne peut pas attendre, le secrétariat peut vous aider : 02 781 18 75.</p><p class="hint">Urgence vitale : appelez le 112.</p></section>`;
+  $("#back").onclick=()=>{S.screen="home";render()};
 }
 function patientHome(a){
   const pinned=S.news.filter(n=>n.pinned), others=S.news.filter(n=>!n.pinned);
@@ -1293,10 +1300,10 @@ function patientHome(a){
   ${S.me.news_choice_at?"":`<section class="consent" aria-labelledby="cq"><h2 id="cq">Annonces du centre</h2><p>Souhaitez-vous recevoir une notification pour les annonces importantes du centre (fermetures exceptionnelles, campagnes de vaccination) ?</p><p class="hint">Les réponses à vos demandes vous sont toujours notifiées. Vous pourrez changer d'avis à tout moment dans Notifications.</p><div class="btnrow"><button class="btn" data-consent="1">Oui, me prévenir</button><button class="btn ghost" data-consent="0">Non merci</button></div></section>`}
   ${pinned.map(n=>`<button class="newsbtn" data-news="${n.id}" style="margin-bottom:12px">${newsCard(n,false)}</button>`).join("")}
   ${BANNER112}
-  ${absHomeHTML()}
   ${grown.map(c=>`<div class="famnote"><b>${esc(c.first_name)} a ${c.age} ans.</b> Il ou elle doit maintenant créer son propre compte dans l'app pour ses demandes (Créer un compte, avec sa propre adresse e-mail).</div>`).join("")}
   ${waiting.length?`<div class="famnote soft">En attente de validation par le centre : ${waiting.map(c=>esc(c.first_name)).join(", ")}. Vous pourrez ensuite faire des demandes en son nom.</div>`:""}
   <div class="actions">${PATIENT_TYPES.map(k=>[k,TYPES[k]]).map(([k,t])=>`<button class="act" data-start="${k}"><div class="ic">${IC[k]}</div><b>${t.title}</b><span>${t.desc}</span></button>`).join("")}</div>
+  <button class="absrow" id="absbtn">${IC.rdv}<span>Absences des prestataires</span><span aria-hidden="true">›</span></button>
   ${others.length?`<div class="sechead"><h2>Actualités</h2><button class="linkbtn" id="allnews">Tout voir</button></div>
   <div class="newslist" style="margin-bottom:26px">${others.slice(0,2).map(n=>`<button class="newsbtn" data-news="${n.id}">${newsCard(n,false)}</button>`).join("")}</div>`:""}
   ${chips}
@@ -1311,6 +1318,7 @@ function patientHome(a){
   $$("[data-consent]").forEach(b=>b.onclick=async()=>{ const ok=b.dataset.consent==="1";
     if(await run(()=>sb.rpc("set_news_consent",{p_ok:ok}),ok?"Vous serez prévenu des annonces importantes":"C'est noté : pas de notification pour les annonces")){ S.me.news_push=ok; S.me.news_choice_at=new Date().toISOString(); render(); } });
   $$("[data-news]").forEach(b=>b.onclick=()=>{S.openNews=+b.dataset.news;S.screen="news";render();scrollTo(0,0)});
+  $("#absbtn").onclick=()=>{S.screen="absences";render();scrollTo(0,0)};
   const an=$("#allnews"); if(an) an.onclick=()=>{S.openNews=null;S.screen="news";render();scrollTo(0,0)};
   $$("[data-renew]").forEach(b=>b.onclick=()=>{ const c=kids().find(k=>k.id===b.dataset.renewkid); startFlow("prescription",[b.dataset.renew], c?kidLabel(c):(kids().length?"Pour moi":null)); });
   $$("[data-who]").forEach(b=>b.onclick=()=>{ S.who=b.dataset.who; render(); });
@@ -1690,7 +1698,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261019i";
+const APP_VERSION="20261019j";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
