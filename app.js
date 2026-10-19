@@ -194,12 +194,28 @@ const pourOptions = () => ["Pour moi", ...kids().map(kidLabel)];
 const kidFromPour = v => kids().find(c=>kidLabel(c)===v)||null;
 const childInfo = id => id ? (famKids().find(c=>c.id===id) || S.children?.[id] || null) : null;
 const childFirst = id => childInfo(id)?.first_name || "votre enfant";
+
+/* ---------- congés et absences ---------- */
+const addDays = (iso,n) => { const d=new Date(iso+"T12:00"); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); };
+async function loadLeaves(){
+  try{ const [a,b]=await Promise.all([sb.from("staff_leaves").select("*").eq("user_id",S.me.id).gte("ends",todayISO()).order("starts"), sb.rpc("team_absences")]);
+    S.leaves=a.error?[]:(a.data||[]); S.teamAbs=b.error?[]:(b.data||[]); }catch(e){ S.leaves=[]; S.teamAbs=[]; } }
+// absences d'un prestataire (vues par les patients), la plus proche d'abord
+function provAbs(pid){ const t=todayISO(); return (S.absences||[]).filter(x=>x.provider_id===pid&&(!x.ends||x.ends>=t)).sort((x,y)=>(x.starts||"").localeCompare(y.starts||"")); }
+function absSentence(name,x){ const t=todayISO();
+  if(!x.ends) return `${name} est actuellement absent(e).`;
+  if(x.starts<=t) return `${name} est absent(e) jusqu'au ${fmtDate(x.ends+"T12:00")} inclus.`;
+  return `${name} sera absent(e) du ${fmtDate(x.starts+"T12:00")} au ${fmtDate(x.ends+"T12:00")} inclus.`; }
+// absent maintenant ou dans les 14 jours ?
+function soonAbs(pid){ const lim=addDays(todayISO(),14); return provAbs(pid).find(x=>x.starts<=lim)||null; }
 // Prestataire choisi dans le formulaire (ou seul prestataire de la spécialité)
 const chosenProv = a => { let p=a.medecin?P.fromLabel(a.medecin):null; if(!p&&a.specialite&&P.of(a.specialite).length===1) p=P.of(a.specialite)[0]; return p||null; };
 const DEJA_VU = {id:"deja_vu",kind:"choice",q:()=>`Avez-vous déjà consulté ${chosenProv(S.answers)?.display_name||"ce prestataire"} ?`,options:["Oui","Non, jamais"],
   when:a=>!!chosenProv(a)};
 const VIA_SECR = {kind:"note",q:"Votre demande sera d'abord lue par le secrétariat, qui la transmettra au bon prestataire.",
   when:a=>{ const p=chosenProv(a); return !!p&&(p.direct_contact===false||a.deja_vu==="Non, jamais"); }};
+const ABS_NOTE = {kind:"note",q:a=>{ const p=chosenProv(a||S.answers); const x=p&&soonAbs(p.id); return x?absSentence(p.display_name,x):""; },when:a=>{ const p=chosenProv(a); return !!(p&&soonAbs(p.id)); }};
+const ABS_NOTE2 = {kind:"note",q:"Pour une demande qui ne peut pas attendre, le secrétariat peut vous aider : 02 781 18 75.",when:a=>{ const p=chosenProv(a); return !!(p&&soonAbs(p.id)); }};
 const POUR_STEP = {id:"pour",kind:"choice",q:"C'est pour qui ?",options:()=>pourOptions(),when:()=>kids().length>0};
 const KID_NOTE = {kind:"note",q:"Pour un enfant de moins de 16 ans : ajoutez-le d'abord dans Mon compte → Ma famille.",when:()=>!kids().length};
 const FLOWS={
@@ -258,6 +274,7 @@ FLOWS.document=[
 // Après le choix du prestataire : « Avez-vous déjà consulté… ? » (sauf rendez-vous et secrétariat)
 ["question","prescription","rapport","document"].forEach(k=>{ const i=FLOWS[k].findIndex(s=>s.id==="medecin"); FLOWS[k].splice(i+1,0,DEJA_VU); FLOWS[k].push(VIA_SECR); });
 { const i=FLOWS.rdv.findIndex(s=>s.id==="medecin"); FLOWS.rdv.splice(i+1,0,DEJA_VU); }
+["rdv","question","prescription","rapport","document"].forEach(k=>FLOWS[k].push(ABS_NOTE,ABS_NOTE2));
 ["question","prescription","rapport","resultats","document"].forEach(k=>FLOWS[k].unshift(POUR_STEP));
 FLOWS.rdv.push(KID_NOTE); FLOWS.question.push(KID_NOTE);
 const LABELS={doc:"Document",fichiers:"Fichiers",note:"Message",de:"De",pour:"Pour",specialite:"Consultation",medecin:"Prestataire",motif:"Motif",delai:"Pour quand",details:"Détails",moment:"Disponibilités",lieu:"Lieu",
@@ -742,6 +759,7 @@ async function loadPatient(){
     sb.from("notifications").select("*").eq("user_id", uid).order("created_at",{ascending:false}).limit(50)
   ]);
   S.reqs = rq.data||[]; S.meds = md.data||[]; S.notifs = nt.data||[];
+  try{ const ab=await sb.rpc("provider_absences"); S.absences=ab.error?[]:(ab.data||[]); }catch(e){ S.absences=[]; }
   if(S.me.status==="active"){ const f=await sb.rpc("my_family"); S.family=f.error?null:f.data; }
   await Promise.all([loadProviderAvatars(), loadAvatars([uid, ...S.reqs.flatMap(r=>(r.messages||[]).filter(m=>!m.from_patient).map(m=>m.author_id))])]);
 }
@@ -761,6 +779,7 @@ async function loadStaff(){
   if(role==="secretariat"||role==="admin") tasks.push(sb.from("children").select("id,first_name,last_name,birth_date,status,created_by,created_at").eq("status","pending").is("removed_at",null).order("created_at").then(r=>S.pendingKids=r.data||[]));
   tasks.push(sb.from("tasks").select("*").order("created_at",{ascending:false}).limit(500).then(r=>S.tasks=r.data||[]));
   tasks.push(loadInventory());
+  tasks.push(loadLeaves());
   await Promise.all(tasks);
   // enfants (demandes, tâches) et parents à afficher
   const kidIds=[...new Set([...S.reqs.map(r=>r.child_id),...(S.tasks||[]).map(t=>t.child_id)].filter(Boolean))].filter(id=>!S.children[id]);
@@ -1254,6 +1273,11 @@ function topBar(){
   return `<div class="top">${BRAND}<div class="menu"><button class="iconbtn" id="help" aria-label="Aide">${IC.help}</button><button class="iconbtn bell" id="bell" aria-label="Notifications">${IC.bell}${unread?`<span class="badge">${unread}</span>`:""}</button><button class="iconbtn" id="acct" aria-label="Mon compte">${AV.get(S.me.id)?avatarHTML(AV.get(S.me.id),"",42):IC.user}</button></div></div>`;
 }
 function bindTop(){ $("#help").onclick=()=>{S.screen="help";render();scrollTo(0,0)}; $("#bell").onclick=()=>{S.screen="notifs";render()}; $("#acct").onclick=()=>{S.screen="account";render()}; }
+function absHomeHTML(){
+  const mine=new Set(S.reqs.map(r=>r.provider_id||(r.answers||{}).provider_id).filter(Boolean));
+  const rows=[...mine].flatMap(pid=>{ const p=P.byId(pid); return p?provAbs(pid).slice(0,2).map(x=>absSentence(p.display_name,x)):[]; });
+  return rows.length?`<section class="absbox" aria-labelledby="absh"><h2 id="absh">Absences de vos prestataires</h2><ul>${rows.map(t=>`<li>${esc(t)}</li>`).join("")}</ul></section>`:"";
+}
 function patientHome(a){
   const pinned=S.news.filter(n=>n.pinned), others=S.news.filter(n=>!n.pinned);
   const fk=famKids(), who=S.who&&(S.who==="me"||fk.some(c=>c.id===S.who))?S.who:"all";
@@ -1269,6 +1293,7 @@ function patientHome(a){
   ${S.me.news_choice_at?"":`<section class="consent" aria-labelledby="cq"><h2 id="cq">Annonces du centre</h2><p>Souhaitez-vous recevoir une notification pour les annonces importantes du centre (fermetures exceptionnelles, campagnes de vaccination) ?</p><p class="hint">Les réponses à vos demandes vous sont toujours notifiées. Vous pourrez changer d'avis à tout moment dans Notifications.</p><div class="btnrow"><button class="btn" data-consent="1">Oui, me prévenir</button><button class="btn ghost" data-consent="0">Non merci</button></div></section>`}
   ${pinned.map(n=>`<button class="newsbtn" data-news="${n.id}" style="margin-bottom:12px">${newsCard(n,false)}</button>`).join("")}
   ${BANNER112}
+  ${absHomeHTML()}
   ${grown.map(c=>`<div class="famnote"><b>${esc(c.first_name)} a ${c.age} ans.</b> Il ou elle doit maintenant créer son propre compte dans l'app pour ses demandes (Créer un compte, avec sa propre adresse e-mail).</div>`).join("")}
   ${waiting.length?`<div class="famnote soft">En attente de validation par le centre : ${waiting.map(c=>esc(c.first_name)).join(", ")}. Vous pourrez ensuite faire des demandes en son nom.</div>`:""}
   <div class="actions">${PATIENT_TYPES.map(k=>[k,TYPES[k]]).map(([k,t])=>`<button class="act" data-start="${k}"><div class="ic">${IC[k]}</div><b>${t.title}</b><span>${t.desc}</span></button>`).join("")}</div>
@@ -1519,7 +1544,7 @@ function patientFlow(a){
     if(s.id in S.answers){ html+=`<div class="bub me">${esc(S.answers[s.id]||"(pas de précision)")}</div><button class="edit" data-edit="${s.id}">Modifier</button>`; }
     else { current=s; break; }
   }
-  if(!current) steps.filter(s=>s.kind==="note").forEach(s=>html+=`<div class="bub bot note">${esc(s.q)}</div>`);
+  if(!current) steps.filter(s=>s.kind==="note").forEach(s=>{ const q=typeof s.q==="function"?s.q(S.answers):s.q; if(q) html+=`<div class="bub bot note">${esc(q)}</div>`; });
   html+=`</div>`;
   html+= current ? answerUI(current) : summaryUI();
   a.innerHTML=html;
@@ -1665,7 +1690,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261019h";
+const APP_VERSION="20261019i";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -1691,6 +1716,7 @@ function centreItems(){
   if(canPub()) it.push({cs:"news",ic:SI.news||IC.news,t:"Actualités",d:"Annonces pour les patients",n:0});
   if(S.me.role==="admin"||isGestion()) it.push({cs:"team",ic:SI.team,t:"Équipe",d:"Collègues et comptes de l'équipe",n:0});
   it.push({cs:"inventory",ic:SI.box,t:"Inventaire",d:"Matériel à commander",n:invOpen()});
+  it.push({cs:"leaves",ic:SI.cal,t:"Congés",d:"Absences et congés de l'équipe",n:0});
   if(isDesk()) it.push({cs:"accounts",ic:SI.ucheck,t:"Comptes à valider",d:"Nouveaux patients",n:S.pending.length+(S.pendingKids||[]).length});
   return it;
 }
@@ -1736,6 +1762,14 @@ function openDD(id){ const d=$("#"+id); if(!d) return; const was=!d.hidden; clos
   const f=d.querySelector(".ddi"); if(f) f.focus({preventScroll:true}); }
 document.addEventListener("keydown",e=>{ if(e.key==="Escape"&&$(".dd:not([hidden])")) closeDD(); });
 document.addEventListener("click",e=>{ if(!$(".dd:not([hidden])")) return; if(e.target.closest(".dd,[data-dd],#dd-centre-b,#dd-me-b")) return; closeDD(); });
+function leavesHTML(){
+  const t=todayISO(), rows=(S.teamAbs||[]).slice().sort((x,y)=>(x.starts||"").localeCompare(y.starts||"")||(x.name||"").localeCompare(y.name||""));
+  const who=x=>esc(x.provider_id?provName(x.provider_id):(x.name||"—"))+` <small>· ${ROLE_LABEL[x.role]||""}</small>`;
+  const when=x=>!x.ends?"En cours, sans date de retour":(x.starts<=t?`En cours, jusqu'au ${fmtDate(x.ends+"T12:00")} inclus`:`Du ${fmtDate(x.starts+"T12:00")} au ${fmtDate(x.ends+"T12:00")} inclus`);
+  return `<div class="chead"><div><h1>Congés et absences</h1><p>Les congés programmés et les absences en cours de toute l'équipe. Chacun gère les siens dans Mon profil et notifications.</p></div></div>
+  <div class="settings">${rows.length?`<section class="card"><ul class="leavelist">${rows.map(x=>`<li class="${x.starts<=t?"now":""}"><b>${who(x)}</b><span>${when(x)}${x.kind==="absence"?" · absence imprévue":""}</span>${x.forward_name?`<small>Notifications renvoyées vers ${esc(x.forward_name)}</small>`:""}</li>`).join("")}</ul></section>`:`<div class="empty">Aucun congé ni absence prévus.</div>`}
+  <div class="btnrow"><button class="btn ghost" data-cs="settings">Gérer mes congés</button></div></div>`;
+}
 function staffHelpHTML(){
   const Q=[
    ["Répondre à un patient","Ouvrez la demande dans « Demandes », écrivez votre message en bas (texte, photo, document ou message vocal), puis Envoyer. Quand tout est réglé, touchez « Clôturer »."],
@@ -1754,7 +1788,7 @@ function renderStaff(a){
   const sc=S.cscreen;
   const nav=staffNavHTML(sc);
   let body="";
-  if(sc==="compose") body=composeHTML(); else if(sc==="inventory") body=inventoryHTML(); else if(sc==="tasks") body=tasksHTML(); else if(sc==="accounts") body=accountsHTML(); else if(sc==="news") body=newsAdminHTML(); else if(sc==="team") body=teamHTML(); else if(sc==="settings") body=settingsHTML(); else if(sc==="help") body=staffHelpHTML(); else body=inboxHTML();
+  if(sc==="compose") body=composeHTML(); else if(sc==="inventory") body=inventoryHTML(); else if(sc==="tasks") body=tasksHTML(); else if(sc==="accounts") body=accountsHTML(); else if(sc==="news") body=newsAdminHTML(); else if(sc==="team") body=teamHTML(); else if(sc==="settings") body=settingsHTML(); else if(sc==="help") body=staffHelpHTML(); else if(sc==="leaves") body=leavesHTML(); else body=inboxHTML();
   document.body.classList.add("hasbar"); document.body.classList.remove("ddopen");
   a.innerHTML=nav+body;
   $("#logout").onclick=()=>{ closeDD(); logout(); };
@@ -1764,7 +1798,7 @@ function renderStaff(a){
   const bk=$(".ddback"); if(bk) bk.onclick=closeDD;
   $$(".ddrosa").forEach(l=>l.addEventListener("click",()=>closeDD()));
   $$("[data-cs]").forEach(b=>b.onclick=()=>{ closeDD(); if(CREC&&b.dataset.cs!=="compose") composeRecStop(false); S.cscreen=b.dataset.cs; render(); window.scrollTo(0,0); });
-  if(sc==="compose") bindCompose(); else if(sc==="inventory") bindInventory(); else if(sc==="tasks") bindTasks(); else if(sc==="accounts") bindAccounts(); else if(sc==="news") bindNewsAdmin(); else if(sc==="team") bindTeam(); else if(sc==="settings") bindSettings(); else if(sc==="help") {} else bindInbox();
+  if(sc==="compose") bindCompose(); else if(sc==="inventory") bindInventory(); else if(sc==="tasks") bindTasks(); else if(sc==="accounts") bindAccounts(); else if(sc==="news") bindNewsAdmin(); else if(sc==="team") bindTeam(); else if(sc==="settings") bindSettings(); else if(sc==="help"||sc==="leaves") {} else bindInbox();
 }
 
 /* ----- durée estimée des rendez-vous de médecine générale (visible par l'équipe seulement) ----- */
@@ -2234,11 +2268,18 @@ function settingsHTML(){
     <p class="hint">Décoché : les questions, demandes de prescription, de rapport et les documents qui vous sont destinés arrivent d'abord au secrétariat, qui vous les transfère si nécessaire. Dans tous les cas, un patient qui dit ne vous avoir jamais consulté passe par le secrétariat.</p>
     <label class="fld">Demandes de rendez-vous qui me sont adressées<select id="s-rdv">${RDV_MODES.map(([v,t])=>`<option value="${v}" ${(P.byId(S.me.provider_id)?.rdv_mode||"secretariat")===v?"selected":""}>${t}</option>`).join("")}</select></label>
     <p class="hint">Seulement quand le patient dit vous avoir déjà consulté (sinon : toujours au secrétariat). « Directement chez moi » : vous fixez le créneau vous-même, ou vous transférez la demande au secrétariat.</p></section>`:""}
-   <section class="card"><h3>En cas d'absence</h3>
-    <label class="chk2"><input type="checkbox" id="s-away" ${s.away?"checked":""}> Je suis absent(e)</label>
+   <section class="card"><h3>Mes congés</h3>
+    <p class="hint">Pendant chaque période, vous êtes automatiquement considéré(e) comme absent(e) : vos notifications vont au collègue choisi ci-dessous${S.me.provider_id?" et les patients qui vous écrivent reçoivent une réponse automatique avec votre date de retour":""}. Les patients voient vos dates d'absence, jamais le motif.</p>
+    ${(S.leaves||[]).length?`<ul class="leavelist">${S.leaves.map(l=>`<li><span>Du <b>${fmtDate(l.starts+"T12:00")}</b> au <b>${fmtDate(l.ends+"T12:00")}</b> inclus</span><button type="button" class="linkbtn" data-lvdel="${l.id}">Supprimer</button></li>`).join("")}</ul>`:`<p class="hint">Aucun congé programmé.</p>`}
+    <div class="pgrid"><label class="fld">Du<input type="date" id="lv-from" min="${todayISO()}"></label><label class="fld">Au (inclus)<input type="date" id="lv-to" min="${todayISO()}"></label></div>
+    <div class="btnrow"><button type="button" class="btn ghost" id="lv-add">Ajouter cette période</button></div>
+    ${S.me.provider_id?`<label class="chk2"><input type="checkbox" id="s-lvauto" ${s.leave_auto!==false?"checked":""}> Pendant mes congés, répondre automatiquement aux patients qui m'écrivent (avec ma date de retour)</label>`:""}
+    <label class="fld">Pendant mes congés et absences, renvoyer mes notifications vers<select id="s-fw"><option value="">Ne pas renvoyer</option>${others.map(t=>`<option value="${t.id}" ${t.id===s.forward_to?"selected":""}>${esc((t.first_name||"")+" "+(t.last_name||""))} · ${ROLE_LABEL[t.role]}</option>`).join("")}</select></label>
+   </section>
+   <section class="card"><h3>Absence imprévue</h3>
+    <label class="chk2"><input type="checkbox" id="s-away" ${s.away?"checked":""}> Je suis absent(e) maintenant (maladie, imprévu…)</label>
     <div id="s-awaybox" class="awaybox" ${s.away?"":"hidden"}>
      <label class="fld">Jusqu'au (inclus) — facultatif : l'absence s'arrête toute seule après cette date<input type="date" id="s-until" value="${s.away_until||""}"></label>
-     <label class="fld">Renvoyer mes notifications vers<select id="s-fw"><option value="">Ne pas renvoyer</option>${others.map(t=>`<option value="${t.id}" ${t.id===s.forward_to?"selected":""}>${esc((t.first_name||"")+" "+(t.last_name||""))} · ${ROLE_LABEL[t.role]}</option>`).join("")}</select></label>
      ${S.me.provider_id?`<label class="chk2"><input type="checkbox" id="s-amsg" ${s.away_message?"checked":""}> Répondre automatiquement aux patients qui m'écrivent</label>
      <textarea id="s-msg" rows="5" maxlength="1000" ${s.away_message?"":"hidden"} aria-label="Message automatique">${esc(s.away_message||"")}</textarea>
      <p class="hint" id="s-msghint" ${s.away_message?"":"hidden"}>Envoyé une seule fois par conversation, signé « ${esc(provName(S.me.provider_id))} · message automatique ». Il ne compte pas comme une réponse : la demande reste à traiter.</p>`:""}
@@ -2257,6 +2298,11 @@ function bindSettings(){
   bindPhotoCard(); bindPush(); bindTextSize(); bindFaceIdCard();
   const dc=$("#s-direct"); if(dc) dc.onchange=async()=>{ const v=dc.checked;
     if(await run(()=>sb.rpc("set_my_direct_contact",{p_ok:v}),v?"Les patients peuvent vous écrire directement":"Les demandes passeront d'abord par le secrétariat")){ const pr=P.byId(S.me.provider_id); if(pr) pr.direct_contact=v; } else dc.checked=!v; };
+  $("#lv-add").onclick=async()=>{ const f=$("#lv-from").value, t=$("#lv-to").value;
+    if(!f||!t) return toast("Choisissez les deux dates.");
+    if(t<f) return toast("La date de fin doit être après la date de début.");
+    if(await run(()=>sb.rpc("add_my_leave",{p_starts:f,p_ends:t}),"Congé ajouté")){ await loadLeaves(); render(); } };
+  $$("[data-lvdel]").forEach(b=>b.onclick=async()=>{ if(await run(()=>sb.rpc("delete_my_leave",{p_id:+b.dataset.lvdel}),"Congé supprimé")){ await loadLeaves(); render(); } });
   const rm=$("#s-rdv"); if(rm){ rm.dataset.prev=rm.value; rm.onchange=async()=>{ const v=rm.value;
     if(await run(()=>sb.rpc("set_my_rdv_mode",{p_mode:v}),"Enregistré")){ const pr=P.byId(S.me.provider_id); if(pr) pr.rdv_mode=v; rm.dataset.prev=v; } else rm.value=rm.dataset.prev; }; }
   const away=$("#s-away"), box=$("#s-awaybox"), am=$("#s-amsg"), msg=$("#s-msg"), hint=$("#s-msghint");
@@ -2267,7 +2313,7 @@ function bindSettings(){
   if(am){ am.onchange=()=>{ msg.hidden=hint.hidden=!am.checked; if(am.checked){ if(!msg.value.trim()){ msg.dataset.auto="1"; fill(); } msg.focus(); } };
     msg.oninput=()=>{ msg.dataset.auto=""; }; }
   $("#s-save").onclick=async()=>{
-    const row={user_id:S.me.id,haute:$("#s-haute").value,normale:$("#s-normale").value,by_email:$("#s-mail").checked,after_hours:$("#s-after").checked,
+    const row={user_id:S.me.id,haute:$("#s-haute").value,normale:$("#s-normale").value,by_email:$("#s-mail").checked,after_hours:$("#s-after").checked,...($("#s-lvauto")?{leave_auto:$("#s-lvauto").checked}:{}),
       away:away.checked,away_until:$("#s-until").value||null,forward_to:$("#s-fw").value||null,
       away_message:am&&am.checked&&msg.value.trim()?msg.value.trim():null};
     if(row.away&&!row.forward_to&&!row.away_message) return toast(am?"Choisissez un collègue, ou activez le message automatique.":"Choisissez le collègue qui recevra vos notifications.");

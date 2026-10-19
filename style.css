@@ -241,8 +241,8 @@ select{font:inherit;color:var(--ink);background:var(--surface);border:1.5px soli
 .fld{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}
 .fld input[type=file]{font-size:13px;max-width:100%}
 .fld input[type=date]{font:inherit;color:var(--ink);background:var(--surface);border:1.5px solid var(--line);border-radius:10px;padding:7px 10px}
-.chk2{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:14px}
-.chk2 input{width:18px;height:18px;accent-color:var(--accent)}
+.chk2{display:flex;flex-wrap:nowrap;gap:8px;align-items:flex-start;font-size:14px}
+.chk2 input{width:18px;height:18px;flex:none;margin:1px 0 0;accent-color:var(--accent)}
 .st-wait{background:var(--surface-2);color:var(--muted)}
 .st-reply{background:var(--accent);color:var(--accent-ink)}
 .thread .msg{display:flex;flex-direction:column;gap:3px;max-width:86%}
@@ -656,3 +656,12 @@ select,input,textarea{max-width:100%}
 .transfer select{flex:1 1 160px;min-width:0}
 #diagbtn{position:fixed;left:8px;bottom:calc(90px + env(safe-area-inset-bottom));z-index:999;background:#c0241b;color:#fff;border:0;border-radius:999px;padding:6px 12px;font-weight:700;font-size:13px}
 #diagbox{position:fixed;inset:10px;z-index:1001;background:#fff;color:#111;border-radius:12px;padding:12px;font:12px/1.4 ui-monospace,monospace;overflow:auto;white-space:pre-wrap}
+
+/* congés */
+.leavelist{list-style:none;margin:0 0 10px;padding:0;display:flex;flex-direction:column;gap:6px}
+.leavelist li{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:center;justify-content:space-between;border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--surface)}
+.leavelist li.now{border-color:var(--gold);background:var(--gold-soft)}
+.leavelist li small{flex-basis:100%;color:var(--muted)}
+.absbox{background:var(--gold-soft);border-radius:var(--r);padding:12px 14px;margin-bottom:18px}
+.absbox h2{font-size:15px;margin:0 0 6px}
+.absbox ul{margin:0;padding-left:18px;font-size:14px}
