@@ -771,13 +771,13 @@ async function loadStaff(){
   const ids=[...new Set(S.reqs.map(r=>r.patient_id))];
   const tasks=[];
   if(ids.length) tasks.push(sb.from("profiles").select("id,first_name,last_name,birth_date,phone,extra_contacts,contact_note").in("id",ids).then(r=>{ for(const p of r.data||[]) S.profiles[p.id]=p; }));
-  if(role==="admin") tasks.push(sb.from("profiles").select("id,first_name,last_name,birth_date,phone,created_at").eq("role","patient").eq("status","pending").order("created_at").then(r=>S.pending=r.data||[]));
-  tasks.push(sb.from("profiles").select("id,first_name,last_name,role,provider_id,status,created_at").neq("role","patient").then(r=>S.team=r.data||[]));
+  if(isAdminP(S.me)) tasks.push(sb.from("profiles").select("id,first_name,last_name,birth_date,phone,created_at").eq("role","patient").eq("status","pending").order("created_at").then(r=>S.pending=r.data||[]));
+  tasks.push(sb.from("profiles").select("id,first_name,last_name,role,provider_id,status,created_at,is_admin").neq("role","patient").then(r=>S.team=r.data||[]));
   tasks.push(sb.from("motif_durations").select("motif,minutes").then(r=>{ S.durations=Object.fromEntries((r.data||[]).map(d=>[d.motif,d.minutes])); }));
   tasks.push(sb.from("staff_settings").select("*").eq("user_id",S.me.id).maybeSingle().then(r=>S.settings=r.data));
   if(role==="secretariat"||role==="admin"||role==="gestion") tasks.push(sb.from("announcements").select("*").order("published_at",{ascending:false}).limit(100).then(r=>S.allNews=r.data||[]));
   if(role==="secretariat"||role==="admin"||role==="gestion") tasks.push(sb.rpc("news_audience").then(r=>S.audience=r.data));
-  if(role==="admin") tasks.push(sb.from("children").select("id,first_name,last_name,birth_date,status,created_by,created_at").eq("status","pending").is("removed_at",null).order("created_at").then(r=>S.pendingKids=r.data||[]));
+  if(isAdminP(S.me)) tasks.push(sb.from("children").select("id,first_name,last_name,birth_date,status,created_by,created_at").eq("status","pending").is("removed_at",null).order("created_at").then(r=>S.pendingKids=r.data||[]));
   tasks.push(sb.from("tasks").select("*").order("created_at",{ascending:false}).limit(500).then(r=>S.tasks=r.data||[]));
   tasks.push(loadInventory());
   tasks.push(loadLeaves());
@@ -1757,11 +1757,14 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261019m";
+const APP_VERSION="20261019n";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
 const isGestion = () => S.me.role==="gestion";
+// droits d'administrateur : rôle « Administrateur » ou case « Administrateur » cochée (en plus du rôle)
+const isAdminP = p => !!p&&p.role!=="patient"&&(p.role==="admin"||!!p.is_admin);
+const isAdmin = () => isAdminP(S.me);
 const canPub = () => isDesk()||isGestion();
 /* ----- navigation de l'équipe : 3 onglets + « Écrire » + menu de la photo -----
    Ordinateur : onglets en haut. Téléphone : barre en bas (comme les apps habituelles). */
@@ -1786,12 +1789,12 @@ const SI={
 function centreItems(){
   const it=[];
   if(canPub()) it.push({cs:"news",ic:SI.news||IC.news,t:"Actualités",d:"Annonces pour les patients",n:0});
-  if(S.me.role==="admin"||isGestion()) it.push({cs:"team",ic:SI.team,t:"Équipe",d:"Collègues et comptes de l'équipe",n:0});
+  if(isAdmin()||isGestion()) it.push({cs:"team",ic:SI.team,t:"Équipe",d:"Collègues et comptes de l'équipe",n:0});
   it.push({cs:"tasks",ic:SI.tasks,t:"Tâches",d:"Ce que l'équipe doit faire",n:myTasks().length,mob:true});
   it.push({cs:"binder",ic:SI.book,t:"Classeur",d:"Numéros utiles, procédures, documents",n:0});
   it.push({cs:"inventory",ic:SI.box,t:"Inventaire",d:"Matériel à commander",n:invOpen()});
   it.push({cs:"leaves",ic:SI.cal,t:"Congés",d:"Absences et congés de l'équipe",n:0});
-  if(S.me.role==="admin") it.push({cs:"accounts",ic:SI.ucheck,t:"Comptes à valider",d:"Nouveaux patients",n:S.pending.length+(S.pendingKids||[]).length});
+  if(isAdmin()) it.push({cs:"accounts",ic:SI.ucheck,t:"Comptes à valider",d:"Nouveaux patients",n:S.pending.length+(S.pendingKids||[]).length});
   return it;
 }
 const badge = n => n?`<span class="sn" aria-label="${n} en attente">${n}</span>`:"";
@@ -2076,7 +2079,7 @@ function staffHelpHTML(){
    ["Le menu « Le centre »","Il regroupe ce qui concerne tout le centre : Actualités, Équipe, Classeur, Inventaire, Congés, Comptes à valider (selon votre rôle). Le chiffre rouge indique ce qui attend."],
    ["Rappel avant l'échéance d'une tâche","Le centre → Tâches : mettez une échéance, cochez « Recevoir un rappel par e-mail » et choisissez quand (le jour même, la veille, 48 h, 72 h ou 1 semaine avant). L'e-mail part à 8 h vers la personne qui doit faire la tâche. Vous pouvez changer le rappel d'une tâche existante avec la petite cloche 🔔. Les tâches sont classées de la plus urgente à la moins urgente."],
    ["Ordinateur de confiance (accueil)","Au moment du code de sécurité, cochez « Faire confiance à cet ordinateur » : pendant 90 jours, l'e-mail et le mot de passe suffisent sur cet ordinateur, avec déconnexion après 2 heures d'inactivité. Uniquement sur un ordinateur du centre. Pour le retirer : Mon profil et notifications → Ordinateurs de confiance."],
-   ["Valider les comptes des patients","Seul un administrateur valide les nouveaux comptes et les enfants ajoutés par un parent (Le centre → Comptes à valider). L'administrateur peut donner ce rôle à un prestataire : Le centre → Équipe → case « Administrateur »."],
+   ["Valider les comptes des patients","Seul un administrateur valide les nouveaux comptes et les enfants ajoutés par un parent (Le centre → Comptes à valider). Un administrateur peut donner ces droits à n'importe quel membre de l'équipe (secrétariat compris) : Le centre → Équipe → case « Administrateur ». La personne garde son rôle."],
    ["Face ID sur l'iPhone","Dans l'app iPhone : Mon profil et notifications → Face ID. Ensuite l'app se déverrouille avec votre visage, sans code."],
    ["Un problème avec l'app","Prévenez l'administrateur du centre en précisant l'écran concerné (une capture d'écran aide beaucoup)."]];
   return `<div class="chead"><div><h1>Aide</h1><p>Les réponses aux questions les plus fréquentes de l'équipe.</p></div></div>
@@ -2491,14 +2494,14 @@ function bindAccounts(){
 /* ----- équipe (administrateur) ----- */
 function teamHTML(){
   const provOpts=sel=>`<option value="">— prestataire —</option>`+S.providers.map(p=>`<option value="${p.id}" ${p.id===sel?"selected":""}>${esc(P.label(p))}</option>`).join("");
-  const adm=S.me.role==="admin";
+  const adm=isAdmin();
   return `<div class="chead"><div><h1>Équipe</h1><p>${adm?"Chaque membre de l'équipe crée d'abord son compte dans l'app (« Créer un compte »). Retrouvez-le ensuite ci-dessous et donnez-lui son rôle.":"Les membres de l'équipe du centre et leur rôle. Seul l'administrateur peut ajouter ou retirer quelqu'un."}</p></div></div>
   ${adm?`<section class="card" style="margin-bottom:12px"><h3>Donner un rôle à un compte</h3>
    <label class="fld" for="t-search">Nom de la personne inscrite<input id="t-search" type="text" placeholder="Tapez au moins 2 lettres du nom"></label>
    <div id="t-results"></div></section>`:""}
-  <div class="list">${S.team.map(t=>`<div class="medrow">${avatarHTML(AV.get(t.id),`${t.first_name||""} ${t.last_name||""}`,32)}<div><b>${esc((t.first_name||"")+" "+(t.last_name||""))}</b><small>${ROLE_LABEL[t.role]}${t.provider_id?" · "+esc(provName(t.provider_id)):""}</small></div><div class="acts">${adm&&(t.role==="provider"||t.role==="admin")?`<label class="chk2 admchk" title="${t.id===S.me.id?"Vous ne pouvez pas retirer votre propre rôle d'administrateur":"L'administrateur valide les comptes des patients et gère l'équipe"}"><input type="checkbox" data-admin="${t.id}" ${t.role==="admin"?"checked":""} ${t.id===S.me.id||(t.role==="provider"&&!t.provider_id)?"disabled":""}> Administrateur</label>`:""}${adm&&t.id!==S.me.id?`<button class="linkbtn" style="font-size:12px;color:var(--muted)" data-demote="${t.id}">Retirer de l'équipe</button>`:""}</div></div>`).join("")}</div>
-  ${adm?`<p class="hint" style="margin-top:10px">Cochez « Administrateur » pour donner à un prestataire les droits d'administrateur : valider les comptes des patients et des enfants, gérer l'équipe. Le prestataire garde ses demandes et ses patients.</p>`:""}
-  <template id="t-row"><div class="person" style="border-top:1px solid var(--line);padding-top:10px;margin-top:10px"><b class="t-name"></b><div class="pgrid"><label>Rôle<select class="t-role"><option value="secretariat">Secrétariat</option><option value="provider">Prestataire</option><option value="gestion">Administration (gestion du centre)</option><option value="admin">Administrateur</option></select></label><label>Prestataire<select class="t-prov">${provOpts("")}</select></label></div><div class="btnrow"><button class="btn t-go">Enregistrer</button></div></div></template>`;
+  <div class="list">${S.team.map(t=>`<div class="medrow">${avatarHTML(AV.get(t.id),`${t.first_name||""} ${t.last_name||""}`,32)}<div><b>${esc((t.first_name||"")+" "+(t.last_name||""))}</b><small>${ROLE_LABEL[t.role]}${t.provider_id?" · "+esc(provName(t.provider_id)):""}${t.is_admin&&t.role!=="admin"?" · administrateur":""}</small></div><div class="acts">${adm?`<label class="chk2 admchk" title="${t.id===S.me.id?"Vous ne pouvez pas modifier vos propres droits d'administrateur":"L'administrateur valide les comptes des patients et gère l'équipe"}"><input type="checkbox" data-admin="${t.id}" ${isAdminP(t)?"checked":""} ${t.id===S.me.id?"disabled":""}> Administrateur</label>`:""}${adm&&t.id!==S.me.id?`<button class="linkbtn" style="font-size:12px;color:var(--muted)" data-demote="${t.id}">Retirer de l'équipe</button>`:""}</div></div>`).join("")}</div>
+  ${adm?`<p class="hint" style="margin-top:10px">Cochez « Administrateur » pour donner à un membre de l'équipe (secrétariat, prestataire, administration) les droits d'administrateur : valider les comptes des patients et des enfants, gérer l'équipe, recevoir les alertes de sécurité. La personne garde son rôle et tout son travail habituel. Vous ne pouvez pas modifier vos propres droits : demandez à un autre administrateur.</p>`:""}
+  <template id="t-row"><div class="person" style="border-top:1px solid var(--line);padding-top:10px;margin-top:10px"><b class="t-name"></b><div class="pgrid"><label>Rôle<select class="t-role"><option value="secretariat">Secrétariat</option><option value="provider">Prestataire</option><option value="gestion">Administration (gestion du centre)</option><option value="admin">Prestataire et administrateur</option></select></label><label>Prestataire<select class="t-prov">${provOpts("")}</select></label></div><div class="btnrow"><button class="btn t-go">Enregistrer</button></div></div></template>`;
 }
 function bindTeam(){
   const inp=$("#t-search"), out=$("#t-results"); let timer;
@@ -2514,9 +2517,8 @@ function bindTeam(){
   },300); };
   $$("[data-admin]").forEach(c=>c.onchange=async()=>{ const t=S.team.find(x=>x.id===c.dataset.admin), on=c.checked;
     const nm=`${t.first_name||""} ${t.last_name||""}`.trim();
-    if(!t.provider_id){ c.checked=!on; toast("Ce compte n'est relié à aucun prestataire."); return; }
     c.disabled=true;
-    if(await run(()=>sb.rpc("set_staff_role",{p_user:t.id,p_role:on?"admin":"provider",p_provider:t.provider_id}),on?nm+" est maintenant administrateur":nm+" n'est plus administrateur")) await refresh();
+    if(await run(()=>sb.rpc("set_staff_admin",{p_user:t.id,p_on:on}),on?nm+" est maintenant administrateur":nm+" n'est plus administrateur")) await refresh();
     else { c.checked=!on; c.disabled=false; } });
   $$("[data-demote]").forEach(b=>b.onclick=async()=>{ if(await run(()=>sb.rpc("set_staff_role",{p_user:b.dataset.demote,p_role:"patient",p_provider:null}),"Retiré de l'équipe")) await refresh(); });
 }
