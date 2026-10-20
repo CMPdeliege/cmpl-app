@@ -757,3 +757,27 @@ select,input,textarea{max-width:100%}
 .tkrem select{max-width:220px}
 .admchk{font-size:12px;white-space:nowrap;margin-right:8px}
 .taskform .chk2 input{width:18px;height:18px;padding:0}
+
+/* ----- disponibilité : Disponible · En pause · Absent(e) ----- */
+.savail{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:9px 12px;font:inherit;font-weight:700;font-size:14px;color:var(--muted);white-space:nowrap;cursor:pointer}
+.savail:hover{border-color:var(--accent)}
+.savail.av-on svg{color:#2f8a4f}
+.savail.av-pause{background:#f9eeda;border-color:#e8cf9f;color:#8a5a00}
+.savail.av-away,.savail.av-leave{background:var(--danger-soft);border-color:transparent;color:var(--danger)}
+@media (max-width:1440px){ .savail span{display:none} .savail{padding:9px 10px} }
+.avbox{gap:12px;overflow:auto}
+.avbox h3{font-size:15px;margin:4px 0 0}
+.avstate{margin:0;padding:10px 12px;border-radius:10px;background:var(--surface-2);font-size:14px}
+.avstate.av-pause{background:#f9eeda}
+.avstate.av-away,.avstate.av-leave{background:var(--danger-soft)}
+.avgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.avgrid .btn{padding:10px 8px;font-size:14px;white-space:normal;line-height:1.2}
+@media (max-width:420px){ .avgrid{grid-template-columns:1fr} }
+.avaway{border-top:1px solid var(--line);padding-top:8px;display:grid;gap:10px}
+.avaway[open]{display:grid}
+.avaway summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:6px}
+.avaway summary::before{content:"▸";color:var(--muted)}
+.avaway[open] summary::before{content:"▾"}
+.avaway summary h3{display:inline;margin:0}
+.avaway textarea{font:inherit;font-size:14px;border:1.5px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--surface);color:var(--ink)}
+.avaway select,.avaway input[type=date]{font:inherit;font-size:14px;border:1.5px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--surface);color:var(--ink);width:100%;box-sizing:border-box}

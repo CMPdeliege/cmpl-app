@@ -1757,7 +1757,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261019n";
+const APP_VERSION="20261020a";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -1798,6 +1798,64 @@ function centreItems(){
   return it;
 }
 const badge = n => n?`<span class="sn" aria-label="${n} en attente">${n}</span>`:"";
+/* ---------- disponibilité : Disponible · En pause · Absent(e) ----------
+   Pause : plus de notification ni d'e-mail (résumé à la fin de la pause), rien ne change pour les patients.
+   Absent(e) : alertes renvoyées au collègue choisi et/ou message automatique aux patients. */
+function availState(){
+  const s=S.settings||{}, td=todayISO(), now=Date.now();
+  if(s.away&&(!s.away_until||td<=s.away_until)) return {k:"away",until:s.away_until};
+  if((S.leaves||[]).some(l=>l.user_id===S.me.id&&l.starts<=td&&td<=l.ends)) return {k:"leave"};
+  if(s.pause_until&&(s.pause_until==="infinity"||new Date(s.pause_until).getTime()>now)) return {k:"pause",until:s.pause_until};
+  return {k:"on"};
+}
+function pauseText(u){ if(u==="infinity") return "jusqu'à ce que vous la retiriez"; const d=new Date(u), t=d.toLocaleTimeString("fr-BE",{hour:"2-digit",minute:"2-digit"});
+  return d.toDateString()===new Date().toDateString()?`jusqu'à ${t}`:`jusqu'au ${d.toLocaleDateString("fr-BE",{weekday:"long",day:"numeric",month:"long"})} à ${t}`; }
+const AVAIL_ICON={on:IC.bell,pause:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8.7 3.7A6 6 0 0 1 18 9c0 2.6.5 4.4 1.1 5.6M17 17H3.5S6 15.5 6 9c0-.6.1-1.2.2-1.7"/><path d="M10 20a2.2 2.2 0 0 0 4 0"/><path d="m2 2 20 20"/></svg>',
+  away:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12h8"/></svg>'};
+AVAIL_ICON.leave=AVAIL_ICON.away;
+function availBtnHTML(){ const a=availState(), lab={on:"Disponible",pause:"En pause",away:"Absent(e)",leave:"En congé"}[a.k];
+  return `<button class="savail av-${a.k}" id="avail-b" title="Pause des notifications ou absence">${AVAIL_ICON[a.k]}<span>${lab}</span></button>`; }
+function openAvail(){
+  const a=availState(), s=S.settings||{}, others=S.team.filter(t=>t.id!==S.me.id&&t.status==="active"&&t.role!=="patient");
+  const tomorrow8=()=>{ const d=new Date(); d.setDate(d.getDate()+1); d.setHours(8,0,0,0); return d.toISOString(); };
+  const v=document.createElement("div"); v.className="modal"; v.setAttribute("role","dialog"); v.setAttribute("aria-modal","true"); v.setAttribute("aria-labelledby","av-t");
+  const stateLine={on:"Vous êtes <b>disponible</b> : vous recevez vos notifications normalement.",
+    pause:`Vos notifications sont <b>en pause</b> ${esc(pauseText(a.until||""))}.`,
+    away:`Vous êtes <b>absent(e)</b>${a.until?` jusqu'au ${fmtDate(a.until+"T12:00")} inclus`:""}.`,
+    leave:"Vous êtes <b>en congé</b> aujourd'hui (Mon profil → Mes congés)."}[a.k];
+  v.innerHTML=`<div class="mbox avbox"><h2 id="av-t">Mes notifications</h2><p class="avstate av-${a.k}">${stateLine}</p>
+   ${a.k==="pause"?`<button class="btn full" id="av-resume">Reprendre les notifications</button>`:""}
+   ${a.k==="away"?`<button class="btn full" id="av-back">Je suis de retour</button>`:""}
+   ${a.k!=="away"&&a.k!=="leave"?`<h3>Pause des notifications</h3>
+   <div class="avgrid"><button class="btn ghost" data-pause="1h">1 heure</button><button class="btn ghost" data-pause="t8">Jusqu'à demain 8 h</button><button class="btn ghost" data-pause="inf">Jusqu'à ce que je la retire</button></div>
+   <p class="hint">Plus de notification ni d'e-mail, sauf les alertes de sécurité. Les demandes arrivent toujours dans l'app ; vous recevez un résumé à la fin de la pause. Rien ne change pour les patients.</p>`:""}
+   ${a.k!=="away"?`<details class="avaway"${a.k==="leave"?" open":""}><summary><h3>Je suis absent(e)</h3></summary>
+    <p class="hint">Maladie, imprévu… Vos alertes vont au collègue choisi${S.me.provider_id?" et/ou les patients qui vous écrivent reçoivent un message automatique":""}.</p>
+    <label class="fld">Jusqu'au (inclus) — facultatif<input type="date" id="av-until" min="${todayISO()}" value=""></label>
+    <label class="fld">Renvoyer mes notifications vers<select id="av-fw"><option value="">Ne pas renvoyer</option>${others.map(t=>`<option value="${t.id}" ${t.id===s.forward_to?"selected":""}>${esc(`${t.first_name||""} ${t.last_name||""}`.trim())} · ${ROLE_LABEL[t.role]}</option>`).join("")}</select></label>
+    ${S.me.provider_id?`<label class="chk2"><input type="checkbox" id="av-amsg" checked> Répondre automatiquement aux patients qui m'écrivent</label>
+    <textarea id="av-msg" rows="5" maxlength="1000" aria-label="Message automatique"></textarea>`:""}
+    <button class="btn" id="av-away">Me déclarer absent(e)</button></details>`:""}
+   <div class="btnrow"><button class="btn ghost" id="av-x">Fermer</button><button class="linkbtn" id="av-more">Plus de réglages</button></div></div>`;
+  document.body.appendChild(v); const close=()=>v.remove();
+  v.onclick=e=>{ if(e.target===v) close(); }; v.querySelector("#av-x").onclick=close;
+  v.querySelector("#av-more").onclick=()=>{ close(); S.cscreen="settings"; render(); };
+  const done=()=>{ close(); render(); };
+  const setPause=async u=>{ const r=await run(()=>sb.rpc("set_my_pause",{p_until:u}),u?"Notifications en pause "+pauseText(u):"Notifications reprises");
+    if(r){ S.settings={...(S.settings||{user_id:S.me.id}),pause_until:u}; done(); } };
+  v.querySelectorAll("[data-pause]").forEach(b=>b.onclick=()=>{ const k=b.dataset.pause; setPause(k==="1h"?new Date(Date.now()+3600e3).toISOString():k==="t8"?tomorrow8():"infinity"); });
+  const rs=v.querySelector("#av-resume"); if(rs) rs.onclick=()=>setPause(null);
+  const bk=v.querySelector("#av-back"); if(bk) bk.onclick=async()=>{ bk.disabled=true;
+    if(await run(()=>sb.from("staff_settings").upsert({user_id:S.me.id,away:false,away_until:null}),"Bon retour ! Vos notifications reprennent.")){ S.settings={...(S.settings||{}),user_id:S.me.id,away:false,away_until:null}; done(); } else bk.disabled=false; };
+  const msg=v.querySelector("#av-msg"), am=v.querySelector("#av-amsg"), un=v.querySelector("#av-until"), fw=v.querySelector("#av-fw");
+  if(msg){ msg.dataset.auto="1"; const fill=()=>{ if(msg.dataset.auto) msg.value=awayDefaultText(un.value,fw.value); }; fill();
+    un.onchange=fill; fw.onchange=fill; msg.oninput=()=>{ msg.dataset.auto=""; }; am.onchange=()=>{ msg.hidden=!am.checked; }; }
+  const ga=v.querySelector("#av-away"); if(ga) ga.onclick=async()=>{
+    const row={user_id:S.me.id,away:true,away_until:un.value||null,forward_to:fw.value||null,away_message:am&&am.checked&&msg.value.trim()?msg.value.trim():null};
+    if(!row.forward_to&&!row.away_message) return toast(am?"Choisissez un collègue, ou gardez le message automatique.":"Choisissez le collègue qui recevra vos notifications.");
+    ga.disabled=true;
+    if(await run(()=>sb.from("staff_settings").upsert(row),"Absence enregistrée")){ S.settings={...(S.settings||{}),...row}; done(); } else ga.disabled=false; };
+}
 function staffNavHTML(sc){
   const ci=centreItems(), ciD=ci.filter(x=>!x.mob), cn=ciD.reduce((t,x)=>t+(x.n||0),0), cnM=ci.reduce((t,x)=>t+(x.n||0),0), nIn=S.reqs.filter(awaitingStaff).length, nT=myTasks().length, nM=teamUnread();
   const inCentre=ciD.some(x=>x.cs===sc), inCentreM=ci.some(x=>x.cs===sc), single=null;
@@ -1821,6 +1879,7 @@ function staffNavHTML(sc){
     ${centreBtn}
    </nav>
    <div class="sact">
+    ${availBtnHTML()}
     <button class="swrite" data-cs="compose" aria-current="${sc==="compose"?"page":"false"}">${SI.pen}<span><b class="lg">Écrire à un patient</b><b class="sh">Écrire</b></span></button>
     <a class="srosa" href="${ROSA_PRO_URL}" target="_blank" rel="noopener" title="Ouvre votre agenda Rosa (connexion avec votre propre compte Rosa)">${SI.cal}<span>Rosa</span>${SI.ext}</a>
     <div class="ddwrap"><button class="savbtn" id="dd-me-b" aria-haspopup="true" aria-expanded="false" aria-controls="dd-me" aria-label="Mon compte : ${who}" aria-current="${["settings","help"].includes(sc)?"page":"false"}">${av}</button>${meMenu}</div>
@@ -2077,6 +2136,7 @@ function staffHelpHTML(){
    ["Réponses types","Dans une demande, le bouton 💬 à côté de la zone de message insère un texte prêt (le prénom du patient est ajouté). Créez les vôtres dans Moi → Mes réponses types."],
    ["Le classeur du centre","Le centre → Classeur : numéros utiles, procédures et documents. Toute l'équipe peut ajouter et modifier les fiches."],
    ["Le menu « Le centre »","Il regroupe ce qui concerne tout le centre : Actualités, Équipe, Classeur, Inventaire, Congés, Comptes à valider (selon votre rôle). Le chiffre rouge indique ce qui attend."],
+   ["Ne pas être dérangé(e)","Touchez la cloche en haut de l'écran (à côté de « Écrire à un patient »). « Pause des notifications » : 1 heure, jusqu'à demain 8 h ou jusqu'à ce que vous la retiriez ; les demandes arrivent toujours dans l'app et vous recevez un résumé à la fin de la pause. « Je suis absent(e) » : vos alertes vont au collègue choisi et les patients reçoivent un message automatique. Cloche barrée orange = en pause ; rouge = absent(e)."],
    ["Rappel avant l'échéance d'une tâche","Le centre → Tâches : mettez une échéance, cochez « Recevoir un rappel par e-mail » et choisissez quand (le jour même, la veille, 48 h, 72 h ou 1 semaine avant). L'e-mail part à 8 h vers la personne qui doit faire la tâche. Vous pouvez changer le rappel d'une tâche existante avec la petite cloche 🔔. Les tâches sont classées de la plus urgente à la moins urgente."],
    ["Ordinateur de confiance (accueil)","Au moment du code de sécurité, cochez « Faire confiance à cet ordinateur » : pendant 90 jours, l'e-mail et le mot de passe suffisent sur cet ordinateur, avec déconnexion après 2 heures d'inactivité. Uniquement sur un ordinateur du centre. Pour le retirer : Mon profil et notifications → Ordinateurs de confiance."],
    ["Valider les comptes des patients","Seul un administrateur valide les nouveaux comptes et les enfants ajoutés par un parent (Le centre → Comptes à valider). Un administrateur peut donner ces droits à n'importe quel membre de l'équipe (secrétariat compris) : Le centre → Équipe → case « Administrateur ». La personne garde son rôle."],
@@ -2096,6 +2156,7 @@ function renderStaff(a){
   $("#logout").onclick=()=>{ closeDD(); logout(); };
   const c=$("#dd-centre-b"); if(c) c.onclick=e=>{ e.stopPropagation(); openDD("dd-centre"); };
   $("#dd-me-b").onclick=e=>{ e.stopPropagation(); openDD("dd-me"); };
+  const ab=$("#avail-b"); if(ab) ab.onclick=e=>{ e.stopPropagation(); closeDD(); openAvail(); };
   $$("[data-dd]").forEach(b=>b.onclick=e=>{ e.stopPropagation(); openDD(b.dataset.dd); });
   const bk=$(".ddback"); if(bk) bk.onclick=closeDD;
   $$(".ddrosa").forEach(l=>l.addEventListener("click",()=>closeDD()));
@@ -2625,8 +2686,8 @@ function settingsHTML(){
    ${versionHTML()}
   </div>`;
 }
-function awayDefaultText(){
-  const u=$("#s-until").value, fw=S.team.find(t=>t.id===$("#s-fw").value);
+function awayDefaultText(u=$("#s-until")?.value, fwId=$("#s-fw")?.value){
+  const fw=S.team.find(t=>t.id===fwId);
   const until=u?` jusqu'au ${new Date(u+"T12:00").toLocaleDateString(LOC,{weekday:"long",day:"numeric",month:"long"})} inclus`:"";
   return `Bonjour,\nJe suis absent(e)${until}. Votre message a bien été reçu${fw?` et sera traité par ${(fw.first_name||"")+" "+(fw.last_name||"")}`:" et sera traité à mon retour"}.\nPour une question qui ne peut pas attendre, appelez le secrétariat au 02 781 18 75. Urgence vitale : 112.`;
 }
@@ -2654,7 +2715,7 @@ function bindSettings(){
       away_message:am&&am.checked&&msg.value.trim()?msg.value.trim():null};
     if(row.away&&!row.forward_to&&!row.away_message) return toast(am?"Choisissez un collègue, ou activez le message automatique.":"Choisissez le collègue qui recevra vos notifications.");
     if(row.away_until&&row.away_until<new Date().toISOString().slice(0,10)) return toast("La date de retour est déjà passée.");
-    if(await run(()=>sb.from("staff_settings").upsert(row),"Enregistré")) S.settings=row;
+    if(await run(()=>sb.from("staff_settings").upsert(row),"Enregistré")){ S.settings={...(S.settings||{}),...row}; render(); }
   };
 }
 
