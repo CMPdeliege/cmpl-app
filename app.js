@@ -771,13 +771,13 @@ async function loadStaff(){
   const ids=[...new Set(S.reqs.map(r=>r.patient_id))];
   const tasks=[];
   if(ids.length) tasks.push(sb.from("profiles").select("id,first_name,last_name,birth_date,phone,extra_contacts,contact_note").in("id",ids).then(r=>{ for(const p of r.data||[]) S.profiles[p.id]=p; }));
-  if(role==="secretariat"||role==="admin") tasks.push(sb.from("profiles").select("id,first_name,last_name,birth_date,phone,created_at").eq("role","patient").eq("status","pending").order("created_at").then(r=>S.pending=r.data||[]));
+  if(role==="admin") tasks.push(sb.from("profiles").select("id,first_name,last_name,birth_date,phone,created_at").eq("role","patient").eq("status","pending").order("created_at").then(r=>S.pending=r.data||[]));
   tasks.push(sb.from("profiles").select("id,first_name,last_name,role,provider_id,status,created_at").neq("role","patient").then(r=>S.team=r.data||[]));
   tasks.push(sb.from("motif_durations").select("motif,minutes").then(r=>{ S.durations=Object.fromEntries((r.data||[]).map(d=>[d.motif,d.minutes])); }));
   tasks.push(sb.from("staff_settings").select("*").eq("user_id",S.me.id).maybeSingle().then(r=>S.settings=r.data));
   if(role==="secretariat"||role==="admin"||role==="gestion") tasks.push(sb.from("announcements").select("*").order("published_at",{ascending:false}).limit(100).then(r=>S.allNews=r.data||[]));
   if(role==="secretariat"||role==="admin"||role==="gestion") tasks.push(sb.rpc("news_audience").then(r=>S.audience=r.data));
-  if(role==="secretariat"||role==="admin") tasks.push(sb.from("children").select("id,first_name,last_name,birth_date,status,created_by,created_at").eq("status","pending").is("removed_at",null).order("created_at").then(r=>S.pendingKids=r.data||[]));
+  if(role==="admin") tasks.push(sb.from("children").select("id,first_name,last_name,birth_date,status,created_by,created_at").eq("status","pending").is("removed_at",null).order("created_at").then(r=>S.pendingKids=r.data||[]));
   tasks.push(sb.from("tasks").select("*").order("created_at",{ascending:false}).limit(500).then(r=>S.tasks=r.data||[]));
   tasks.push(loadInventory());
   tasks.push(loadLeaves());
@@ -801,7 +801,7 @@ async function refresh(){
   syncLang(); syncTextSize();
   S.mfa=null;
   if(S.me.status==="active"&&S.me.role!=="patient"){
-    if(idleTooLong()){ await logout(IDLE_MSG); return; }
+    if(idleTooLong()){ await logout(idleMsg()); return; }
     const {data:aal}=await sb.auth.mfa.getAuthenticatorAssuranceLevel();
     if(!aal||aal.currentLevel!=="aal2"){ lockDone=true; S.mfa={hasFactor:aal&&aal.nextLevel==="aal2"}; render(); return; }
     markActive();
@@ -836,13 +836,14 @@ function syncLang(){
    Ordinateur (souvent partagé, à l'accueil) : 30 minutes.
    Téléphone ou tablette (personnel, protégé par son propre verrouillage) : 8 heures. */
 const ON_PHONE=matchMedia("(pointer:coarse)").matches;
-const IDLE_MS=(ON_PHONE?8*60:30)*60*1000;
-const IDLE_MSG=`Vous avez été déconnecté après ${ON_PHONE?"8 heures":"30 minutes"} d'inactivité.`;
+// Ordinateur de confiance (poste du centre) : 2 heures
+const idleMs = () => (ON_PHONE?8*60:trustGet()?120:30)*60*1000;
+const idleMsg = () => `Vous avez été déconnecté après ${ON_PHONE?"8 heures":trustGet()?"2 heures":"30 minutes"} d'inactivité.`;
 function markActive(){ try{ localStorage.setItem("cmpl_last_active", String(Date.now())); }catch(e){} }
-function idleTooLong(){ try{ const t=+localStorage.getItem("cmpl_last_active"); return t>0 && Date.now()-t>IDLE_MS; }catch(e){ return false; } }
+function idleTooLong(){ try{ const t=+localStorage.getItem("cmpl_last_active"); return t>0 && Date.now()-t>idleMs(); }catch(e){ return false; } }
 let lastAct=Date.now(), lastSaved=0;
 ["pointerdown","keydown","touchstart","scroll"].forEach(ev=>addEventListener(ev,()=>{ lastAct=Date.now(); if(lastAct-lastSaved>60000){ lastSaved=lastAct; markActive(); } },{passive:true}));
-setInterval(()=>{ if(S.me&&S.me.role!=="patient"&&S.session&&Date.now()-lastAct>IDLE_MS) logout(IDLE_MSG); },60000);
+setInterval(()=>{ if(S.me&&S.me.role!=="patient"&&S.session&&Date.now()-lastAct>idleMs()) logout(idleMsg()); },60000);
 
 /* ---------- équipe : double authentification ---------- */
 /* ---------- Face ID (app iPhone) : remplace l'application d'authentification ----------
@@ -935,6 +936,52 @@ function bindFaceIdCard(){
     }catch(e){ if(e&&e.code!=="CANCELED") toast(bioName()+" : lecture impossible. Désactivez puis réactivez "+bioName()+"."); } };
 }
 
+/* ---------- ordinateur de confiance (poste du centre) ----------
+   Sur un ordinateur du centre coché « de confiance », un appareil de double authentification
+   propre à cet ordinateur est créé : pendant 90 jours, e-mail + mot de passe suffisent.
+   Chaque ordinateur de confiance est listé dans Mon profil et peut être retiré à tout moment
+   (il est aussi effacé automatiquement par la base après 90 jours). */
+const TRUST_DAYS=90, TRUST_NAME="Ordinateur de confiance";
+const trustKey = () => "cmpl_trust_"+(S.session?.user?.id||"");
+function trustRaw(){ try{ return JSON.parse(localStorage.getItem(trustKey())||"null"); }catch(e){ return null; } }
+function trustGet(){ if(IS_NATIVE) return null; const t=trustRaw(); return t&&t.f&&t.s&&t.exp>Date.now()?t:null; }
+function trustDrop(){ try{ localStorage.removeItem(trustKey()); }catch(e){} }
+const isTrustFactor = f => (f.friendly_name||"").startsWith(TRUST_NAME);
+async function trustSetup(){
+  const d=new Date(), nm=`${TRUST_NAME} ${d.toLocaleDateString("fr-BE")} ${Math.random().toString(36).slice(2,6)}`;
+  const {data,error}=await sb.auth.mfa.enroll({factorType:"totp",issuer:"Centre Médical Prince de Liège",friendlyName:nm});
+  if(error) throw error;
+  const v=await sb.auth.mfa.challengeAndVerify({factorId:data.id,code:await totpCode(data.totp.secret)});
+  if(v.error){ await sb.auth.mfa.unenroll({factorId:data.id}).catch(()=>{}); throw v.error; }
+  try{ localStorage.setItem(trustKey(),JSON.stringify({f:data.id,s:data.totp.secret,exp:Date.now()+TRUST_DAYS*864e5,name:nm})); }catch(e){}
+}
+// après une double authentification réussie : ancien appareil expiré à retirer, nouvelle confiance à créer
+async function afterMfa(wantTrust){
+  const old=trustRaw();
+  if(old&&old.f&&!(old.exp>Date.now())){ await sb.auth.mfa.unenroll({factorId:old.f}).catch(()=>{}); trustDrop(); }
+  if(wantTrust&&!trustGet()){ try{ await trustSetup(); toast("Cet ordinateur est maintenant de confiance pour 90 jours"); }
+    catch(e){ console.error(e); toast("Ordinateur de confiance : activation impossible ("+frError(e)+")"); } }
+}
+async function trustedFactors(){ const {data}=await sb.auth.mfa.listFactors(); return (data?.totp||[]).filter(f=>f.status==="verified"&&isTrustFactor(f)); }
+function trustCardHTML(){
+  if(IS_NATIVE) return "";
+  const L2=S.trustList; if(!L2&&!S.trustLoading){ S.trustLoading=true; trustedFactors().then(l=>{ S.trustList=l; }).catch(()=>{ S.trustList=[]; }).finally(()=>{ S.trustLoading=false; if(S.cscreen==="settings") render(); }); }
+  const mine=trustGet(), list=L2||[];
+  return `<section class="card"><h3>Ordinateurs de confiance</h3>
+   <p class="hint">Sur un ordinateur de confiance (poste du centre), l'e-mail et le mot de passe suffisent pendant 90 jours, sans code de sécurité. Déconnexion après 2 heures d'inactivité. Retirez un ordinateur dès qu'il quitte le centre ou en cas de doute.</p>
+   ${!L2?`<p class="hint">Chargement…</p>`:list.length?`<div class="list">${list.map(f=>`<div class="medrow"><div class="ic">${SI.out||IC.user}</div><div><b>${esc(f.friendly_name.replace(/ [a-z0-9]{4}$/,""))}</b><small>${mine&&mine.f===f.id?"Cet ordinateur · ":""}ajouté le ${fmt(f.created_at)} · ${(()=>{ const left=Math.ceil((new Date(f.created_at).getTime()+TRUST_DAYS*864e5-Date.now())/864e5); return left>0?`encore ${left} jour${left>1?"s":""}`:"expiré"; })()}</small></div><div class="acts"><button class="linkbtn" style="font-size:12px;color:var(--danger)" data-trdel="${f.id}">Retirer</button></div></div>`).join("")}</div>`
+   :`<p class="hint">Aucun ordinateur de confiance.${ON_PHONE?"":" Pour en ajouter un, cochez « Faire confiance à cet ordinateur » au moment du code de sécurité."}</p>`}
+   ${!mine&&!ON_PHONE&&L2?`<div class="btnrow"><button class="btn ghost" id="tr-add">Faire confiance à cet ordinateur</button></div>`:""}</section>`;
+}
+function bindTrustCard(){
+  $$("[data-trdel]").forEach(b=>b.onclick=async()=>{ if(b.dataset.sure!=="1"){ b.dataset.sure="1"; b.textContent="Confirmer ?"; return; }
+    b.disabled=true; const {error}=await sb.auth.mfa.unenroll({factorId:b.dataset.trdel});
+    if(error){ b.disabled=false; toast("Retrait impossible : "+frError(error)); return; }
+    const m=trustRaw(); if(m&&m.f===b.dataset.trdel) trustDrop();
+    S.trustList=null; toast("Ordinateur retiré"); render(); });
+  const add=$("#tr-add"); if(add) add.onclick=async()=>{ add.disabled=true; await afterMfa(true); S.trustList=null; render(); };
+}
+
 function renderMfa(a){
   const enroll=!S.mfa.hasFactor;
   // déjà affiché : ne pas recréer (sinon le code QR déjà scanné serait remplacé par un nouveau)
@@ -949,6 +996,7 @@ function renderMfa(a){
    ${enroll?`<ol class="legal" style="margin:0;padding-left:18px"><li>Installez sur votre téléphone une application d'authentification : <b>Google Authenticator</b> ou <b>Microsoft Authenticator</b> (gratuites).</li><li>Dans l'application, choisissez « Ajouter un compte », puis « Scanner un code QR ».</li><li>Scannez le code ci-dessous, puis entrez le code à 6 chiffres affiché.</li></ol>
    <div id="qr" style="display:grid;place-items:center;min-height:200px"><span class="hint">Préparation du code…</span></div>`:""}
    <label class="fld" for="mfa-code">Code à 6 chiffres<input id="mfa-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456"></label>
+   ${IS_NATIVE?"":`<label class="chk2" style="align-items:flex-start"><input type="checkbox" id="mfa-trust"> <span>Faire confiance à cet ordinateur (poste du centre)<small class="hint" style="display:block;margin-top:2px">Pendant 90 jours, l'e-mail et le mot de passe suffiront ici. Déconnexion après 2 heures d'inactivité. Jamais sur un ordinateur personnel ou public.</small></span></label>`}
    <div id="mfa-msg"></div>
    <button class="btn full" id="mfa-go">${enroll?"Activer":"Valider"}</button>
   </div>
@@ -986,7 +1034,14 @@ function renderMfa(a){
       // le code est essayé sur chacun, l'application d'authentification d'abord
       const vf=(lf?.totp||[]).filter(f=>f.status==="verified");
       const isBio=f=>/^(Face ID|Touch ID)/.test(f.friendly_name||"");
-      factorIds=[...vf.filter(f=>!isBio(f)),...vf.filter(isBio)].map(f=>f.id); factorId=factorIds[0];
+      factorIds=[...vf.filter(f=>!isBio(f)&&!isTrustFactor(f)),...vf.filter(isBio),...vf.filter(isTrustFactor)].map(f=>f.id); factorId=factorIds[0];
+      // ordinateur de confiance : connexion sans code
+      const tr=trustGet();
+      if(tr){ if(vf.some(f=>f.id===tr.f)){ const z=$("#mfa-msg"); if(z) z.innerHTML=`<p class="hint">Ordinateur de confiance : connexion…</p>`;
+          const v=await sb.auth.mfa.challengeAndVerify({factorId:tr.f,code:await totpCode(tr.s)});
+          if(!v.error){ markActive(); lastAct=Date.now(); await refresh(); return; }
+          if(z) z.innerHTML=""; }
+        trustDrop(); }   // retiré entre-temps (depuis Mon profil ou après 90 jours) : code normal
     }
   })();
   $("#mfa-code").focus();
@@ -998,7 +1053,8 @@ function renderMfa(a){
     let error=null;
     for(const fid of (factorIds.length?factorIds:[factorId])){ ({error}=await sb.auth.mfa.challengeAndVerify({factorId:fid,code})); if(!error) break; if(!/invalid|expired/i.test(error.message||"")) break; }
     if(error){ e.target.disabled=false; return msg(/invalid|expired/i.test(error.message)?"Code incorrect ou expiré. Entrez le code actuellement affiché.":frError(error)); }
-    markActive(); lastAct=Date.now(); toast("Accès sécurisé activé"); await refresh();
+    markActive(); lastAct=Date.now(); toast("Accès sécurisé activé");
+    await afterMfa(!!$("#mfa-trust")?.checked); await refresh();
   };
 }
 
@@ -1253,7 +1309,7 @@ function renderBlocked(a){
   <div class="closed"><b>Compte non validé</b><span>Ce compte n'a pas pu être validé. Contactez le secrétariat au 02 781 18 75.</span></div>`;
   $("#logout").onclick=logout;
 }
-async function logout(reason){ if(typeof reason!=="string") await pushForget(); stopRealtime(); await sb.auth.signOut(); updateBadges(0); const keep=savedLang(); if(keep&&keep!==L) applyLang(keep); S.session=null; S.me=null; S.mfa=null; S.screen="home"; S.cscreen="inbox"; try{ localStorage.removeItem("cmpl_last_active"); }catch(e){} render(); if(typeof reason==="string") toast(reason); }
+async function logout(reason){ if(typeof reason!=="string") await pushForget(); stopRealtime(); await sb.auth.signOut(); updateBadges(0); const keep=savedLang(); if(keep&&keep!==L) applyLang(keep); S.session=null; S.me=null; S.mfa=null; S.trustList=null; S.screen="home"; S.cscreen="inbox"; try{ localStorage.removeItem("cmpl_last_active"); }catch(e){} render(); if(typeof reason==="string") toast(reason); }
 
 /* =====================================================================
    PATIENT
@@ -1701,7 +1757,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261019l";
+const APP_VERSION="20261019m";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -1735,7 +1791,7 @@ function centreItems(){
   it.push({cs:"binder",ic:SI.book,t:"Classeur",d:"Numéros utiles, procédures, documents",n:0});
   it.push({cs:"inventory",ic:SI.box,t:"Inventaire",d:"Matériel à commander",n:invOpen()});
   it.push({cs:"leaves",ic:SI.cal,t:"Congés",d:"Absences et congés de l'équipe",n:0});
-  if(isDesk()) it.push({cs:"accounts",ic:SI.ucheck,t:"Comptes à valider",d:"Nouveaux patients",n:S.pending.length+(S.pendingKids||[]).length});
+  if(S.me.role==="admin") it.push({cs:"accounts",ic:SI.ucheck,t:"Comptes à valider",d:"Nouveaux patients",n:S.pending.length+(S.pendingKids||[]).length});
   return it;
 }
 const badge = n => n?`<span class="sn" aria-label="${n} en attente">${n}</span>`:"";
@@ -2018,6 +2074,9 @@ function staffHelpHTML(){
    ["Réponses types","Dans une demande, le bouton 💬 à côté de la zone de message insère un texte prêt (le prénom du patient est ajouté). Créez les vôtres dans Moi → Mes réponses types."],
    ["Le classeur du centre","Le centre → Classeur : numéros utiles, procédures et documents. Toute l'équipe peut ajouter et modifier les fiches."],
    ["Le menu « Le centre »","Il regroupe ce qui concerne tout le centre : Actualités, Équipe, Classeur, Inventaire, Congés, Comptes à valider (selon votre rôle). Le chiffre rouge indique ce qui attend."],
+   ["Rappel avant l'échéance d'une tâche","Le centre → Tâches : mettez une échéance, cochez « Recevoir un rappel par e-mail » et choisissez quand (le jour même, la veille, 48 h, 72 h ou 1 semaine avant). L'e-mail part à 8 h vers la personne qui doit faire la tâche. Vous pouvez changer le rappel d'une tâche existante avec la petite cloche 🔔. Les tâches sont classées de la plus urgente à la moins urgente."],
+   ["Ordinateur de confiance (accueil)","Au moment du code de sécurité, cochez « Faire confiance à cet ordinateur » : pendant 90 jours, l'e-mail et le mot de passe suffisent sur cet ordinateur, avec déconnexion après 2 heures d'inactivité. Uniquement sur un ordinateur du centre. Pour le retirer : Mon profil et notifications → Ordinateurs de confiance."],
+   ["Valider les comptes des patients","Seul un administrateur valide les nouveaux comptes et les enfants ajoutés par un parent (Le centre → Comptes à valider). L'administrateur peut donner ce rôle à un prestataire : Le centre → Équipe → case « Administrateur »."],
    ["Face ID sur l'iPhone","Dans l'app iPhone : Mon profil et notifications → Face ID. Ensuite l'app se déverrouille avec votre visage, sans code."],
    ["Un problème avec l'app","Prévenez l'administrateur du centre en précisant l'écran concerné (une capture d'écran aide beaucoup)."]];
   return `<div class="chead"><div><h1>Aide</h1><p>Les réponses aux questions les plus fréquentes de l'équipe.</p></div></div>
@@ -2326,11 +2385,33 @@ const byDue = (a,b) => (a.due_date||"9999")<(b.due_date||"9999")?-1:(a.due_date|
 function dueTag(t){ if(!t.due_date||t.done_at) return ""; const td=todayISO();
   const d=new Date(t.due_date+"T12:00").toLocaleDateString(LOC,{weekday:"short",day:"numeric",month:"short"});
   return t.due_date<td?`<span class="due late">En retard · ${d}</span>`:t.due_date===td?`<span class="due haute">Aujourd'hui</span>`:`<span class="due">Pour le ${d}</span>`; }
+const REMIND={0:"Le jour même",1:"La veille",2:"48 h avant",3:"72 h avant",7:"1 semaine avant"};
+const remindOpts = v => Object.entries(REMIND).map(([k,l])=>`<option value="${k}" ${String(v)===k?"selected":""}>${l}</option>`).join("");
+// regroupement par urgence (échéance)
+function dueGroup(t){ if(!t.due_date) return 4; const td=todayISO(); if(t.due_date<td) return 0; if(t.due_date===td) return 1;
+  const w=new Date(); w.setDate(w.getDate()+7); const wk=`${w.getFullYear()}-${String(w.getMonth()+1).padStart(2,"0")}-${String(w.getDate()).padStart(2,"0")}`;
+  return t.due_date<=wk?2:3; }
+const DUE_GROUPS=["En retard","Aujourd'hui","Dans les 7 jours","Plus tard","Sans échéance"];
+function taskRowHTML(t){
+  const canRem=!t.done_at&&t.due_date&&t.due_date>=todayISO();
+  return `<div class="taskrow ${t.done_at?"done":""}">
+     <button class="tcheck" data-tdone="${t.id}" aria-pressed="${!!t.done_at}" aria-label="${t.done_at?"Marquer comme à faire":"Marquer comme faite"}">${t.done_at?"✓":""}</button>
+     <div><b>${esc(t.title)}</b>${t.notes?`<p class="tnotes">${esc(t.notes)}</p>`:""}${taskLinkHTML(t)}
+      <small>${t.assigned_group?"Pour : secrétariat":"Pour : "+esc(teamName(t.assigned_to))} · de ${esc(teamName(t.created_by))} · ${fmt(t.created_at)}${t.done_at?` · faite ${fmt(t.done_at)} par ${esc(teamName(t.done_by))}`:""}</small>${dueTag(t)}
+      ${canRem?`<label class="tremind${t.remind_days!=null?" on":""}" title="Rappel par e-mail à 8 h à la personne qui doit faire la tâche"><span aria-hidden="true">🔔</span><select data-trem="${t.id}" aria-label="Rappel par e-mail"><option value="">Pas de rappel</option>${remindOpts(t.remind_days)}</select>${t.reminded_at?`<em>envoyé</em>`:""}</label>`:""}</div>
+     ${t.created_by===S.me.id?`<button class="linkbtn tdel" data-tdel="${t.id}">Supprimer</button>`:"<span></span>"}</div>`;
+}
+function taskListHTML(list,grouped){
+  if(!grouped) return list.map(taskRowHTML).join("");
+  let out="", g=-1;
+  for(const t of list){ const k=dueGroup(t); if(k!==g){ g=k; out+=`<h4 class="tgroup g${k}">${DUE_GROUPS[k]} <span>${list.filter(x=>dueGroup(x)===k).length}</span></h4>`; } out+=taskRowHTML(t); }
+  return out;
+}
 function taskLinkHTML(t){ if(!t.patient_id&&!t.child_id) return "";
   const nm=t.child_id?kidName(t.child_id):patientName(t.patient_id), bd=t.child_id?S.children[t.child_id]?.birth_date:S.profiles[t.patient_id]?.birth_date;
   return `<span class="tasklink">${IC.user}<b>${esc(nm)}</b>${bd?` · né(e) le ${fmtDate(bd)}`:""}${t.child_id?" · enfant":""}</span>`; }
 function tasksHTML(){
-  const D=S.tdraft||(S.tdraft={title:"",notes:"",due:"",to:"me",patient:null,q:""}), V=S.tview||"todo";
+  const D=S.tdraft||(S.tdraft={title:"",notes:"",due:"",to:"me",patient:null,q:"",remind:null}), V=S.tview||"todo";
   const all=S.tasks||[], todo=myTasks().sort(byDue), given=all.filter(t=>!t.done_at&&t.created_by===S.me.id&&!forMe(t)).sort(byDue),
         done=all.filter(t=>t.done_at).sort((a,b)=>new Date(b.done_at)-new Date(a.done_at));
   const list=V==="todo"?todo:V==="given"?given:done;
@@ -2343,6 +2424,8 @@ function tasksHTML(){
    <label class="fld">Note (facultatif)<textarea id="tk-notes" rows="3" maxlength="2000" placeholder="Ex. Vérifier sa prise de sang et l'appeler si anomalie">${esc(D.notes)}</textarea></label>
    <div class="row2"><label class="fld">Pour<select id="tk-to"><option value="me" ${D.to==="me"?"selected":""}>Moi</option><option value="secretariat" ${D.to==="secretariat"?"selected":""}>Secrétariat (toute l'équipe du secrétariat)</option>${others.map(t=>`<option value="${t.id}" ${D.to===t.id?"selected":""}>${esc(`${t.first_name||""} ${t.last_name||""}`.trim())} · ${ROLE_LABEL[t.role]}</option>`).join("")}</select></label>
    <label class="fld">Échéance (facultatif)<input id="tk-due" type="date" value="${esc(D.due)}"></label></div>
+   ${D.due?`<div class="tkrem"><label class="chk2"><input type="checkbox" id="tk-remon" ${D.remind!=null?"checked":""}> Recevoir un rappel par e-mail</label>
+    ${D.remind!=null?`<select id="tk-rem" aria-label="Quand envoyer le rappel">${remindOpts(D.remind)}</select><small class="hint">Envoyé à 8 h à ${D.to==="me"?"vous":D.to==="secretariat"?"tout le secrétariat":"la personne choisie"}. L'e-mail ne contient ni le titre de la tâche ni le nom du patient.</small>`:""}</div>`:""}
    <div class="fld">Patient lié (facultatif)
    ${pt?`<div class="recipient">${`<div class="ic">${IC.user}</div>`}<div><b>${esc(`${pt.first_name||""} ${pt.last_name||""}`)}</b><small>Né(e) le ${fmtDate(pt.birth_date)}${pt.child?" · enfant":""}</small></div><button type="button" class="linkbtn" id="tk-unpick">Retirer</button></div>`
    :`<input id="tk-q" type="text" autocomplete="off" placeholder="Nom ou prénom (au moins 2 lettres)" value="${esc(D.q)}"><div id="tk-res"></div>`}</div>
@@ -2350,11 +2433,7 @@ function tasksHTML(){
   </section>
   <section>
    <div class="seg" role="group" aria-label="Afficher" style="margin-bottom:10px"><button data-tv="todo" aria-pressed="${V==="todo"}">À faire (${todo.length})</button><button data-tv="given" aria-pressed="${V==="given"}">Confiées (${given.length})</button><button data-tv="done" aria-pressed="${V==="done"}">Terminées</button></div>
-   <div class="list tasks">${list.length?list.map(t=>`<div class="taskrow ${t.done_at?"done":""}">
-     <button class="tcheck" data-tdone="${t.id}" aria-pressed="${!!t.done_at}" aria-label="${t.done_at?"Marquer comme à faire":"Marquer comme faite"}">${t.done_at?"✓":""}</button>
-     <div><b>${esc(t.title)}</b>${t.notes?`<p class="tnotes">${esc(t.notes)}</p>`:""}${taskLinkHTML(t)}
-      <small>${t.assigned_group?"Pour : secrétariat":"Pour : "+esc(teamName(t.assigned_to))} · de ${esc(teamName(t.created_by))} · ${fmt(t.created_at)}${t.done_at?` · faite ${fmt(t.done_at)} par ${esc(teamName(t.done_by))}`:""}</small>${dueTag(t)}</div>
-     ${t.created_by===S.me.id?`<button class="linkbtn tdel" data-tdel="${t.id}">Supprimer</button>`:"<span></span>"}</div>`).join("")
+   <div class="list tasks">${list.length?taskListHTML(list,V!=="done")
      :`<div class="empty">${V==="todo"?"Rien à faire pour l'instant.":V==="given"?"Aucune tâche confiée en cours.":"Aucune tâche terminée (elles sont effacées après 90 jours)."}</div>`}</div>
   </section></div>`;
 }
@@ -2363,8 +2442,10 @@ function bindTasks(){
   const upd=()=>{ add.disabled=!D.title.trim(); };
   $("#tk-title").oninput=e=>{ D.title=e.target.value; upd(); };
   $("#tk-notes").oninput=e=>{ D.notes=e.target.value; };
-  $("#tk-to").onchange=e=>{ D.to=e.target.value; };
-  $("#tk-due").onchange=e=>{ D.due=e.target.value; };
+  $("#tk-to").onchange=e=>{ D.to=e.target.value; if(D.due&&D.remind!=null) render(); };
+  $("#tk-due").onchange=e=>{ const had=!!D.due; D.due=e.target.value; if(!D.due) D.remind=null; if(had!==!!D.due) render(); };
+  const ron=$("#tk-remon"); if(ron) ron.onchange=()=>{ D.remind=ron.checked?1:null; render(); };
+  const rs=$("#tk-rem"); if(rs) rs.onchange=()=>{ D.remind=+rs.value; };
   const un=$("#tk-unpick"); if(un) un.onclick=()=>{ D.patient=null; render(); $("#tk-q")?.focus(); };
   const q=$("#tk-q");
   if(q){ let tm; const go=async()=>{ D.q=q.value; const words=norm(q.value).replace(/[*%,().]/g," ").split(/\s+/).filter(w=>w.length>=2), out=$("#tk-res");
@@ -2376,11 +2457,15 @@ function bindTasks(){
   add.onclick=async()=>{ add.disabled=true; const pt=D.patient;
     const r=await run(()=>sb.rpc("create_task",{p_title:D.title.trim(),p_notes:D.notes.trim()||null,p_due:D.due||null,
       p_assignee:D.to==="me"?S.me.id:D.to==="secretariat"?null:D.to,p_group:D.to==="secretariat"?"secretariat":null,
-      p_patient:pt&&!pt.child?pt.id:null,p_child:pt&&pt.child?pt.id:null}),"Tâche ajoutée");
+      p_patient:pt&&!pt.child?pt.id:null,p_child:pt&&pt.child?pt.id:null}),D.due&&D.remind!=null?null:"Tâche ajoutée");
     if(!r){ upd(); return; }
+    if(D.due&&D.remind!=null){ const {error}=await sb.rpc("set_task_reminder",{p_id:r.data,p_days:D.remind});
+      toast(error?"Tâche ajoutée, mais le rappel n'a pas pu être enregistré : "+frError(error):"Tâche ajoutée · rappel "+REMIND[D.remind].toLowerCase()); }
     if(pt){ if(pt.child) S.children[pt.id]=pt; else S.profiles[pt.id]=pt; }
     S.tdraft=null; S.tview=D.to==="me"||(D.to==="secretariat"&&isDesk())?"todo":"given"; await refresh(); };
   $$("[data-tv]").forEach(b=>b.onclick=()=>{ S.tview=b.dataset.tv; render(); });
+  $$("[data-trem]").forEach(sl=>sl.onchange=async()=>{ const t=S.tasks.find(x=>x.id===+sl.dataset.trem), v=sl.value===""?null:+sl.value;
+    if(await run(()=>sb.rpc("set_task_reminder",{p_id:t.id,p_days:v}),v==null?"Rappel retiré":"Rappel : "+REMIND[v].toLowerCase())){ t.remind_days=v; t.reminded_at=null; render(); } else render(); });
   $$("[data-tdone]").forEach(b=>b.onclick=async()=>{ const t=S.tasks.find(x=>x.id===+b.dataset.tdone), d=!t.done_at;
     if(await run(()=>sb.rpc("set_task_done",{p_id:t.id,p_done:d}),d?"Tâche faite":"Tâche remise à faire")){ t.done_at=d?new Date().toISOString():null; t.done_by=d?S.me.id:null; render(); } });
   $$("[data-tdel]").forEach(b=>b.onclick=async()=>{ if(b.dataset.sure!=="1"){ b.dataset.sure="1"; b.textContent="Confirmer ?"; b.style.color="var(--danger)"; return; }
@@ -2411,7 +2496,8 @@ function teamHTML(){
   ${adm?`<section class="card" style="margin-bottom:12px"><h3>Donner un rôle à un compte</h3>
    <label class="fld" for="t-search">Nom de la personne inscrite<input id="t-search" type="text" placeholder="Tapez au moins 2 lettres du nom"></label>
    <div id="t-results"></div></section>`:""}
-  <div class="list">${S.team.map(t=>`<div class="medrow">${avatarHTML(AV.get(t.id),`${t.first_name||""} ${t.last_name||""}`,32)}<div><b>${esc((t.first_name||"")+" "+(t.last_name||""))}</b><small>${ROLE_LABEL[t.role]}${t.provider_id?" · "+esc(provName(t.provider_id)):""}</small></div><div class="acts">${adm&&t.id!==S.me.id?`<button class="linkbtn" style="font-size:12px;color:var(--muted)" data-demote="${t.id}">Retirer de l'équipe</button>`:""}</div></div>`).join("")}</div>
+  <div class="list">${S.team.map(t=>`<div class="medrow">${avatarHTML(AV.get(t.id),`${t.first_name||""} ${t.last_name||""}`,32)}<div><b>${esc((t.first_name||"")+" "+(t.last_name||""))}</b><small>${ROLE_LABEL[t.role]}${t.provider_id?" · "+esc(provName(t.provider_id)):""}</small></div><div class="acts">${adm&&(t.role==="provider"||t.role==="admin")?`<label class="chk2 admchk" title="${t.id===S.me.id?"Vous ne pouvez pas retirer votre propre rôle d'administrateur":"L'administrateur valide les comptes des patients et gère l'équipe"}"><input type="checkbox" data-admin="${t.id}" ${t.role==="admin"?"checked":""} ${t.id===S.me.id||(t.role==="provider"&&!t.provider_id)?"disabled":""}> Administrateur</label>`:""}${adm&&t.id!==S.me.id?`<button class="linkbtn" style="font-size:12px;color:var(--muted)" data-demote="${t.id}">Retirer de l'équipe</button>`:""}</div></div>`).join("")}</div>
+  ${adm?`<p class="hint" style="margin-top:10px">Cochez « Administrateur » pour donner à un prestataire les droits d'administrateur : valider les comptes des patients et des enfants, gérer l'équipe. Le prestataire garde ses demandes et ses patients.</p>`:""}
   <template id="t-row"><div class="person" style="border-top:1px solid var(--line);padding-top:10px;margin-top:10px"><b class="t-name"></b><div class="pgrid"><label>Rôle<select class="t-role"><option value="secretariat">Secrétariat</option><option value="provider">Prestataire</option><option value="gestion">Administration (gestion du centre)</option><option value="admin">Administrateur</option></select></label><label>Prestataire<select class="t-prov">${provOpts("")}</select></label></div><div class="btnrow"><button class="btn t-go">Enregistrer</button></div></div></template>`;
 }
 function bindTeam(){
@@ -2426,6 +2512,12 @@ function bindTeam(){
       out.appendChild(node); });
     if(!(data||[]).length) out.innerHTML=`<p class="hint">Aucun compte trouvé. La personne doit d'abord s'inscrire dans l'app.</p>`;
   },300); };
+  $$("[data-admin]").forEach(c=>c.onchange=async()=>{ const t=S.team.find(x=>x.id===c.dataset.admin), on=c.checked;
+    const nm=`${t.first_name||""} ${t.last_name||""}`.trim();
+    if(!t.provider_id){ c.checked=!on; toast("Ce compte n'est relié à aucun prestataire."); return; }
+    c.disabled=true;
+    if(await run(()=>sb.rpc("set_staff_role",{p_user:t.id,p_role:on?"admin":"provider",p_provider:t.provider_id}),on?nm+" est maintenant administrateur":nm+" n'est plus administrateur")) await refresh();
+    else { c.checked=!on; c.disabled=false; } });
   $$("[data-demote]").forEach(b=>b.onclick=async()=>{ if(await run(()=>sb.rpc("set_staff_role",{p_user:b.dataset.demote,p_role:"patient",p_provider:null}),"Retiré de l'équipe")) await refresh(); });
 }
 
@@ -2495,6 +2587,7 @@ function settingsHTML(){
   <div class="settings">
    ${photoCardHTML("Facultatif. Visible par les patients dans les conversations, et par l'équipe.")}
    ${faceIdCardHTML()}
+   ${trustCardHTML()}
    ${textSizeHTML()}
    <section class="card"><h3>Quand me prévenir</h3><div class="pgrid">
     <label class="fld">Haute priorité (à voir en moins de 24 h)${sel("s-haute",s.haute)}</label>
@@ -2536,7 +2629,7 @@ function awayDefaultText(){
   return `Bonjour,\nJe suis absent(e)${until}. Votre message a bien été reçu${fw?` et sera traité par ${(fw.first_name||"")+" "+(fw.last_name||"")}`:" et sera traité à mon retour"}.\nPour une question qui ne peut pas attendre, appelez le secrétariat au 02 781 18 75. Urgence vitale : 112.`;
 }
 function bindSettings(){
-  bindPhotoCard(); bindPush(); bindTextSize(); bindFaceIdCard();
+  bindPhotoCard(); bindPush(); bindTextSize(); bindFaceIdCard(); bindTrustCard();
   const dc=$("#s-direct"); if(dc) dc.onchange=async()=>{ const v=dc.checked;
     if(await run(()=>sb.rpc("set_my_direct_contact",{p_ok:v}),v?"Les patients peuvent vous écrire directement":"Les demandes passeront d'abord par le secrétariat")){ const pr=P.byId(S.me.provider_id); if(pr) pr.direct_contact=v; } else dc.checked=!v; };
   $("#lv-add").onclick=async()=>{ const f=$("#lv-from").value, t=$("#lv-to").value;
