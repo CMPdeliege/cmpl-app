@@ -216,6 +216,11 @@ const VIA_SECR = {kind:"note",q:"Votre demande sera d'abord lue par le secrétar
   when:a=>{ const p=chosenProv(a); return !!p&&(p.direct_contact===false||a.deja_vu==="Non, jamais"); }};
 const ABS_NOTE = {kind:"note",q:a=>{ const p=chosenProv(a||S.answers); const x=p&&soonAbs(p.id); return x?absSentence(p.display_name,x):""; },when:a=>{ const p=chosenProv(a); return !!(p&&soonAbs(p.id)); }};
 const ABS_NOTE2 = {kind:"note",q:"Pour une demande qui ne peut pas attendre, le secrétariat peut vous aider : 02 781 18 75.",when:a=>{ const p=chosenProv(a); return !!(p&&soonAbs(p.id)); }};
+// Délai souhaité : demandé pour toutes les demandes ; l'équipe décide ensuite du délai réel
+const URG_OPTS=["Le plus tôt possible","Dans les prochains jours","Pas pressé"];
+const URG_STEP = {id:"urgence",kind:"choice",q:"Pour quand souhaitez-vous une réponse ?",options:URG_OPTS};
+const URG_NOTE = {kind:"note",q:"Cette app n'est pas faite pour les urgences vitales. Si votre demande ne peut pas attendre aujourd'hui, appelez le centre au 02 781 18 75.",when:a=>a.urgence==="Le plus tôt possible"};
+const URG_NOTE2 = {kind:"note",q:"L'équipe décidera du délai en fonction de votre demande.",when:a=>!!a.urgence};
 const POUR_STEP = {id:"pour",kind:"choice",q:"C'est pour qui ?",options:()=>pourOptions(),when:()=>kids().length>0};
 const KID_NOTE = {kind:"note",q:"Pour un enfant de moins de 16 ans : ajoutez-le d'abord dans Mon compte → Ma famille.",when:()=>!kids().length};
 const FLOWS={
@@ -223,9 +228,8 @@ const FLOWS={
   {id:"pour",kind:"choice",q:()=>`Bonjour ${S.me?.first_name||""}. Le rendez-vous est pour qui ?`,options:()=>pourOptions(),when:()=>kids().length>0},
   {id:"specialite",kind:"choice",q:"Pour quel type de consultation ?",options:()=>P.specs()},
   {id:"medecin",kind:"choice",q:"Avec qui ?",options:a=>[...P.of(a.specialite).map(P.label),"Peu importe, le premier disponible"],when:a=>P.of(a.specialite).length>1},
-  // Médecine générale : motif, délai, détails, lieu
+  // Médecine générale : motif, détails, lieu (le délai souhaité est demandé à la fin, comme pour toutes les demandes)
   {id:"motif",kind:"choice",q:"Quel est le motif principal ?",options:GP_MOTIFS,when:isGP},
-  {id:"delai",kind:"choice",q:"Pour quand ?",options:["Dès que possible","Dans les prochains jours","Pas pressé (cette semaine ou plus tard)"],when:isGP},
   {id:"details",kind:"text",q:"Décrivez en quelques mots ce qui vous amène.",placeholder:"Ex. toux depuis 5 jours, un peu de fièvre le soir",optional:true,when:isGP},
   // Autres prestataires (spécialiste, dentiste, psychologue…) : première fois ou non, et la raison
   {id:"premiere",kind:"choice",q:"Est-ce la première fois que vous consultez ce prestataire ?",options:["Oui, c'est la première fois","Non, je l'ai déjà consulté"],when:a=>!isGP(a)&&!chosenProv(a)},
@@ -269,15 +273,17 @@ FLOWS.document=[
   {id:"medecin",kind:"choice",q:"Pour qui ?",options:()=>[...P.list().map(P.label),"Le secrétariat"]},
   {id:"fichiers",kind:"files",q:"Ajoutez votre document : prenez-le en photo, scannez-le (plusieurs pages possibles) ou choisissez un PDF."},
   {id:"note",kind:"text",q:"Un mot pour accompagner le document ?",placeholder:"Ex. résultats de la prise de sang du 10 octobre",optional:true},
-  {kind:"note",q:"Le document sera vu dans les 72 heures (heures d'ouverture). Le prestataire vous répond ici ou vous propose un rendez-vous."}
+  {kind:"note",q:"Le prestataire vous répond ici ou vous propose un rendez-vous."}
 ];
+// Délai souhaité : après la dernière question de chaque demande, avant les remarques finales
+Object.keys(FLOWS).forEach(k=>{ const f=FLOWS[k]; let i=f.length; while(i>0&&f[i-1].kind==="note") i--; f.splice(i,0,URG_STEP,URG_NOTE,URG_NOTE2); });
 // Après le choix du prestataire : « Avez-vous déjà consulté… ? » (sauf rendez-vous et secrétariat)
 ["question","prescription","rapport","document"].forEach(k=>{ const i=FLOWS[k].findIndex(s=>s.id==="medecin"); FLOWS[k].splice(i+1,0,DEJA_VU); FLOWS[k].push(VIA_SECR); });
 { const i=FLOWS.rdv.findIndex(s=>s.id==="medecin"); FLOWS.rdv.splice(i+1,0,DEJA_VU); }
 ["rdv","question","prescription","rapport","document"].forEach(k=>FLOWS[k].push(ABS_NOTE,ABS_NOTE2));
 ["question","prescription","rapport","resultats","document"].forEach(k=>FLOWS[k].unshift(POUR_STEP));
 FLOWS.rdv.push(KID_NOTE); FLOWS.question.push(KID_NOTE);
-const LABELS={doc:"Document",fichiers:"Fichiers",note:"Message",de:"De",pour:"Pour",specialite:"Consultation",medecin:"Prestataire",motif:"Motif",delai:"Pour quand",details:"Détails",moment:"Disponibilités",lieu:"Lieu",
+const LABELS={doc:"Document",fichiers:"Fichiers",note:"Message",de:"De",pour:"Pour",specialite:"Consultation",medecin:"Prestataire",motif:"Motif",delai:"Pour quand",urgence:"Délai souhaité",details:"Détails",moment:"Disponibilités",lieu:"Lieu",
  sujet:"Sujet",depuis:"Depuis",texte:"Question",medicament:"Médicaments",historique:"Déjà prescrit",nouveau:"Choix",remarque:"Remarque",
  examen:"Examen",quand:"Date",demandeur:"Demandé par",contact:"Contact souhaité",
  premiere:"Première consultation",deja_vu:"Déjà consulté",raison:"Raison",destinataire:"Rapport pour",echeance:"Pour quand"};
@@ -311,7 +317,7 @@ function stLabel(r){ if(r.status==="traite") return closedLabel(r); if(newPatien
 function stClass(r){ if(r.status==="traite") return "traite"; if(newPatientMsg(r)) return "nouveau"; if(!awaitingStaff(r)) return "wait"; return r.status; }
 function stLabelP(r){ if(r.status==="traite") return closedLabel(r); if(r.last_from==="staff") return r.type==="centre"?"Message reçu":"Réponse reçue"; return r.status==="encours"?"En cours":"Envoyée"; }
 function stClassP(r){ if(r.status==="traite") return "traite"; if(r.last_from==="staff") return "reply"; return "encours"; }
-const PRIO_LABEL={haute:"Haute priorité",normale:"Pas pressé"};
+const PRIO_LABEL={haute:"Haute priorité",normale:"Normale",basse:"Pas pressé"};
 function dueHTML(r){ if(r.status==="traite") return ""; if(!awaitingStaff(r)) return `<span class="due wait">En attente de la réponse du patient</span>`;
   const late = r.due_at && new Date(r.due_at) < new Date();
   return late ? `<span class="due late">En retard · prévu ${fmtWhen(r.due_at)}</span>` : `<span class="due ${r.priority}">${PRIO_LABEL[r.priority]} · à voir avant ${r.due_at?fmtWhen(r.due_at):"—"}</span>`; }
@@ -342,7 +348,7 @@ function chatHTML(r, viewer){
     sep(r.created_at);
     const dl=answersDL(r.answers);
     h+=`<div class="msg me"><div class="bub me reqcard"><b>${TYPES[r.type].title}</b>${dl?`<dl>${dl}</dl>`:""}<span class="t">${hm(r.created_at)}</span></div></div>`;
-    if(r.status!=="traite") h+=`<div class="sys"><span>Envoyée à :</span> <b translate="no">${esc(dest)}</b><br><span>${r.priority==="haute"?"Elle sera vue dans les 24 heures (heures d'ouverture).":"Elle sera vue dans les 72 heures (heures d'ouverture)."}</span> <span>${r.provider_id?"Le délai de réponse est ensuite décidé par le prestataire.":"Le délai de réponse est ensuite décidé par le centre."}</span><br>Urgence vitale : 112.</div>`;
+    if(r.status!=="traite") h+=`<div class="sys"><span>Envoyée à :</span> <b translate="no">${esc(dest)}</b><br><span>${r.priority==="haute"?"Elle sera vue dans les 24 heures (heures d'ouverture).":r.priority==="basse"?"Elle sera vue dès que possible (heures d'ouverture).":"Elle sera vue dans les 72 heures (heures d'ouverture)."}</span> <span>${r.provider_id?"Le délai de réponse est ensuite décidé par le prestataire.":"Le délai de réponse est ensuite décidé par le centre."}</span><br>Urgence vitale : 112.</div>`;
   }
   for(const m of msgsOf(r)){
     sep(m.created_at);
@@ -1451,7 +1457,7 @@ function openTour(){
 }
 const FAQ=[
  ["Puis-je utiliser l'app en cas d'urgence ?","Non. Urgence vitale : appelez le 112. Pour une question urgente pendant les heures d'ouverture, appelez le centre au 02 781 18 75."],
- ["Dans combien de temps aurai-je une réponse ?","Dans les 24 heures pour une demande urgente (un symptôme, un rendez-vous pour aujourd'hui), dans les 72 heures pour le reste. Ces délais comptent uniquement les heures d'ouverture du centre."],
+ ["Dans combien de temps aurai-je une réponse ?","À la fin de chaque demande, vous indiquez pour quand vous souhaitez une réponse. L'équipe décide ensuite du délai en fonction du contenu de votre demande : en général dans les 24 heures pour « Le plus tôt possible » et dans les 72 heures pour « Dans les prochains jours ». Ces délais comptent uniquement les heures d'ouverture du centre."],
  ["Qui lit mes messages ?","Uniquement l'équipe du centre : le prestataire concerné et le secrétariat. Vos données restent en Europe, sont protégées et ne sont jamais vendues."],
  ["Comment prendre rendez-vous ?","Touchez « Demander un rendez-vous », choisissez la consultation et le motif. Le secrétariat vous répond dans la conversation avec une proposition. Vous pouvez aussi réserver en ligne sur Rosa (rosa.be)."],
  ["Pourquoi ma demande est-elle passée par le secrétariat ?","Certains prestataires préfèrent que les demandes passent d'abord par le secrétariat. C'est aussi le cas si vous n'avez encore jamais consulté ce prestataire. Le secrétariat lit votre demande et la transmet à la bonne personne."],
@@ -1758,7 +1764,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261020c";
+const APP_VERSION="20261021a";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -2220,7 +2226,7 @@ function detailHTML(){
     :`<div class="pinfo"><span>Né(e) le <b>${fmtDate(p.birth_date)}</b></span><span>Tél. <b>${esc(p.phone||"—")}</b></span></div>`}
     ${extraContactsHTML(p)}
     <div class="meta" style="margin-top:6px"><span class="tag">${TYPES[r.type].label}</span>${durHTML(r)}<span class="pill st-${stClass(r)}">${stLabel(r)}</span><span>Reçue ${fmt(r.created_at)} · ${esc(reqWho(r))}</span></div></div></div>
-   ${open?`<div class="prioedit"><span class="hint">Priorité</span>${["haute","normale"].map(k=>`<button class="dec p-${k}" aria-pressed="${r.priority===k}" data-prio="${k}">${PRIO_LABEL[k]}</button>`).join("")}</div><div>${dueHTML(r)}</div>`:""}
+   ${open?`<div class="prioedit"><span class="hint">Priorité</span>${["haute","normale","basse"].map(k=>`<button class="dec p-${k}" aria-pressed="${r.priority===k}" data-prio="${k}">${PRIO_LABEL[k]}</button>`).join("")}</div><div>${dueHTML(r)}</div>`:""}
    ${r.purged_at?"":`<dl class="qa">${Object.entries(r.answers||{}).filter(([k])=>!HIDDEN_KEYS.has(k)).map(([k,v])=>`<div><dt>${esc(LABELS[k]||k)}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>`}
    ${items.some(i=>i.decision)?`<div class="itemlist">${items.filter(i=>i.decision).map(i=>`<div><span>${esc(i.label)}<small class="qty">${qtyText(i.quantity||1)}</small></span><span class="dtag ${i.decision==="accorde"?"ok":"no"}">${i.decision==="accorde"?"Accordé":"Refusé"}</span></div>`).join("")}</div>`:""}
    ${msgsOf(r).length||r.purged_at||!open?chatHTML(r,"centre"):""}

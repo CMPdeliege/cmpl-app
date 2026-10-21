@@ -205,6 +205,8 @@ textarea:focus,input[type=text]:focus{border-color:var(--accent);outline:none}
 .dec.p-urgent[aria-pressed="true"]{background:var(--danger);border-color:var(--danger);color:var(--surface)}
 .dec.p-haute[aria-pressed="true"]{background:var(--warn);border-color:var(--warn);color:var(--surface)}
 .dec.p-normale[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+.dec.p-basse[aria-pressed="true"]{background:var(--muted);border-color:var(--muted);color:var(--bg)}
+.due.basse{background:transparent;border:1px solid var(--line)}
 .settings{display:flex;flex-direction:column;gap:12px;max-width:720px}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px;display:flex;flex-direction:column;gap:10px}
 .card h3{font-size:17px}
