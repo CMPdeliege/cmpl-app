@@ -783,3 +783,11 @@ select,input,textarea{max-width:100%}
 .avaway summary h3{display:inline;margin:0}
 .avaway textarea{font:inherit;font-size:14px;border:1.5px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--surface);color:var(--ink)}
 .avaway select,.avaway input[type=date]{font:inherit;font-size:14px;border:1.5px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--surface);color:var(--ink);width:100%;box-sizing:border-box}
+
+/* ----- mot laissé lors d'un transfert ----- */
+.tnotes{display:grid;gap:8px;margin:10px 0}
+.tnote{display:flex;gap:10px;align-items:flex-start;background:var(--gold-soft);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.tnote small{color:var(--muted);font-size:12px}
+.tnote p{margin:3px 0 0;white-space:pre-wrap}
+.transfer{flex-wrap:wrap}
+.trnote{flex-basis:100%;font:inherit;font-size:14px;border:1.5px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--surface);color:var(--ink);resize:vertical;min-width:0}

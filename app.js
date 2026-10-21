@@ -786,6 +786,7 @@ async function loadStaff(){
   if(isAdminP(S.me)) tasks.push(sb.from("children").select("id,first_name,last_name,birth_date,status,created_by,created_at").eq("status","pending").is("removed_at",null).order("created_at").then(r=>S.pendingKids=r.data||[]));
   tasks.push(sb.from("tasks").select("*").order("created_at",{ascending:false}).limit(500).then(r=>S.tasks=r.data||[]));
   tasks.push(loadInventory());
+  tasks.push(sb.from("request_notes").select("*").order("created_at").then(r=>S.notes=r.error?[]:(r.data||[])));
   tasks.push(loadLeaves());
   tasks.push(loadTeam());
   await Promise.all(tasks);
@@ -1764,7 +1765,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261021a";
+const APP_VERSION="20261021b";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -2227,6 +2228,7 @@ function detailHTML(){
     ${extraContactsHTML(p)}
     <div class="meta" style="margin-top:6px"><span class="tag">${TYPES[r.type].label}</span>${durHTML(r)}<span class="pill st-${stClass(r)}">${stLabel(r)}</span><span>Reçue ${fmt(r.created_at)} · ${esc(reqWho(r))}</span></div></div></div>
    ${open?`<div class="prioedit"><span class="hint">Priorité</span>${["haute","normale","basse"].map(k=>`<button class="dec p-${k}" aria-pressed="${r.priority===k}" data-prio="${k}">${PRIO_LABEL[k]}</button>`).join("")}</div><div>${dueHTML(r)}</div>`:""}
+   ${notesHTML(r)}
    ${r.purged_at?"":`<dl class="qa">${Object.entries(r.answers||{}).filter(([k])=>!HIDDEN_KEYS.has(k)).map(([k,v])=>`<div><dt>${esc(LABELS[k]||k)}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>`}
    ${items.some(i=>i.decision)?`<div class="itemlist">${items.filter(i=>i.decision).map(i=>`<div><span>${esc(i.label)}<small class="qty">${qtyText(i.quantity||1)}</small></span><span class="dtag ${i.decision==="accorde"?"ok":"no"}">${i.decision==="accorde"?"Accordé":"Refusé"}</span></div>`).join("")}</div>`:""}
    ${msgsOf(r).length||r.purged_at||!open?chatHTML(r,"centre"):""}
@@ -2234,12 +2236,16 @@ function detailHTML(){
    ${composerHTML("s"+r.id)}
    <div class="btnrow"><button class="btn" id="close" ${canClose?"":"disabled"}>${closeBtn}</button></div>
    <p class="hint">Le message écrit ci-dessus est envoyé avec la clôture. <b>Avant de classer, reportez dans CareConnect ce qui doit rester au dossier</b> : la conversation et ses pièces jointes sont effacées ${PURGE_DAYS} jours après la clôture.</p>
-   <div class="transfer">${r.status==="nouveau"?'<button class="linkbtn" id="take">Je m\'en occupe</button>':""}<label class="hint" for="tr">Transférer à</label><select id="tr">${transferOpts}</select><button class="linkbtn" id="dotr">Transférer</button></div>
+   <div class="transfer">${r.status==="nouveau"?'<button class="linkbtn" id="take">Je m\'en occupe</button>':""}<label class="hint" for="tr">Transférer à</label><select id="tr">${transferOpts}</select><button class="linkbtn" id="dotr">Transférer</button>
+    <textarea id="trnote" class="trnote" rows="2" maxlength="1000" placeholder="Un mot pour le collègue (facultatif) : visible seulement par l'équipe, jamais par le patient"></textarea></div>
    <p class="hint">Envoyer garde la conversation ouverte. Pas de diagnostic ni de résultat détaillé par message : pour un problème médical, proposez un rendez-vous.</p>`
    :r.purged_at?`<div class="closed"><b>Contenu effacé le ${fmtDate(r.purged_at)}</b><span>Effacement automatique ${PURGE_DAYS} jours après la clôture.</span></div>`
    :`<div class="closed"><b>Classée ${r.closed_at?fmt(r.closed_at):""}</b><span>Le patient peut la relire mais plus y écrire. Effacement automatique le ${fmtDate(purgeDate(r))}.</span><button class="btn ghost" id="reopen">Rouvrir</button></div>`}
   </div>`;
 }
+// Mots laissés lors d'un transfert (visibles seulement par l'équipe)
+function notesHTML(r){ const N=(S.notes||[]).filter(n=>n.request_id===r.id); if(!N.length) return "";
+  return `<div class="tnotes">${N.map(n=>`<div class="tnote"><span aria-hidden="true">📝</span><div><small>Mot de <b>${esc(teamName(n.author_id))}</b>${n.target?` pour <b>${esc(n.target)}</b>`:""} · ${fmt(n.created_at)} · <i>visible seulement par l'équipe</i></small><p>${esc(n.body)}</p></div></div>`).join("")}</div>`; }
 const opened=new Set();
 function bindInbox(){
   $$("[data-tab]").forEach(b=>b.onclick=()=>{ S.tab=b.dataset.tab; S.sel=null; render(); });
@@ -2270,7 +2276,9 @@ function bindDetail(){
     const decisions={}; for(const [k,v] of Object.entries(dec)) decisions[k]=v;
     if(await run(()=>sb.rpc("close_request",{p_id:r.id,p_body:text||null,p_decisions:decisions}),"Conversation classée")){ S.drafts[key]=""; delete S.drafts["d"+r.id]; clearPend(); await refresh(); } else close.disabled=false; };
   const tk=$("#take"); if(tk) tk.onclick=async()=>{ if(await run(()=>sb.rpc("take_request",{p_id:r.id}),"Demande prise en charge")) await refresh(); };
-  $("#dotr").onclick=async()=>{ const v=$("#tr").value||null;
+  $("#dotr").onclick=async()=>{ const v=$("#tr").value||null, note=($("#trnote")?.value||"").trim();
+    if(note){ const tgt=v==="__admin"?"Administration":v?provName(v):"Secrétariat";
+      const {error}=await sb.rpc("add_transfer_note",{p_id:r.id,p_body:note,p_target:tgt}); if(error){ toast("Le mot n'a pas pu être enregistré : "+frError(error)); return; } }
     const ok = v==="__admin" ? await run(()=>sb.rpc("transfer_to_administration",{p_id:r.id}),"Transférée : Administration")
                              : await run(()=>sb.rpc("transfer_request",{p_id:r.id,p_provider:v}),`Transférée : ${v?provName(v):"Secrétariat"}`);
     if(ok){ S.sel=null; await refresh(); } };
