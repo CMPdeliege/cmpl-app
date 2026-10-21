@@ -786,6 +786,7 @@ async function loadStaff(){
   if(isAdminP(S.me)) tasks.push(sb.from("children").select("id,first_name,last_name,birth_date,status,created_by,created_at").eq("status","pending").is("removed_at",null).order("created_at").then(r=>S.pendingKids=r.data||[]));
   tasks.push(sb.from("tasks").select("*").order("created_at",{ascending:false}).limit(500).then(r=>S.tasks=r.data||[]));
   tasks.push(loadInventory());
+  tasks.push(sb.from("patient_records").select("*").order("last_name").then(r=>S.records=r.error?[]:(r.data||[])));
   tasks.push(sb.from("request_notes").select("*").order("created_at").then(r=>S.notes=r.error?[]:(r.data||[])));
   tasks.push(loadLeaves());
   tasks.push(loadTeam());
@@ -1361,15 +1362,15 @@ function patientHome(a){
   const grown=fk.filter(c=>c.status==="active"&&c.age>=CHILD_MAX_AGE), waiting=fk.filter(c=>c.status==="pending");
   const chips=fk.length?`<div class="tabs whochips" role="group" aria-label="Afficher pour">${[["all","Tous"],["me","Moi"],...fk.map(c=>[c.id,c.first_name])].map(([id,l])=>`<button class="tab" data-who="${id}" aria-pressed="${who===id}">${esc(l)}</button>`).join("")}</div>`:"";
   const forTag = x => x.child_id ? ` · pour ${esc(childFirst(x.child_id))}` : "";
-  a.innerHTML=`${topBar()}
-  <h1 class="hello">Bonjour ${esc(S.me.first_name||"")}</h1>
-  <p class="sub">Que pouvons-nous faire pour vous ?</p>
+  a.innerHTML=`<div class="phero">${topBar()}
+  <div class="phello"><div><h1 class="hello">Bonjour ${esc(S.me.first_name||"")}</h1>
+  <p class="sub">Que pouvons-nous faire pour vous ?</p></div>${SUN_SVG}</div></div>
   ${S.me.news_choice_at?"":`<section class="consent" aria-labelledby="cq"><h2 id="cq">Annonces du centre</h2><p>Souhaitez-vous recevoir une notification pour les annonces importantes du centre (fermetures exceptionnelles, campagnes de vaccination) ?</p><p class="hint">Les réponses à vos demandes vous sont toujours notifiées. Vous pourrez changer d'avis à tout moment dans Notifications.</p><div class="btnrow"><button class="btn" data-consent="1">Oui, me prévenir</button><button class="btn ghost" data-consent="0">Non merci</button></div></section>`}
   ${pinned.map(n=>`<button class="newsbtn" data-news="${n.id}" style="margin-bottom:12px">${newsCard(n,false)}</button>`).join("")}
   ${BANNER112}
   ${grown.map(c=>`<div class="famnote"><b>${esc(c.first_name)} a ${c.age} ans.</b> Il ou elle doit maintenant créer son propre compte dans l'app pour ses demandes (Créer un compte, avec sa propre adresse e-mail).</div>`).join("")}
   ${waiting.length?`<div class="famnote soft">En attente de validation par le centre : ${waiting.map(c=>esc(c.first_name)).join(", ")}. Vous pourrez ensuite faire des demandes en son nom.</div>`:""}
-  <div class="actions">${PATIENT_TYPES.map(k=>[k,TYPES[k]]).map(([k,t])=>`<button class="act" data-start="${k}"><div class="ic">${IC[k]}</div><b>${t.title}</b><span>${t.desc}</span></button>`).join("")}</div>
+  <div class="actions">${PATIENT_TYPES.map(k=>[k,TYPES[k]]).map(([k,t])=>`<button class="act t-${k}" data-start="${k}"><div class="ic">${IC[k]}</div><b>${t.title}</b><span>${t.desc}</span></button>`).join("")}</div>
   <button class="absrow" id="absbtn">${IC.rdv}<span>Absences des prestataires</span><span aria-hidden="true">›</span></button>
   ${others.length?`<div class="sechead"><h2>Actualités</h2><button class="linkbtn" id="allnews">Tout voir</button></div>
   <div class="newslist" style="margin-bottom:26px">${others.slice(0,2).map(n=>`<button class="newsbtn" data-news="${n.id}">${newsCard(n,false)}</button>`).join("")}</div>`:""}
@@ -1379,7 +1380,7 @@ function patientHome(a){
   <div class="sechead"><h2>${fk.length?"Demandes":"Mes demandes"}</h2></div>
   <div class="list">${mine.length?mine.map(r=>{const ms=msgsOf(r),last=ms[ms.length-1],unread=S.notifs.some(n=>n.request_id===r.id&&!n.read_at&&n.title!=="Demande bien reçue");
     const prev=r.purged_at?"Contenu effacé":last?(last.from_patient?"Vous : ":"")+msgPreview(last):summaryLine(r.answers);
-    return `<button class="row chatrow ${unread?"unread":""}" data-req="${r.id}"><div class="ic">${IC[r.type]}</div><div><b>${esc(reqWho(r))} · ${TYPES[r.type].label}${forTag(r)}</b><small>${esc(prev)}</small></div><div class="rside"><small>${fmt(last?last.created_at:r.created_at)}</small>${unread?`<span class="dot" aria-label="Nouveau message"></span>`:`<span class="pill st-${stClassP(r)}">${stLabelP(r)}</span>`}</div></button>`}).join(""):`<div class="empty">Aucune demande pour l'instant.</div>`}</div>`;
+    return `<button class="row chatrow ${unread?"unread":""}" data-req="${r.id}"><div class="ic t-${r.type}">${IC[r.type]}</div><div><b>${esc(reqWho(r))} · ${TYPES[r.type].label}${forTag(r)}</b><small>${esc(prev)}</small></div><div class="rside"><small>${fmt(last?last.created_at:r.created_at)}</small>${unread?`<span class="dot" aria-label="Nouveau message"></span>`:`<span class="pill st-${stClassP(r)}">${stLabelP(r)}</span>`}</div></button>`}).join(""):`<div class="empty">Aucune demande pour l'instant.</div>`}</div>`;
   bindTop();
   $$("[data-start]").forEach(b=>b.onclick=()=>startFlow(b.dataset.start));
   $$("[data-consent]").forEach(b=>b.onclick=async()=>{ const ok=b.dataset.consent==="1";
@@ -1738,9 +1739,26 @@ function bindSummary(){
     if(S.flowFiles&&S.flowFiles.length){ e.target.textContent="Envoi des fichiers…";
       for(const f of S.flowFiles){ const ok=await uploadAtt(r.data.id,f,null); if(!ok){ toast("Un fichier n'a pas pu être envoyé : ajoutez-le dans la conversation."); break; } }
       S.flowFiles=[]; await loadPatient(); }
-    toast("Demande envoyée"); openRequest(r.data.id);
+    openRequest(r.data.id); showSent(r.data);
     loadPatient().then(()=>{ if(S.screen==="req") render(); });
   };
+}
+/* ---------- après l'envoi : « C'est envoyé ! » ---------- */
+const SUN_SVG = `<svg class="sun" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="14" fill="#ffc94d"/><g stroke="#ffb020" stroke-width="3.5" stroke-linecap="round"><path d="M32 5v7M32 52v7M5 32h7M52 32h7M13 13l5 5M46 46l5 5M13 51l5-5M46 18l5-5"/></g></svg>`;
+function showSent(r){
+  const old=$("#sent"); if(old) old.remove();
+  const delay=r.priority==="haute"?"Elle sera vue dans les 24 heures (heures d'ouverture).":r.priority==="basse"?"Elle sera vue dès que possible (heures d'ouverture).":"Elle sera vue dans les 72 heures (heures d'ouverture).";
+  const conf=["#ffc94d","#f28b6b","#7cc8b8","#b7a3ee","#8fc96a","#6fa8e8"].flatMap((c,i)=>[0,1,2].map(j=>`<i style="background:${c};left:${(i*17+j*31)%92+4}%;animation-delay:${(i*3+j)*0.07}s;--r:${(i*47+j*71)%360}deg"></i>`)).join("");
+  document.body.insertAdjacentHTML("beforeend",`<div id="sent" class="sent" role="dialog" aria-modal="true" aria-labelledby="sent-t"><div class="confetti" aria-hidden="true">${conf}</div><div class="sentbox">
+    <div class="sentcheck" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
+    <h2 id="sent-t">C'est envoyé !</h2>
+    <p>Votre demande est bien arrivée chez :</p><p class="sentdest" translate="no">${esc(reqWho(r))}</p>
+    <div class="sentcard"><p>${delay}</p><p>L'équipe décidera du délai en fonction de votre demande.</p></div>
+    <p class="hint">Vous recevrez une notification dès que l'équipe vous répond.</p>
+    <button class="btn full" id="sent-ok">Voir ma demande</button><button class="btn ghost full" id="sent-home">Retour à l'accueil</button></div></div>`);
+  const close=()=>{ const e=$("#sent"); if(e) e.remove(); };
+  $("#sent-ok").onclick=close; $("#sent-home").onclick=()=>{ close(); clearPend(); S.screen="home"; render(); scrollTo(0,0); };
+  $("#sent-ok").focus();
 }
 function patientReq(a){
   const r=S.reqs.find(x=>x.id===S.openReq); if(!r){ S.screen="home"; return draw(); }
@@ -1765,7 +1783,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261021b";
+const APP_VERSION="20261021c";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -1801,6 +1819,7 @@ function centreItems(){
   it.push({cs:"tasks",ic:SI.tasks,t:"Tâches",d:"Ce que l'équipe doit faire",n:myTasks().length,mob:true});
   it.push({cs:"binder",ic:SI.book,t:"Classeur",d:"Numéros utiles, procédures, documents",n:0});
   it.push({cs:"inventory",ic:SI.box,t:"Inventaire",d:"Matériel à commander",n:invOpen()});
+  it.push({cs:"patients",ic:IC.user,t:"Fiches patients",d:"Patients sans compte dans l'app",n:0});
   it.push({cs:"leaves",ic:SI.cal,t:"Congés",d:"Absences et congés de l'équipe",n:0});
   if(isAdmin()) it.push({cs:"accounts",ic:SI.ucheck,t:"Comptes à valider",d:"Nouveaux patients",n:S.pending.length+(S.pendingKids||[]).length});
   return it;
@@ -2144,6 +2163,8 @@ function staffHelpHTML(){
    ["Réponses types","Dans une demande, le bouton 💬 à côté de la zone de message insère un texte prêt (le prénom du patient est ajouté). Créez les vôtres dans Moi → Mes réponses types."],
    ["Le classeur du centre","Le centre → Classeur : numéros utiles, procédures et documents. Toute l'équipe peut ajouter et modifier les fiches."],
    ["Le menu « Le centre »","Il regroupe ce qui concerne tout le centre : Actualités, Équipe, Classeur, Inventaire, Congés, Comptes à valider (selon votre rôle). Le chiffre rouge indique ce qui attend."],
+   ["Un patient sans compte dans l'app","Le centre → Fiches patients : créez une fiche (nom, prénom, date de naissance, téléphone, e-mail). Vous pouvez ensuite lui lier une tâche, en parler à un collègue (« En parler ») ou l'inviter par e-mail à créer son compte. Jamais de note médicale dans une fiche. Quand le patient s'inscrit, l'administrateur relie son compte à la fiche dans Comptes à valider."],
+   ["Transférer avec un mot","Dans une demande, choisissez le collègue dans « Transférer à », écrivez un mot dans le champ en dessous, puis Transférer. Le collègue voit le mot en haut de la demande ; le patient ne le voit jamais."],
    ["Ne pas être dérangé(e)","Touchez la cloche en haut de l'écran (à côté de « Écrire à un patient »). « Pause des notifications » : 1 heure, jusqu'à demain 8 h ou jusqu'à ce que vous la retiriez ; les demandes arrivent toujours dans l'app et vous recevez un résumé à la fin de la pause. « Je suis absent(e) » : vos alertes vont au collègue choisi et les patients reçoivent un message automatique. Cloche barrée orange = en pause ; rouge = absent(e)."],
    ["Rappel avant l'échéance d'une tâche","Le centre → Tâches : mettez une échéance, cochez « Recevoir un rappel par e-mail » et choisissez quand (le jour même, la veille, 48 h, 72 h ou 1 semaine avant). L'e-mail part à 8 h vers la personne qui doit faire la tâche. Vous pouvez changer le rappel d'une tâche existante avec la petite cloche 🔔. Les tâches sont classées de la plus urgente à la moins urgente."],
    ["Ordinateur de confiance (accueil)","Au moment du code de sécurité, cochez « Faire confiance à cet ordinateur » : pendant 90 jours, l'e-mail et le mot de passe suffisent sur cet ordinateur, avec déconnexion après 2 heures d'inactivité. Uniquement sur un ordinateur du centre. Pour le retirer : Mon profil et notifications → Ordinateurs de confiance."],
@@ -2158,7 +2179,7 @@ function renderStaff(a){
   const sc=S.cscreen;
   const nav=staffNavHTML(sc);
   let body="";
-  if(sc==="compose") body=composeHTML(); else if(sc==="inventory") body=inventoryHTML(); else if(sc==="tasks") body=tasksHTML(); else if(sc==="accounts") body=accountsHTML(); else if(sc==="news") body=newsAdminHTML(); else if(sc==="team") body=teamHTML(); else if(sc==="settings") body=settingsHTML(); else if(sc==="help") body=staffHelpHTML(); else if(sc==="leaves") body=leavesHTML(); else if(sc==="messages") body=teamHTML2(); else if(sc==="templates") body=templatesHTML(); else if(sc==="binder") body=binderHTML(); else body=inboxHTML();
+  if(sc==="compose") body=composeHTML(); else if(sc==="inventory") body=inventoryHTML(); else if(sc==="tasks") body=tasksHTML(); else if(sc==="accounts") body=accountsHTML(); else if(sc==="news") body=newsAdminHTML(); else if(sc==="team") body=teamHTML(); else if(sc==="settings") body=settingsHTML(); else if(sc==="help") body=staffHelpHTML(); else if(sc==="leaves") body=leavesHTML(); else if(sc==="patients") body=patientsHTML(); else if(sc==="messages") body=teamHTML2(); else if(sc==="templates") body=templatesHTML(); else if(sc==="binder") body=binderHTML(); else body=inboxHTML();
   document.body.classList.add("hasbar"); document.body.classList.remove("ddopen");
   a.innerHTML=nav+body;
   $("#logout").onclick=()=>{ closeDD(); logout(); };
@@ -2169,7 +2190,7 @@ function renderStaff(a){
   const bk=$(".ddback"); if(bk) bk.onclick=closeDD;
   $$(".ddrosa").forEach(l=>l.addEventListener("click",()=>closeDD()));
   $$("[data-cs]").forEach(b=>b.onclick=()=>{ closeDD(); if(CREC&&b.dataset.cs!=="compose") composeRecStop(false); S.cscreen=b.dataset.cs; render(); window.scrollTo(0,0); });
-  if(sc==="compose") bindCompose(); else if(sc==="inventory") bindInventory(); else if(sc==="tasks") bindTasks(); else if(sc==="accounts") bindAccounts(); else if(sc==="news") bindNewsAdmin(); else if(sc==="team") bindTeam(); else if(sc==="settings") bindSettings(); else if(sc==="help"||sc==="leaves") {} else if(sc==="messages") bindTeam2(); else if(sc==="templates") bindTemplates(); else if(sc==="binder") bindBinder(); else bindInbox();
+  if(sc==="compose") bindCompose(); else if(sc==="inventory") bindInventory(); else if(sc==="tasks") bindTasks(); else if(sc==="accounts") bindAccounts(); else if(sc==="news") bindNewsAdmin(); else if(sc==="team") bindTeam(); else if(sc==="settings") bindSettings(); else if(sc==="help"||sc==="leaves") {} else if(sc==="patients") bindPatients(); else if(sc==="messages") bindTeam2(); else if(sc==="templates") bindTemplates(); else if(sc==="binder") bindBinder(); else bindInbox();
 }
 
 /* ----- durée estimée des rendez-vous de médecine générale (visible par l'équipe seulement) ----- */
@@ -2189,6 +2210,7 @@ function inboxList(){
   return S.reqs.filter(inTab).filter(r=>S.archive?r.status==="traite":r.status!=="traite").filter(r=>S.archive||!S.short||isShort(r))
     .sort((x,y)=>rank(x)-rank(y)||(rank(x)===0?new Date(x.due_at)-new Date(y.due_at):lastAt(y)-lastAt(x)));
 }
+const greetWord = () => { const h=new Date().getHours(); return h<18?"Bonjour":"Bonsoir"; };
 function inboxHTML(){
   const open=S.reqs.filter(r=>r.status!=="traite");
   const queues=[...new Set(S.reqs.map(r=>r.queue))];
@@ -2200,13 +2222,13 @@ function inboxHTML(){
   const provs=[...new Set(S.reqs.filter(r=>r.queue==="prestataires").map(r=>r.provider_id))].filter(Boolean);
   const nArch=S.reqs.filter(r=>r.queue===S.tab&&r.status==="traite").length;
   const nShort=S.reqs.filter(r=>r.queue===S.tab&&r.status!=="traite"&&isShort(r)&&(S.tab!=="prestataires"||S.provFilter==="tous"||r.provider_id===S.provFilter)).length;
-  return `<div class="chead"><div><h1>Demandes des patients</h1><p>${now.toLocaleDateString(LOC,{weekday:"long",day:"numeric",month:"long"})} · ${isOpen(now)?'<span class="state on">Ouvert</span>':`<span class="state off">Fermé · réouverture ${fmtWhen(nextOpen(now))}</span>`}</p></div>
+  return `<div class="chead"><div><p class="greet">${greetWord()} ${esc(S.me.first_name||"")} 👋</p><h1>Demandes des patients</h1><p>${now.toLocaleDateString(LOC,{weekday:"long",day:"numeric",month:"long"})} · ${isOpen(now)?'<span class="state on">Ouvert</span>':`<span class="state off">Fermé · réouverture ${fmtWhen(nextOpen(now))}</span>`}</p></div>
    <div class="counts"><div class="count"><b>${open.filter(r=>r.priority==="haute"&&awaitingStaff(r)).length}</b>haute priorité</div><div class="count"><b>${open.filter(r=>r.status==="nouveau").length}</b>nouvelles</div><div class="count"><b>${open.filter(newPatientMsg).length}</b>messages patients</div><div class="count ${late?"urg":""}"><b>${late}</b>en retard</div></div></div>
   ${queues.length>1?`<div class="tabs">${queues.map(q=>`<button class="tab" data-tab="${q}" aria-pressed="${S.tab===q}">${q==="secretariat"?"Secrétariat":q==="administration"?"Administration":"Prestataires"}<span class="n">${S.reqs.filter(r=>r.queue===q&&r.status!=="traite").length}</span></button>`).join("")}</div>`:""}
   ${S.tab==="prestataires"&&provs.length>1?`<div class="tabs">${["tous",...provs].map(id=>{const k=S.reqs.filter(r=>r.provider_id===id&&r.queue==="prestataires"&&r.status!=="traite").length;return `<button class="tab" data-pf="${id}" aria-pressed="${S.provFilter===id}" style="font-weight:400">${id==="tous"?"Tous":esc(provName(id))}${id!=="tous"&&k?`<span class="n">${k}</span>`:""}</button>`}).join("")}</div>`:""}
   <div class="seg" role="group" aria-label="Filtrer" style="margin-bottom:10px"><button id="f-open" aria-pressed="${!S.archive}">À traiter</button><button id="f-arch" aria-pressed="${S.archive}">Classées (${nArch})</button></div>${!S.archive&&(nShort||S.short)?` <button class="tab shortbtn" id="f-short" aria-pressed="${!!S.short}" title="Rendez-vous de médecine générale de 10 minutes ou moins">⏱ Rendez-vous courts (≤ 10 min)<span class="n">${nShort}</span></button>`:""}
   <div class="pane">
-   <div class="list inbox">${list.length?list.map(r=>{const ms=msgsOf(r);return `<button class="row" data-sel="${r.id}" aria-current="${r.id===S.sel}"><span class="prio ${r.priority==="haute"&&awaitingStaff(r)?"on":""}"></span><div class="ic">${IC[r.type]}</div><div><b>${esc(reqName(r))}</b>${r.child_id?`<small class="kidtag">Enfant · demande de ${esc(patientName(r.patient_id))}</small>`:""}<small>${TYPES[r.type].label} · ${esc(summaryLine(r.answers))}</small>${durHTML(r)}<small>${ms.length?`${ms.length} message${ms.length>1?"s":""} · dernier ${fmt(ms[ms.length-1].created_at)}`:`Reçue ${fmt(r.created_at)}`}</small>${dueHTML(r)}</div><span class="pill st-${stClass(r)}">${stLabel(r)}</span></button>`}).join(""):`<div class="empty">${S.archive?"Aucune conversation classée.":"Rien à traiter."}</div>`}</div>
+   <div class="list inbox">${list.length?list.map(r=>{const ms=msgsOf(r);return `<button class="row" data-sel="${r.id}" aria-current="${r.id===S.sel}"><span class="prio ${r.priority==="haute"&&awaitingStaff(r)?"on":""}"></span><div class="ic t-${r.type}">${IC[r.type]}</div><div><b>${esc(reqName(r))}</b>${r.child_id?`<small class="kidtag">Enfant · demande de ${esc(patientName(r.patient_id))}</small>`:""}<small>${TYPES[r.type].label} · ${esc(summaryLine(r.answers))}</small>${durHTML(r)}<small>${ms.length?`${ms.length} message${ms.length>1?"s":""} · dernier ${fmt(ms[ms.length-1].created_at)}`:`Reçue ${fmt(r.created_at)}`}</small>${dueHTML(r)}</div><span class="pill st-${stClass(r)}">${stLabel(r)}</span></button>`}).join(""):`<div class="empty">${S.archive?"Aucune conversation classée.":`<span class="yay" aria-hidden="true">🎉</span><b>Tout est traité !</b><br>Rien à traiter pour l'instant.`}</div>`}</div>
    <div id="detail">${detailHTML()}</div>
   </div>`;
 }
@@ -2296,7 +2318,7 @@ async function searchPatients(words){
   const all=[...(a.data||[]),...(b.data||[]).map(c=>({...c,child:true}))];
   return all.filter(p=>words.every(x=>norm(`${p.first_name||""} ${p.last_name||""}`).includes(x))).slice(0,12);
 }
-const patientPickRow = p => `<button type="button" class="row" data-pick="${p.id}"><div class="ic">${IC.user}</div><div><b>${esc(`${p.first_name||""} ${p.last_name||""}`)}</b><small>Né(e) le ${fmtDate(p.birth_date)} · ${p.child?"Enfant (via ses parents)":`Tél. ${esc(p.phone||"—")}`}</small></div><span></span></button>`;
+const patientPickRow = p => `<button type="button" class="row" data-pick="${p.id}"><div class="ic">${IC.user}</div><div><b>${esc(`${p.first_name||""} ${p.last_name||""}`)}</b><small>Né(e) le ${fmtDate(p.birth_date)} · ${p.child?"Enfant (via ses parents)":p.record?`Fiche sans compte · tél. ${esc(p.phone||"—")}`:`Tél. ${esc(p.phone||"—")}`}</small></div><span></span></button>`;
 function composeHTML(){
   const C=S.compose||(S.compose={patient:null,subject:SUBJECTS[0],body:"",files:[],reply:true,q:""}), pt=C.patient;
   const who=S.me.provider_id?provName(S.me.provider_id):isGestion()?"Administration":"Secrétariat";
@@ -2455,6 +2477,56 @@ function bindInventory(){
   $$("[data-invph]").forEach(async b=>{ try{ const u=await invPhoto(+b.dataset.invph); b.querySelector("img").src=u; b.onclick=()=>openViewer(u); }catch(e){ b.classList.add("failed"); } });
 }
 
+/* ----- fiches patients (sans compte) ----- */
+// Identité et coordonnées uniquement : le dossier médical reste dans CareConnect.
+const recordsMatching = words => (S.records||[]).filter(r=>words.every(x=>norm(`${r.first_name} ${r.last_name}`).includes(x))).map(r=>({...r,record:true}));
+function patientsHTML(){
+  const D=S.recDraft||(S.recDraft={first:"",last:"",birth:"",phone:"",email:""}), ed=S.recEdit?(S.records||[]).find(r=>r.id===S.recEdit):null;
+  const q=norm(S.recQ||"").split(/\s+/).filter(Boolean), list=(S.records||[]).filter(r=>!q.length||q.every(x=>norm(`${r.first_name} ${r.last_name} ${r.phone||""}`).includes(x)));
+  const open=t=>(S.tasks||[]).filter(x=>x.record_id===t&&!x.done_at).length;
+  return `<div class="chead"><div><h1>Fiches patients</h1><p>Pour un patient qui n'a pas (encore) de compte dans l'app : lui confier une tâche, en parler entre collègues, l'inviter à s'inscrire. Identité et coordonnées uniquement, jamais de note médicale (le dossier reste dans CareConnect).</p></div></div>
+  <div class="taskgrid">
+   <section class="card taskform"><h3>${ed?"Modifier la fiche":"Nouvelle fiche"}</h3>
+    <div class="row2"><label class="fld">Prénom<input id="rc-first" maxlength="80" autocomplete="off" value="${esc(D.first)}"></label><label class="fld">Nom<input id="rc-last" maxlength="80" autocomplete="off" value="${esc(D.last)}"></label></div>
+    <div class="row2"><label class="fld">Date de naissance<input id="rc-birth" type="date" value="${esc(D.birth)}" max="${todayISO()}"></label><label class="fld">Téléphone<input id="rc-phone" type="tel" maxlength="40" value="${esc(D.phone)}"></label></div>
+    <label class="fld">E-mail (facultatif, pour l'inviter)<input id="rc-email" type="email" maxlength="160" autocomplete="off" value="${esc(D.email)}"></label>
+    <div class="btnrow"><button class="btn" id="rc-save">${ed?"Enregistrer":"Créer la fiche"}</button>${ed||S.recBack?`<button class="btn ghost" id="rc-cancel">Annuler</button>`:""}</div>
+    <p class="hint">Quand le patient crée son compte avec les mêmes nom, prénom et date de naissance, l'administrateur relie son compte à la fiche : les tâches suivent. Une fiche inutilisée pendant 12 mois est effacée.</p>
+   </section>
+   <section>
+    <input id="rc-q" class="pcq" type="search" placeholder="Rechercher une fiche (nom, prénom, téléphone)" value="${esc(S.recQ||"")}" aria-label="Rechercher une fiche" style="margin-bottom:10px">
+    <div class="list">${list.length?list.map(r=>`<div class="medrow recrow"><div class="ic">${IC.user}</div><div><b>${esc(r.first_name+" "+r.last_name)}</b>
+      <small>Né(e) le ${fmtDate(r.birth_date)} · Tél. ${esc(r.phone||"—")}${r.email?` · ${esc(r.email)}`:""}</small>
+      <small>Fiche créée par ${esc(teamName(r.created_by))} ${fmt(r.created_at)}${open(r.id)?` · <b>${open(r.id)} tâche${open(r.id)>1?"s":""} en cours</b>`:""}${r.invited_at?` · invité(e) ${fmt(r.invited_at)}`:""}</small></div>
+      <div class="acts recacts"><button class="mini" data-rtask="${r.id}">Tâche</button><button class="mini ghostmini" data-rmsg="${r.id}">En parler</button>${r.email?`<button class="mini ghostmini" data-rinv="${r.id}">Inviter</button>`:""}<button class="linkbtn" style="font-size:12px" data-redit="${r.id}">Modifier</button>${r.created_by===S.me.id||isAdmin()?`<button class="linkbtn" style="font-size:12px;color:var(--muted)" data-rdel="${r.id}">Supprimer</button>`:""}</div></div>`).join("")
+      :`<div class="empty">${q.length?"Aucune fiche ne correspond.":"Aucune fiche pour l'instant."}</div>`}</div>
+   </section></div>`;
+}
+function bindPatients(){
+  const D=S.recDraft; const f={first:"#rc-first",last:"#rc-last",birth:"#rc-birth",phone:"#rc-phone",email:"#rc-email"};
+  Object.entries(f).forEach(([k,sel])=>{ const el=$(sel); el.oninput=el.onchange=()=>{ D[k]=el.value; }; });
+  const qi=$("#rc-q"); let tm; qi.oninput=()=>{ clearTimeout(tm); tm=setTimeout(()=>{ S.recQ=qi.value; render(); const n=$("#rc-q"); n.focus(); n.setSelectionRange(n.value.length,n.value.length); },250); };
+  const done=()=>{ S.recDraft=null; S.recEdit=null; };
+  const cancel=$("#rc-cancel"); if(cancel) cancel.onclick=()=>{ done(); if(S.recBack){ S.cscreen=S.recBack; S.recBack=null; } render(); };
+  $("#rc-save").onclick=async e=>{ const b=e.target; if(!D.first.trim()||!D.last.trim()||!D.birth) return toast("Indiquez le prénom, le nom et la date de naissance.");
+    b.disabled=true; const args={p_first:D.first,p_last:D.last,p_birth:D.birth,p_phone:D.phone||null,p_email:D.email||null};
+    const r=S.recEdit?await run(()=>sb.rpc("update_patient_record",{p_id:S.recEdit,...args}),"Fiche enregistrée"):await run(()=>sb.rpc("create_patient_record",args),"Fiche créée");
+    if(!r){ b.disabled=false; return; }
+    const newId=!S.recEdit?r.data:null; done();
+    const {data}=await sb.from("patient_records").select("*").order("last_name"); S.records=data||S.records;
+    if(S.recBack==="tasks"&&newId){ const rec=S.records.find(x=>x.id===newId); if(S.tdraft&&rec) S.tdraft.patient={...rec,record:true}; S.cscreen="tasks"; S.recBack=null; }
+    render(); };
+  $$("[data-redit]").forEach(b=>b.onclick=()=>{ const r=S.records.find(x=>x.id===b.dataset.redit); S.recEdit=r.id; S.recDraft={first:r.first_name,last:r.last_name,birth:r.birth_date,phone:r.phone||"",email:r.email||""}; render(); scrollTo(0,0); });
+  $$("[data-rdel]").forEach(b=>b.onclick=async()=>{ if(b.dataset.sure!=="1"){ b.dataset.sure="1"; b.textContent="Confirmer ?"; b.style.color="var(--danger)"; return; }
+    if(await run(()=>sb.rpc("delete_patient_record",{p_id:b.dataset.rdel}),"Fiche supprimée")){ S.records=S.records.filter(x=>x.id!==b.dataset.rdel); render(); } });
+  $$("[data-rinv]").forEach(b=>b.onclick=async()=>{ b.disabled=true; if(await run(()=>sb.rpc("invite_patient_record",{p_id:b.dataset.rinv}),"Invitation envoyée par e-mail")){ const r=S.records.find(x=>x.id===b.dataset.rinv); if(r) r.invited_at=new Date().toISOString(); render(); } else b.disabled=false; });
+  $$("[data-rtask]").forEach(b=>b.onclick=()=>{ const r=S.records.find(x=>x.id===b.dataset.rtask);
+    S.tdraft={title:"",notes:"",due:"",to:"me",patient:{...r,record:true},q:"",remind:null}; S.tview="todo"; S.cscreen="tasks"; render(); scrollTo(0,0); $("#tk-title")?.focus(); });
+  $$("[data-rmsg]").forEach(b=>b.onclick=()=>{ const r=S.records.find(x=>x.id===b.dataset.rmsg);
+    pickColleagues("En parler avec…",[],async(ids,name)=>{ const {data,error}=await sb.rpc("team_start",{p_members:ids,p_title:name||null}); if(error){ toast(frError(error)); return false; }
+      await loadTeam(); S.tthread=data; S.drafts["t"+data]=`À propos de ${r.first_name} ${r.last_name} (né(e) le ${fmtDate(r.birth_date)}, fiche sans compte) : `; S.cscreen="messages"; render(); const c=$("#c-text"); if(c){ c.focus(); c.setSelectionRange(c.value.length,c.value.length); } return true; },true); });
+}
+
 /* ----- tâches (équipe) ----- */
 const todayISO = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
 const teamName = id => { if(id===S.me.id) return "moi"; const t=S.team.find(x=>x.id===id); return t?`${t.first_name||""} ${t.last_name||""}`.trim()||ROLE_LABEL[t.role]:"—"; };
@@ -2486,7 +2558,11 @@ function taskListHTML(list,grouped){
   for(const t of list){ const k=dueGroup(t); if(k!==g){ g=k; out+=`<h4 class="tgroup g${k}">${DUE_GROUPS[k]} <span>${list.filter(x=>dueGroup(x)===k).length}</span></h4>`; } out+=taskRowHTML(t); }
   return out;
 }
-function taskLinkHTML(t){ if(!t.patient_id&&!t.child_id) return "";
+const recName = id => { const r=(S.records||[]).find(x=>x.id===id); return r?`${r.first_name} ${r.last_name}`:"Fiche patient"; };
+function taskLinkHTML(t){
+  if(t.record_id){ const r=(S.records||[]).find(x=>x.id===t.record_id);
+    return `<span class="tasklink">${IC.user}<b>${esc(recName(t.record_id))}</b>${r?` · né(e) le ${fmtDate(r.birth_date)}`:""} · <i>fiche sans compte</i>${r&&r.phone?` · tél. ${esc(r.phone)}`:""}</span>`; }
+  if(!t.patient_id&&!t.child_id) return "";
   const nm=t.child_id?kidName(t.child_id):patientName(t.patient_id), bd=t.child_id?S.children[t.child_id]?.birth_date:S.profiles[t.patient_id]?.birth_date;
   return `<span class="tasklink">${IC.user}<b>${esc(nm)}</b>${bd?` · né(e) le ${fmtDate(bd)}`:""}${t.child_id?" · enfant":""}</span>`; }
 function tasksHTML(){
@@ -2513,7 +2589,7 @@ function tasksHTML(){
   <section>
    <div class="seg" role="group" aria-label="Afficher" style="margin-bottom:10px"><button data-tv="todo" aria-pressed="${V==="todo"}">À faire (${todo.length})</button><button data-tv="given" aria-pressed="${V==="given"}">Confiées (${given.length})</button><button data-tv="done" aria-pressed="${V==="done"}">Terminées</button></div>
    <div class="list tasks">${list.length?taskListHTML(list,V!=="done")
-     :`<div class="empty">${V==="todo"?"Rien à faire pour l'instant.":V==="given"?"Aucune tâche confiée en cours.":"Aucune tâche terminée (elles sont effacées après 90 jours)."}</div>`}</div>
+     :`<div class="empty">${V==="todo"?`<span class="yay" aria-hidden="true">✨</span>Rien à faire pour l'instant.`:V==="given"?"Aucune tâche confiée en cours.":"Aucune tâche terminée (elles sont effacées après 90 jours)."}</div>`}</div>
   </section></div>`;
 }
 function bindTasks(){
@@ -2529,18 +2605,21 @@ function bindTasks(){
   const q=$("#tk-q");
   if(q){ let tm; const go=async()=>{ D.q=q.value; const words=norm(q.value).replace(/[*%,().]/g," ").split(/\s+/).filter(w=>w.length>=2), out=$("#tk-res");
       if(!words.length){ out.innerHTML=""; return; }
-      const rows=await searchPatients(words); if(rows===null){ out.innerHTML=`<p class="hint">La recherche n'a pas fonctionné.</p>`; return; }
-      out.innerHTML=rows.length?`<div class="list">${rows.map(patientPickRow).join("")}</div>`:`<p class="hint">Aucun patient ne correspond.</p>`;
-      out.querySelectorAll("[data-pick]").forEach(b=>b.onclick=()=>{ D.patient=rows.find(p=>p.id===b.dataset.pick); render(); }); };
+      let rows=await searchPatients(words); if(rows===null){ out.innerHTML=`<p class="hint">La recherche n'a pas fonctionné.</p>`; return; }
+      rows=[...rows,...recordsMatching(words)].slice(0,14);
+      out.innerHTML=(rows.length?`<div class="list">${rows.map(patientPickRow).join("")}</div>`:`<p class="hint">Aucun patient ne correspond.</p>`)
+        +`<p class="hint">Patient sans compte ? <button type="button" class="linkbtn" id="tk-newrec">Créer une fiche patient</button></p>`;
+      out.querySelectorAll("[data-pick]").forEach(b=>b.onclick=()=>{ D.patient=rows.find(p=>p.id===b.dataset.pick); render(); });
+      $("#tk-newrec").onclick=()=>{ S.recBack="tasks"; S.recDraft={first:"",last:"",birth:"",phone:"",email:""}; S.cscreen="patients"; render(); scrollTo(0,0); }; };
     q.oninput=()=>{ clearTimeout(tm); tm=setTimeout(go,300); }; if(D.q) go(); }
   add.onclick=async()=>{ add.disabled=true; const pt=D.patient;
     const r=await run(()=>sb.rpc("create_task",{p_title:D.title.trim(),p_notes:D.notes.trim()||null,p_due:D.due||null,
       p_assignee:D.to==="me"?S.me.id:D.to==="secretariat"?null:D.to,p_group:D.to==="secretariat"?"secretariat":null,
-      p_patient:pt&&!pt.child?pt.id:null,p_child:pt&&pt.child?pt.id:null}),D.due&&D.remind!=null?null:"Tâche ajoutée");
+      p_patient:pt&&!pt.child&&!pt.record?pt.id:null,p_child:pt&&pt.child?pt.id:null,p_record:pt&&pt.record?pt.id:null}),D.due&&D.remind!=null?null:"Tâche ajoutée");
     if(!r){ upd(); return; }
     if(D.due&&D.remind!=null){ const {error}=await sb.rpc("set_task_reminder",{p_id:r.data,p_days:D.remind});
       toast(error?"Tâche ajoutée, mais le rappel n'a pas pu être enregistré : "+frError(error):"Tâche ajoutée · rappel "+REMIND[D.remind].toLowerCase()); }
-    if(pt){ if(pt.child) S.children[pt.id]=pt; else S.profiles[pt.id]=pt; }
+    if(pt&&!pt.record){ if(pt.child) S.children[pt.id]=pt; else S.profiles[pt.id]=pt; }
     S.tdraft=null; S.tview=D.to==="me"||(D.to==="secretariat"&&isDesk())?"todo":"given"; await refresh(); };
   $$("[data-tv]").forEach(b=>b.onclick=()=>{ S.tview=b.dataset.tv; render(); });
   $$("[data-trem]").forEach(sl=>sl.onchange=async()=>{ const t=S.tasks.find(x=>x.id===+sl.dataset.trem), v=sl.value===""?null:+sl.value;
@@ -2558,9 +2637,12 @@ function accountsHTML(){
   ${K.length?`<h3 class="subh">Enfants ajoutés par un parent</h3><p class="hint">Vérifiez dans le dossier que l'enfant existe et que la personne est bien son parent.</p>
   <div class="list" style="margin-bottom:20px">${K.map(c=>`<div class="medrow"><div class="ic">${IC.user}</div><div><b>${esc(c.first_name+" "+c.last_name)}</b><small>Né(e) le ${fmtDate(c.birth_date)} · ajouté par <b>${esc(patientName(c.created_by))}</b> (né(e) le ${fmtDate(S.profiles[c.created_by]?.birth_date)}, tél. ${esc(S.profiles[c.created_by]?.phone||"—")}) · ${fmt(c.created_at)}</small></div><div class="acts"><button class="mini" data-kok="${c.id}">Valider</button><button class="linkbtn" style="font-size:12px;color:var(--muted)" data-kno="${c.id}">Refuser</button></div></div>`).join("")}</div>
   <h3 class="subh">Comptes de patients</h3>`:""}
-  <div class="list">${S.pending.length?S.pending.map(p=>`<div class="medrow"><div class="ic">${IC.user}</div><div><b>${esc((p.first_name||"")+" "+(p.last_name||""))}</b><small>Né(e) le ${fmtDate(p.birth_date)} · Tél. ${esc(p.phone||"—")} · inscrit ${fmt(p.created_at)}</small></div><div class="acts"><button class="mini" data-ok="${p.id}">Valider</button><button class="linkbtn" style="font-size:12px;color:var(--muted)" data-no="${p.id}">Refuser</button></div></div>`).join(""):`<div class="empty">Aucun compte en attente.</div>`}</div>`;
+  <div class="list">${S.pending.length?S.pending.map(p=>`<div class="medrow"><div class="ic">${IC.user}</div><div><b>${esc((p.first_name||"")+" "+(p.last_name||""))}</b><small>Né(e) le ${fmtDate(p.birth_date)} · Tél. ${esc(p.phone||"—")} · inscrit ${fmt(p.created_at)}</small>${(()=>{ const m=recMatch(p); return m?`<div class="recmatch">📇 Une fiche existe pour ce patient (créée par ${esc(teamName(m.created_by))}, tél. ${esc(m.phone||"—")}). <button class="linkbtn" data-rlink="${m.id}|${p.id}">Relier le compte à la fiche</button></div>`:""; })()}</div><div class="acts"><button class="mini" data-ok="${p.id}">Valider</button><button class="linkbtn" style="font-size:12px;color:var(--muted)" data-no="${p.id}">Refuser</button></div></div>`).join(""):`<div class="empty">Aucun compte en attente.</div>`}</div>`;
 }
+const recMatch = p => (S.records||[]).find(r=>r.birth_date===p.birth_date&&norm((r.first_name||"").trim())===norm((p.first_name||"").trim())&&norm((r.last_name||"").trim())===norm((p.last_name||"").trim()));
 function bindAccounts(){
+  $$("[data-rlink]").forEach(b=>b.onclick=async()=>{ const [rid,pid]=b.dataset.rlink.split("|"); b.disabled=true;
+    if(await run(()=>sb.rpc("link_patient_record",{p_record:rid,p_profile:pid}),"Compte relié à la fiche · les tâches suivent")) await refresh(); else b.disabled=false; });
   $$("[data-kok]").forEach(b=>b.onclick=async()=>{ if(await run(()=>sb.rpc("set_child_status",{p_child:b.dataset.kok,p_status:"active"}),"Enfant validé · parents prévenus")) await refresh(); });
   $$("[data-kno]").forEach(b=>b.onclick=async()=>{ if(await run(()=>sb.rpc("set_child_status",{p_child:b.dataset.kno,p_status:"blocked"}),"Ajout refusé · parents prévenus")) await refresh(); });
   $$("[data-ok]").forEach(b=>b.onclick=async()=>{ if(await run(()=>sb.rpc("set_patient_status",{p_patient:b.dataset.ok,p_status:"active"}),"Compte validé")) await refresh(); });
