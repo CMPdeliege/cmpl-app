@@ -845,8 +845,10 @@ function syncLang(){
    Téléphone ou tablette (personnel, protégé par son propre verrouillage) : 8 heures. */
 const ON_PHONE=matchMedia("(pointer:coarse)").matches;
 // Ordinateur de confiance (poste du centre) : 2 heures
-const idleMs = () => (ON_PHONE?8*60:trustGet()?120:30)*60*1000;
-const idleMsg = () => `Vous avez été déconnecté après ${ON_PHONE?"8 heures":trustGet()?"2 heures":"30 minutes"} d'inactivité.`;
+// App iPhone avec Face ID : pas de déconnexion (Face ID est demandé à chaque retour après 5 minutes)
+const bioKeep = () => IS_NATIVE&&faceIdOn();
+const idleMs = () => bioKeep()?30*24*3600*1000:(ON_PHONE?8*60:trustGet()?120:30)*60*1000;
+const idleMsg = () => `Vous avez été déconnecté après ${bioKeep()?"30 jours":ON_PHONE?"8 heures":trustGet()?"2 heures":"30 minutes"} d'inactivité.`;
 function markActive(){ try{ localStorage.setItem("cmpl_last_active", String(Date.now())); }catch(e){} }
 function idleTooLong(){ try{ const t=+localStorage.getItem("cmpl_last_active"); return t>0 && Date.now()-t>idleMs(); }catch(e){ return false; } }
 let lastAct=Date.now(), lastSaved=0;
@@ -1080,7 +1082,7 @@ function render(){
 const BASE_TITLE=document.title;
 const badgeCount = () => !S.me||S.me.status!=="active" ? 0
   : S.me.role==="patient" ? S.notifs.filter(n=>!n.read_at).length
-  : S.reqs.filter(awaitingStaff).length;
+  : S.reqs.filter(awaitingStaff).length + (S.team2&&S.team2.threads?teamUnread():0);
 let lastBadge=-1, favImg=null;
 function setFavicon(n){
   const link=document.querySelector('link[rel="icon"]'); if(!link) return;
@@ -1783,7 +1785,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261021c";
+const APP_VERSION="20261022a";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";

@@ -874,3 +874,65 @@ select,input,textarea{max-width:100%}
 @keyframes fall{0%{transform:translateY(0) rotate(var(--r))}100%{transform:translateY(105vh) rotate(calc(var(--r) + 540deg))}}
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .phero .iconbtn{background:rgb(255 255 255/.1)}}
 :root[data-theme="dark"] .phero .iconbtn{background:rgb(255 255 255/.1)}
+
+/* =====================================================================
+   Équipe : style convivial (version 20261022a)
+   ===================================================================== */
+/* bandeau du haut en dégradé doux */
+.staff .top.stop{background:var(--hero);margin:-12px -16px 16px;padding:10px 16px;border-bottom:0;border-radius:0 0 22px 22px}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .staff .top.stop{background:var(--hero)}}
+/* onglets : chaque section a sa couleur */
+.stab svg{transition:color .15s}
+.stab[data-cs="inbox"] svg{color:var(--t-rdv-i)}
+.stab[data-cs="messages"] svg{color:var(--t-question-i)}
+.stab[data-cs="tasks"] svg{color:var(--t-prescription-i)}
+#dd-centre-b svg:first-child{color:var(--t-rapport-i)}
+.stab:hover{background:rgb(255 255 255/.55)}
+.stab[aria-current="page"]{background:var(--surface);color:var(--ink);box-shadow:0 2px 8px rgb(60 20 20/.10)}
+.stab[aria-current="page"] .sn{background:var(--accent);color:var(--accent-ink)}
+.stab[data-cs="inbox"][aria-current="page"]{box-shadow:inset 0 -3px 0 var(--t-rdv-i),0 2px 8px rgb(60 20 20/.10)}
+.stab[data-cs="messages"][aria-current="page"]{box-shadow:inset 0 -3px 0 var(--t-question-i),0 2px 8px rgb(60 20 20/.10)}
+.stab[data-cs="tasks"][aria-current="page"]{box-shadow:inset 0 -3px 0 var(--t-prescription-i),0 2px 8px rgb(60 20 20/.10)}
+#dd-centre-b[aria-current="page"]{box-shadow:inset 0 -3px 0 var(--t-rapport-i),0 2px 8px rgb(60 20 20/.10)}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .stab:hover{background:rgb(255 255 255/.08)}}
+:root[data-theme="dark"] .stab:hover{background:rgb(255 255 255/.08)}
+/* menu « Le centre » et « Moi » : pastilles colorées */
+.ddi > svg{box-sizing:content-box;padding:7px;border-radius:11px;width:20px;height:20px;background:var(--accent-soft)}
+.ddi[data-cs="news"] > svg{background:var(--t-document);color:var(--t-document-i)}
+.ddi[data-cs="team"] > svg{background:var(--t-resultats);color:var(--t-resultats-i)}
+.ddi[data-cs="tasks"] > svg{background:var(--t-prescription);color:var(--t-prescription-i)}
+.ddi[data-cs="binder"] > svg{background:var(--t-rapport);color:var(--t-rapport-i)}
+.ddi[data-cs="inventory"] > svg{background:var(--t-rdv);color:var(--t-rdv-i)}
+.ddi[data-cs="patients"] > svg{background:var(--t-question);color:var(--t-question-i)}
+.ddi[data-cs="leaves"] > svg{background:var(--t-resultats);color:var(--t-resultats-i)}
+.ddi[data-cs="accounts"] > svg{background:var(--t-document);color:var(--t-document-i)}
+.ddi[data-cs="settings"] > svg{background:var(--t-question);color:var(--t-question-i)}
+.ddi[data-cs="templates"] > svg{background:var(--t-rapport);color:var(--t-rapport-i)}
+.ddi[data-cs="help"] > svg{background:var(--t-resultats);color:var(--t-resultats-i)}
+.ddi.ddrosa > svg{background:var(--t-rdv);color:var(--t-rdv-i)}
+.dd{border-radius:18px}
+/* compteurs colorés */
+.counts .count{border:0;border-radius:16px;padding:9px 14px;color:var(--ink)}
+.counts .count:nth-child(1){background:var(--t-rdv)}
+.counts .count:nth-child(2){background:var(--t-question)}
+.counts .count:nth-child(3){background:var(--t-rapport)}
+.counts .count:nth-child(4){background:var(--t-resultats)}
+.counts .count.urg{background:var(--danger-soft);color:var(--danger)}
+.counts .count:nth-child(1) b{color:var(--t-rdv-i)}
+.counts .count:nth-child(2) b{color:var(--t-question-i)}
+.counts .count:nth-child(3) b{color:var(--t-rapport-i)}
+.counts .count:nth-child(4) b{color:var(--t-resultats-i)}
+.counts .count.urg b{color:var(--danger)}
+/* titres de page */
+.staff .chead h1{color:var(--accent)}
+/* cartes et listes plus douces */
+.staff .card,.staff .detail,.staff .list{border-radius:18px}
+.staff .row[aria-current="true"]{background:color-mix(in srgb,var(--t-rdv) 55%,var(--surface))}
+.tabs .tab[aria-pressed="true"]{box-shadow:0 2px 8px rgb(60 20 20/.10)}
+/* barre du bas (téléphone) : icônes colorées */
+.sbar button[data-cs="inbox"] svg{color:var(--t-rdv-i)}
+.sbar button[data-cs="messages"] svg{color:var(--t-question-i)}
+.sbar button[data-dd="dd-centre"] svg{color:var(--t-rapport-i)}
+.sbar button[data-dd="dd-me"] svg{color:var(--t-resultats-i)}
+.sbar{border-radius:20px 20px 0 0;box-shadow:0 -4px 18px rgb(60 20 20/.08)}
+@media (max-width:760px){ .staff .top.stop{border-radius:0 0 18px 18px} }
