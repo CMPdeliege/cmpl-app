@@ -336,7 +336,7 @@ function dayLabel(d){ d=new Date(d); const k=x=>new Date(x.getFullYear(),x.getMo
 function msgPreview(m){ if(!m) return ""; const a=(m.attachments||[])[0]; return a&&AUTO_BODY.test(m.body)?m.body:(a?(a.kind==="image"?"📷 ":a.kind==="pdf"?"📄 ":"🎤 ")+m.body:m.body); }
 function attHTML(a){
   if(a.kind==="image") return `<button type="button" class="att img loading" data-att="${a.id}" data-kind="image" aria-label="Agrandir la photo"><img alt="Photo envoyée"></button>`;
-  if(a.kind==="audio") return `<div class="att aud loading" data-att="${a.id}" data-kind="audio"><audio controls preload="metadata"></audio>${a.duration_s?`<small>${dur(a.duration_s)}</small>`:""}</div>`;
+  if(a.kind==="audio") return `<div class="att aud loading" data-att="${a.id}" data-kind="audio" data-dur="${a.duration_s||0}"><audio controls preload="metadata"></audio>${a.duration_s?`<small>${dur(a.duration_s)}</small>`:""}</div>`;
   return `<a class="att pdf loading" data-att="${a.id}" data-kind="pdf" href="#" download="${esc(a.name)}">${IC.doc}<span><b>${esc(a.name)}</b><small>PDF · ${kb(a.size)} · toucher pour ouvrir</small></span></a>`;
 }
 function chatHTML(r, viewer){
@@ -413,12 +413,28 @@ function attLoad(id){
     const blob=new Blob([u8],{type:data.mime}); return {url:URL.createObjectURL(blob), blob, mime:data.mime, name:data.name}; })();
   ATT.set(id,p); p.catch(()=>ATT.delete(id)); return p;
 }
+/* ---------- messages vocaux : lecture fiable ----------
+   Les enregistrements faits sur téléphone n'indiquent pas toujours leur durée dans le fichier :
+   certains navigateurs s'arrêtent alors trop tôt (« terminé » alors que ce n'est pas fini).
+   On mesure la vraie durée, et si la lecture s'arrête avant la fin, elle reprend là où elle s'est arrêtée. */
+const audioPlaying = () => [...document.querySelectorAll("audio")].some(a=>!a.paused&&!a.ended);
+async function realDuration(blob){ try{ const AC=window.AudioContext||window.webkitAudioContext; if(!AC||!blob) return 0;
+  const ac=new AC(); const buf=await ac.decodeAudioData(await blob.arrayBuffer()); const d=buf.duration; ac.close&&ac.close(); return d||0; }catch(e){ return 0; } }
+function fixAudio(au, blob, known){
+  let want=known||0;
+  if(!want&&blob) realDuration(blob).then(d=>{ if(d) want=d; });
+  au.addEventListener("loadedmetadata",()=>{ if(!isFinite(au.duration)){ const back=()=>{ au.removeEventListener("timeupdate",back); au.currentTime=0; }; au.addEventListener("timeupdate",back); au.currentTime=1e7; } });
+  let tries=0;
+  au.addEventListener("play",()=>{ if(au.currentTime<0.5) tries=0; });
+  au.addEventListener("ended",()=>{ const t=au.currentTime;
+    if(want&&t>0.3&&t<want-0.8&&tries<5){ tries++; au.currentTime=t; au.play().catch(()=>{}); } });
+}
 function hydrateAtt(){
   $$("[data-att]:not([data-ready])").forEach(async el=>{
     el.dataset.ready="1";
     try{ const a=await attLoad(+el.dataset.att); el.classList.remove("loading");
       if(el.dataset.kind==="image"){ const img=el.querySelector("img"); img.onload=scrollChat; img.src=a.url; el.onclick=()=>openViewer(a.url); }
-      else if(el.dataset.kind==="audio"){ const au=el.querySelector("audio"); au.onerror=()=>{ if(!el.querySelector(".attfail")) el.insertAdjacentHTML("beforeend",`<a class="attfail" href="${a.url}" download="message-vocal.${a.mime.includes("webm")?"webm":a.mime.includes("ogg")?"ogg":"m4a"}">Lecture impossible ici : télécharger le message vocal</a>`); }; au.src=a.url; }
+      else if(el.dataset.kind==="audio"){ const au=el.querySelector("audio"); au.onerror=()=>{ if(!el.querySelector(".attfail")) el.insertAdjacentHTML("beforeend",`<a class="attfail" href="${a.url}" download="message-vocal.${a.mime.includes("webm")?"webm":a.mime.includes("ogg")?"ogg":"m4a"}">Lecture impossible ici : télécharger le message vocal</a>`); }; au.src=a.url; fixAudio(au, a.blob, +el.dataset.dur||0); }
       else if(IS_NATIVE&&SEC()){ el.href="#"; el.removeAttribute("download"); el.onclick=async e=>{ e.preventDefault(); try{ await nativePreview(a.blob, a.name); }catch(err){ console.error(err); toast("Ce document n'a pas pu être ouvert."); } }; }
       else { el.href=a.url; el.target="_blank"; el.rel="noopener"; }
     }catch(e){ console.error(e); el.classList.remove("loading"); el.classList.add("failed"); el.insertAdjacentHTML("beforeend",`<small class="attfail">Pièce jointe indisponible</small>`); }
@@ -1785,7 +1801,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261022c";
+const APP_VERSION="20261022d";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -1990,6 +2006,7 @@ function teamHTML2(){
 }
 let teamRtTimer=null;
 function teamRt(){ clearTimeout(teamRtTimer); teamRtTimer=setTimeout(async()=>{ if(!S.me||S.me.role==="patient") return; await loadTeam();
+  if(audioPlaying()){ updateBadges(); teamRt(); return; }
   const el=document.activeElement, typing=!!(el&&(el.tagName==="TEXTAREA"||el.tagName==="INPUT"));
   if(S.cscreen==="messages"&&S.tthread){ await sb.rpc("team_read",{p_thread:S.tthread}).then(()=>{ const me=tMembers(S.tthread).find(m=>m.user_id===S.me.id); if(me) me.last_read_at=new Date().toISOString(); }); }
   if(S.cscreen==="messages"&&typing&&$("#tmsgs")){ const t=S.team2.threads.find(x=>x.id===S.tthread); if(t){ $("#tmsgs").innerHTML=tMsgs(t.id).map(tMsgHTML).join(""); hydrateTeam(); tScroll(); } updateBadges(); }
@@ -2005,7 +2022,7 @@ async function teamFile(id){ if(TFILES.has(id)) return TFILES.get(id);
 function hydrateTeam(){ $$("[data-tfile]:not([data-ready])").forEach(async el=>{ el.dataset.ready="1";
   try{ const f=await teamFile(+el.dataset.tfile);
     if(el.dataset.kind==="image"){ el.innerHTML=`<img src="${f.url}" alt="Photo">`; el.onclick=()=>openViewer(f.url); el.querySelector("img").onload=tScroll; }
-    else if(el.dataset.kind==="audio"){ el.querySelector("audio").src=f.url; }
+    else if(el.dataset.kind==="audio"){ const au=el.querySelector("audio"); au.src=f.url; fixAudio(au, f.blob, 0); }
     else el.onclick=async e=>{ e.preventDefault(); if(IS_NATIVE&&SEC()){ try{ await nativePreview(f.blob,f.name); }catch(_){ toast("Ce document n'a pas pu être ouvert."); } } else window.open(f.url,"_blank","noopener"); };
   }catch(e){ el.textContent="Fichier indisponible"; } }); }
 function pickColleagues(title, exclude, done, withName){
@@ -2900,6 +2917,7 @@ async function rtFlush(){
     if(pat){ const {data}=await sb.from("notifications").select("*").eq("user_id",S.me.id).order("created_at",{ascending:false}).limit(50); if(data) S.notifs=data; }
   }catch(e){ console.error(e); return; }
   const openId = pat ? (S.screen==="req"?S.openReq:null) : (S.cscreen==="inbox"?S.sel:null);
+  if(audioPlaying()){ updateBadges(); setTimeout(()=>rtQueue(null),3000); return; }   // ne pas couper un message vocal en cours d'écoute
   const el=document.activeElement, typing=!!(el&&(el.tagName==="TEXTAREA"||el.tagName==="INPUT"||el.tagName==="SELECT"));
   const busy = S.screen==="flow" || S.editNews || (!pat && ["compose","settings","tasks","inventory"].includes(S.cscreen));
   if(typing||REC||CREC||S.pend||document.querySelector(".viewer,.scanner,.tour")){
