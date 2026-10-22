@@ -1320,7 +1320,7 @@ function renderBlocked(a){
   <div class="closed"><b>Compte non validé</b><span>Ce compte n'a pas pu être validé. Contactez le secrétariat au 02 781 18 75.</span></div>`;
   $("#logout").onclick=logout;
 }
-async function logout(reason){ if(typeof reason!=="string") await pushForget(); stopRealtime(); await sb.auth.signOut(); updateBadges(0); const keep=savedLang(); if(keep&&keep!==L) applyLang(keep); S.session=null; S.me=null; S.mfa=null; S.trustList=null; S.screen="home"; S.cscreen="inbox"; try{ localStorage.removeItem("cmpl_last_active"); }catch(e){} render(); if(typeof reason==="string") toast(reason); }
+async function logout(reason){ if(typeof reason!=="string") await pushForget(); stopRealtime(); await sb.auth.signOut(); updateBadges(0); const keep=savedLang(); if(keep&&keep!==L) applyLang(keep); S.session=null; S.me=null; S.mfa=null; S.trustList=null; S.scope=null; S.iq=""; S.itype="all"; S.screen="home"; S.cscreen="inbox"; try{ localStorage.removeItem("cmpl_last_active"); }catch(e){} render(); if(typeof reason==="string") toast(reason); }
 
 /* =====================================================================
    PATIENT
@@ -1785,7 +1785,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261022a";
+const APP_VERSION="20261022b";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -2044,7 +2044,7 @@ function bindTeam2(){
   const lv=$("#t-leave"); if(lv) lv.onclick=async()=>{ if(!confirmInline(lv,"Quitter ce groupe ?")) return; if(await run(()=>sb.rpc("team_leave",{p_thread:t.id}),"Vous avez quitté le groupe")){ S.tthread=null; await loadTeam(); render(); } };
   $("#t-req").onclick=()=>pickRequest(id=>{ S.tattach={thread:t.id,id}; render(); $("#c-text")?.focus(); });
   const ur=$("#t-unreq"); if(ur) ur.onclick=()=>{ S.tattach=null; render(); };
-  $$("[data-openreq]").forEach(b=>b.onclick=()=>{ S.sel=+b.dataset.openreq; const r=S.reqs.find(x=>x.id===S.sel); if(r){ S.tab=r.queue; S.archive=r.status==="traite"; } S.cscreen="inbox"; render(); scrollTo(0,0); });
+  $$("[data-openreq]").forEach(b=>b.onclick=()=>{ S.sel=+b.dataset.openreq; const r=S.reqs.find(x=>x.id===S.sel); if(r){ S.scope="all"; S.iq=""; S.itype="all"; S.archive=r.status==="traite"; } S.cscreen="inbox"; render(); scrollTo(0,0); });
   const key="t"+t.id;
   bindComposer(key, async (text,pend)=>{
     const req=S.tattach&&S.tattach.thread===t.id?S.tattach.id:null;
@@ -2165,6 +2165,7 @@ function staffHelpHTML(){
    ["Réponses types","Dans une demande, le bouton 💬 à côté de la zone de message insère un texte prêt (le prénom du patient est ajouté). Créez les vôtres dans Moi → Mes réponses types."],
    ["Le classeur du centre","Le centre → Classeur : numéros utiles, procédures et documents. Toute l'équipe peut ajouter et modifier les fiches."],
    ["Le menu « Le centre »","Il regroupe ce qui concerne tout le centre : Actualités, Équipe, Classeur, Inventaire, Congés, Comptes à valider (selon votre rôle). Le chiffre rouge indique ce qui attend."],
+   ["Trouver et trier les demandes","Onglet Demandes : « Les miennes / Secrétariat / Tout le centre » choisit les demandes affichées ; la recherche trouve un patient par son nom ; les pastilles colorées filtrent par type. Les demandes sont rangées par ce qu'il faut faire : urgent ou en retard, le patient a répondu, nouvelles. « En attente du patient » (vous avez répondu) est replié en bas. Les renouvellements simples peuvent être accordés à la suite dans « Prescriptions en série », après les avoir faits dans CareConnect."],
    ["Un patient sans compte dans l'app","Le centre → Fiches patients : créez une fiche (nom, prénom, date de naissance, téléphone, e-mail). Vous pouvez ensuite lui lier une tâche, en parler à un collègue (« En parler ») ou l'inviter par e-mail à créer son compte. Jamais de note médicale dans une fiche. Quand le patient s'inscrit, l'administrateur relie son compte à la fiche dans Comptes à valider."],
    ["Transférer avec un mot","Dans une demande, choisissez le collègue dans « Transférer à », écrivez un mot dans le champ en dessous, puis Transférer. Le collègue voit le mot en haut de la demande ; le patient ne le voit jamais."],
    ["Ne pas être dérangé(e)","Touchez la cloche en haut de l'écran (à côté de « Écrire à un patient »). « Pause des notifications » : 1 heure, jusqu'à demain 8 h ou jusqu'à ce que vous la retiriez ; les demandes arrivent toujours dans l'app et vous recevez un résumé à la fin de la pause. « Je suis absent(e) » : vos alertes vont au collègue choisi et les patients reçoivent un message automatique. Cloche barrée orange = en pause ; rouge = absent(e)."],
@@ -2205,33 +2206,85 @@ function durHTML(r){ const m=rdvMinutes(r); if(m===undefined) return "";
 const isShort = r => { const m=rdvMinutes(r); return m!=null && m<=10; };
 
 /* ----- boîte de réception ----- */
-function inboxList(){
-  const inTab = r => r.queue===S.tab && (S.tab!=="prestataires"||S.provFilter==="tous"||r.provider_id===S.provFilter);
-  const rank = r => r.status==="traite"?2:awaitingStaff(r)?0:1;
-  const lastAt = r => { const m=msgsOf(r); return new Date(m.length?m[m.length-1].created_at:r.created_at); };
-  return S.reqs.filter(inTab).filter(r=>S.archive?r.status==="traite":r.status!=="traite").filter(r=>S.archive||!S.short||isShort(r))
-    .sort((x,y)=>rank(x)-rank(y)||(rank(x)===0?new Date(x.due_at)-new Date(y.due_at):lastAt(y)-lastAt(x)));
+/* ---------- liste des demandes : vues, recherche, filtres, groupes par action ---------- */
+function scopeOpts(){
+  const qs=new Set(S.reqs.map(r=>r.queue)), o=[];
+  if(S.me.provider_id&&(S.me.role==="provider"||S.me.role==="admin")) o.push(["mine","Les miennes"]);
+  if(qs.has("secretariat")) o.push(["secretariat","Secrétariat"]);
+  if(qs.has("administration")) o.push(["administration","Administration"]);
+  if(qs.has("prestataires")&&!o.some(x=>x[0]==="mine")) o.push(["prestataires","Prestataires"]);
+  if(o.length>1) o.push(["all","Tout le centre"]);
+  if(!o.length) o.push(["all","Toutes"]);
+  return o;
 }
+function inScope(r){ const sc=S.scope;
+  if(sc==="all") return true;
+  if(sc==="mine") return r.queue==="prestataires"&&r.provider_id===S.me.provider_id;
+  return r.queue===sc; }
+const SCOPE_TITLE={mine:"Mes demandes",secretariat:"Demandes du secrétariat",administration:"Demandes de l'administration",prestataires:"Demandes des prestataires",all:"Toutes les demandes"};
+const ITYPES=["rdv","question","prescription","rapport","document","resultats"];
+const IEMO={rdv:"📅",question:"💬",prescription:"💊",rapport:"📝",document:"📎",resultats:"🧪",centre:"✉️"};
+const lastAt = r => { const m=msgsOf(r); return new Date(m.length?m[m.length-1].created_at:r.created_at); };
+const isLate = r => awaitingStaff(r)&&r.due_at&&new Date(r.due_at)<new Date();
+const reqGroup = r => r.status==="traite"?9:!awaitingStaff(r)?3:(r.priority==="haute"||isLate(r))?0:newPatientMsg(r)?1:2;
+function iqMatch(r){ const w=norm(S.iq||"").split(/\s+/).filter(Boolean); if(!w.length) return true;
+  const hay=norm(`${reqName(r)} ${r.child_id?patientName(r.patient_id):""}`); return w.every(x=>hay.includes(x)); }
+function inboxBase(){ return S.reqs.filter(inScope).filter(iqMatch).filter(r=>S.archive?r.status==="traite":r.status!=="traite"); }
+function inboxList(){
+  const base=inboxBase().filter(r=>S.itype==="all"||r.type===S.itype).filter(r=>S.archive||!S.short||isShort(r));
+  if(S.archive) return base.sort((a,b)=>new Date(b.closed_at||0)-new Date(a.closed_at||0));
+  return base.sort((x,y)=>reqGroup(x)-reqGroup(y)||(reqGroup(x)===1?lastAt(y)-lastAt(x):reqGroup(x)===3?lastAt(y)-lastAt(x):new Date(x.due_at||8.64e15)-new Date(y.due_at||8.64e15)));
+}
+function durShort(ms){ const h=Math.round(ms/3600e3); return h<1?"moins d'1 h":h<48?`${h} h`:`${Math.round(h/24)} j`; }
+function dueTagI(r){
+  if(r.status==="traite") return `<span class="pill st-${stClass(r)}">${stLabel(r)}</span>`;
+  if(!awaitingStaff(r)) return `<span class="ipill wait">attend le patient</span>`;
+  if(isLate(r)) return `<span class="ipill late">en retard · ${durShort(Date.now()-new Date(r.due_at))}</span>`;
+  if(newPatientMsg(r)) return `<span class="ipill rep">nouveau message</span>`;
+  if(r.priority==="haute") return `<span class="ipill hi">avant ${r.due_at?fmtWhen(r.due_at):"—"}</span>`;
+  return `<span class="ipill no">${r.priority==="basse"?"pas pressé":"normale"}</span>`; }
+function irowHTML(r){ const ms=msgsOf(r), last=ms[ms.length-1];
+  const rx=r.type==="prescription"&&(r.request_items||[]).length?(r.request_items||[]).map(i=>i.label+(i.quantity>1?` ×${i.quantity}`:"")).join(", "):"";
+  const prev=newPatientMsg(r)&&last?`« ${msgPreview(last)} »`:rx||summaryLine(r.answers);
+  return `<button class="row irow" data-sel="${r.id}" aria-current="${r.id===S.sel}"><div class="ic t-${r.type}" aria-hidden="true">${IEMO[r.type]||IC[r.type]}</div>
+   <div class="itx"><b>${esc(reqName(r))}</b>${r.child_id?` <span class="ipill no">enfant</span>`:""}<small>${TYPES[r.type].label}${prev?" · "+esc(prev):""}</small>${durHTML(r)}${S.scope==="all"?`<small class="iwho">${esc(reqWho(r))}</small>`:""}</div>
+   <div class="iside">${dueTagI(r)}<small>${r.status==="traite"?fmt(r.closed_at):ms.length?fmt(last.created_at):"reçue "+fmt(r.created_at)}</small></div></button>`; }
+const IGROUPS=[["g0","🔴 Urgent ou en retard"],["g1","💬 Le patient a répondu"],["g2","🆕 Nouvelles"],["g3","⏳ En attente du patient"]];
+// Prescriptions simples (traitement habituel, sans remarque) : à accorder en série
+const isSimpleRx = r => r.type==="prescription"&&r.status!=="traite"&&awaitingStaff(r)&&(r.request_items||[]).length>0&&(r.request_items||[]).every(i=>!i.decision)
+  &&r.answers?.historique==="Oui, c'est mon traitement habituel"&&!(r.answers?.remarque||"").trim()&&msgsOf(r).length===0;
+function rxBatchHTML(){
+  if(S.archive) return ""; const L=inboxBase().filter(isSimpleRx); if(L.length<2) return "";
+  return `<section class="rxbatch"><h3>💊 Prescriptions en série <span class="ipill no">${L.length}</span></h3>
+   <p class="hint">Renouvellements du traitement habituel, sans remarque du patient. <b>Faites d'abord la prescription dans CareConnect</b>, puis « Accorder » : le patient est prévenu et la demande est classée.</p>
+   ${L.map(r=>`<div class="rxb"><div><b>${esc(reqName(r))}</b><small>${(r.request_items||[]).map(i=>esc(i.label)+(i.quantity>1?` ×${i.quantity}`:"")).join(" · ")}</small></div><div class="rxbact"><button class="btn small" data-rxok="${r.id}">Accorder</button><button class="btn ghost small" data-sel="${r.id}">Ouvrir</button></div></div>`).join("")}</section>`; }
 const greetWord = () => { const h=new Date().getHours(); return h<18?"Bonjour":"Bonsoir"; };
 function inboxHTML(){
-  const open=S.reqs.filter(r=>r.status!=="traite");
-  const queues=[...new Set(S.reqs.map(r=>r.queue))];
-  if(!queues.includes(S.tab) && queues.length) S.tab=queues[0];
-  const list=inboxList();
-  if(!list.find(r=>r.id===S.sel)) S.sel=list[0]?.id??null;
-  const late=open.filter(r=>awaitingStaff(r)&&r.due_at&&new Date(r.due_at)<new Date()).length;
-  const now=new Date();
-  const provs=[...new Set(S.reqs.filter(r=>r.queue==="prestataires").map(r=>r.provider_id))].filter(Boolean);
-  const nArch=S.reqs.filter(r=>r.queue===S.tab&&r.status==="traite").length;
-  const nShort=S.reqs.filter(r=>r.queue===S.tab&&r.status!=="traite"&&isShort(r)&&(S.tab!=="prestataires"||S.provFilter==="tous"||r.provider_id===S.provFilter)).length;
-  return `<div class="chead"><div><p class="greet">${greetWord()} ${esc(S.me.first_name||"")} 👋</p><h1>Demandes des patients</h1><p>${now.toLocaleDateString(LOC,{weekday:"long",day:"numeric",month:"long"})} · ${isOpen(now)?'<span class="state on">Ouvert</span>':`<span class="state off">Fermé · réouverture ${fmtWhen(nextOpen(now))}</span>`}</p></div>
-   <div class="counts"><div class="count"><b>${open.filter(r=>r.priority==="haute"&&awaitingStaff(r)).length}</b>haute priorité</div><div class="count"><b>${open.filter(r=>r.status==="nouveau").length}</b>nouvelles</div><div class="count"><b>${open.filter(newPatientMsg).length}</b>messages patients</div><div class="count ${late?"urg":""}"><b>${late}</b>en retard</div></div></div>
-  ${queues.length>1?`<div class="tabs">${queues.map(q=>`<button class="tab" data-tab="${q}" aria-pressed="${S.tab===q}">${q==="secretariat"?"Secrétariat":q==="administration"?"Administration":"Prestataires"}<span class="n">${S.reqs.filter(r=>r.queue===q&&r.status!=="traite").length}</span></button>`).join("")}</div>`:""}
-  ${S.tab==="prestataires"&&provs.length>1?`<div class="tabs">${["tous",...provs].map(id=>{const k=S.reqs.filter(r=>r.provider_id===id&&r.queue==="prestataires"&&r.status!=="traite").length;return `<button class="tab" data-pf="${id}" aria-pressed="${S.provFilter===id}" style="font-weight:400">${id==="tous"?"Tous":esc(provName(id))}${id!=="tous"&&k?`<span class="n">${k}</span>`:""}</button>`}).join("")}</div>`:""}
-  <div class="seg" role="group" aria-label="Filtrer" style="margin-bottom:10px"><button id="f-open" aria-pressed="${!S.archive}">À traiter</button><button id="f-arch" aria-pressed="${S.archive}">Classées (${nArch})</button></div>${!S.archive&&(nShort||S.short)?` <button class="tab shortbtn" id="f-short" aria-pressed="${!!S.short}" title="Rendez-vous de médecine générale de 10 minutes ou moins">⏱ Rendez-vous courts (≤ 10 min)<span class="n">${nShort}</span></button>`:""}
+  const opts=scopeOpts();
+  if(!S.scope) S.scope=S.me.role==="gestion"?"administration":S.me.role==="secretariat"?"secretariat":"mine";
+  if(!opts.some(o=>o[0]===S.scope)) S.scope=opts[0][0];
+  if(!S.itype) S.itype="all";
+  const base=inboxBase(), list=inboxList();
+  if(!list.find(r=>r.id===S.sel)) S.sel=(list.find(r=>reqGroup(r)!==3)||list[0])?.id??null;
+  const todo=S.reqs.filter(inScope).filter(r=>r.status!=="traite"&&awaitingStaff(r)), urg=todo.filter(r=>reqGroup(r)===0).length;
+  const now=new Date(), nArch=S.reqs.filter(inScope).filter(r=>r.status==="traite").length;
+  const nShort=base.filter(r=>r.status!=="traite"&&isShort(r)).length;
+  const cnt=k=>base.filter(r=>r.type===k).length;
+  let body="";
+  if(!list.length) body=`<div class="empty">${S.iq?"Aucune demande ne correspond à la recherche.":S.archive?"Aucune conversation classée.":`<span class="yay" aria-hidden="true">🎉</span><b>Tout est traité !</b><br>Rien à traiter pour l'instant.`}</div>`;
+  else if(S.archive) body=list.map(irowHTML).join("");
+  else { for(let g=0;g<4;g++){ const L=list.filter(r=>reqGroup(r)===g); if(!L.length) continue;
+      if(g===3){ body+=`<button type="button" class="igroup g3 itoggle" id="i-wait" aria-expanded="${!!S.showWait}"><span>${IGROUPS[3][1]} <b>${L.length}</b></span><span>${S.showWait?"masquer ‹":"afficher ›"}</span></button>${S.showWait?L.map(irowHTML).join(""):""}`; }
+      else body+=`<div class="igroup g${g}">${IGROUPS[g][1]} <b>${L.length}</b></div>${L.map(irowHTML).join("")}`; } }
+  return `<div class="chead"><div><p class="greet">${greetWord()} ${esc(S.me.first_name||"")} 👋</p><h1>${SCOPE_TITLE[S.scope]||"Demandes"}</h1>
+   <p>${now.toLocaleDateString(LOC,{weekday:"long",day:"numeric",month:"long"})} · ${isOpen(now)?'<span class="state on">Ouvert</span>':`<span class="state off">Fermé · réouverture ${fmtWhen(nextOpen(now))}</span>`} · ${todo.length?`<b>${todo.length}</b> demande${todo.length>1?"s":""} attend${todo.length>1?"ent":""} une réponse${urg?`, dont <b class="urgtxt">${urg} urgente${urg>1?"s":""}</b>`:""}`:"aucune demande en attente"}</p></div></div>
+  <div class="ibar"><input id="i-q" type="search" class="isearch" placeholder="🔎 Rechercher un patient…" value="${esc(S.iq||"")}" aria-label="Rechercher un patient">
+   ${opts.length>1?`<div class="seg" role="group" aria-label="Quelles demandes">${opts.map(([k,l])=>`<button data-scope="${k}" aria-pressed="${S.scope===k}">${l}</button>`).join("")}</div>`:""}
+   <div class="seg" role="group" aria-label="Filtrer"><button id="f-open" aria-pressed="${!S.archive}">À traiter</button><button id="f-arch" aria-pressed="${!!S.archive}">Classées (${nArch})</button></div></div>
+  <div class="ichips" role="group" aria-label="Type de demande"><button class="ichip all" data-itype="all" aria-pressed="${S.itype==="all"}">Toutes <i>${base.length}</i></button>${ITYPES.filter(k=>cnt(k)||S.itype===k).map(k=>`<button class="ichip t-${k}" data-itype="${k}" aria-pressed="${S.itype===k}">${IEMO[k]} ${TYPES[k].label}${k==="question"||k==="rapport"||k==="document"?"s":k==="rdv"?"":k==="prescription"?"s":""} <i>${cnt(k)}</i></button>`).join("")}${!S.archive&&(nShort||S.short)?`<button class="ichip" id="f-short" aria-pressed="${!!S.short}" title="Rendez-vous de médecine générale de 10 minutes ou moins">⏱ Rendez-vous courts <i>${nShort}</i></button>`:""}</div>
   <div class="pane">
-   <div class="list inbox">${list.length?list.map(r=>{const ms=msgsOf(r);return `<button class="row" data-sel="${r.id}" aria-current="${r.id===S.sel}"><span class="prio ${r.priority==="haute"&&awaitingStaff(r)?"on":""}"></span><div class="ic t-${r.type}">${IC[r.type]}</div><div><b>${esc(reqName(r))}</b>${r.child_id?`<small class="kidtag">Enfant · demande de ${esc(patientName(r.patient_id))}</small>`:""}<small>${TYPES[r.type].label} · ${esc(summaryLine(r.answers))}</small>${durHTML(r)}<small>${ms.length?`${ms.length} message${ms.length>1?"s":""} · dernier ${fmt(ms[ms.length-1].created_at)}`:`Reçue ${fmt(r.created_at)}`}</small>${dueHTML(r)}</div><span class="pill st-${stClass(r)}">${stLabel(r)}</span></button>`}).join(""):`<div class="empty">${S.archive?"Aucune conversation classée.":`<span class="yay" aria-hidden="true">🎉</span><b>Tout est traité !</b><br>Rien à traiter pour l'instant.`}</div>`}</div>
-   <div id="detail">${detailHTML()}</div>
+   <div class="list inbox">${body}</div>
+   <div id="detail">${rxBatchHTML()}${detailHTML()}</div>
   </div>`;
 }
 function detailHTML(){
@@ -2272,12 +2325,18 @@ function notesHTML(r){ const N=(S.notes||[]).filter(n=>n.request_id===r.id); if(
   return `<div class="tnotes">${N.map(n=>`<div class="tnote"><span aria-hidden="true">📝</span><div><small>Mot de <b>${esc(teamName(n.author_id))}</b>${n.target?` pour <b>${esc(n.target)}</b>`:""} · ${fmt(n.created_at)} · <i>visible seulement par l'équipe</i></small><p>${esc(n.body)}</p></div></div>`).join("")}</div>`; }
 const opened=new Set();
 function bindInbox(){
-  $$("[data-tab]").forEach(b=>b.onclick=()=>{ S.tab=b.dataset.tab; S.sel=null; render(); });
-  $$("[data-pf]").forEach(b=>b.onclick=()=>{ S.provFilter=b.dataset.pf; S.sel=null; render(); });
+  $$("[data-scope]").forEach(b=>b.onclick=()=>{ S.scope=b.dataset.scope; S.sel=null; render(); });
+  $$("[data-itype]").forEach(b=>b.onclick=()=>{ S.itype=b.dataset.itype; S.sel=null; render(); });
   $("#f-open").onclick=()=>{ S.archive=false; S.sel=null; render(); };
   $("#f-arch").onclick=()=>{ S.archive=true; S.sel=null; render(); };
   const fs=$("#f-short"); if(fs) fs.onclick=()=>{ S.short=!S.short; S.sel=null; render(); };
+  const w=$("#i-wait"); if(w) w.onclick=()=>{ S.showWait=!S.showWait; render(); };
+  const q=$("#i-q"); let tm; q.oninput=()=>{ clearTimeout(tm); tm=setTimeout(()=>{ S.iq=q.value; S.sel=null; render(); const n=$("#i-q"); if(n){ n.focus(); n.setSelectionRange(n.value.length,n.value.length); } },250); };
   $$("[data-sel]").forEach(b=>b.onclick=()=>{ clearPend(); S.sel=+b.dataset.sel; render(); if(innerWidth<760) $("#detail").scrollIntoView({behavior:"smooth"}); });
+  $$("[data-rxok]").forEach(b=>b.onclick=async()=>{ if(b.dataset.sure!=="1"){ b.dataset.sure="1"; b.textContent="Confirmer ?"; return; }
+    const r=S.reqs.find(x=>x.id===+b.dataset.rxok); if(!r) return; b.disabled=true;
+    const dec={}; (r.request_items||[]).forEach(i=>dec[i.id]="accorde");
+    if(await run(()=>sb.rpc("close_request",{p_id:r.id,p_body:null,p_decisions:dec}),`Prescription accordée · ${reqName(r)} prévenu(e)`)) await refresh(); else b.disabled=false; });
   bindDetail();
 }
 function bindDetail(){
@@ -2375,7 +2434,7 @@ function bindCompose(){
     toast(okAll?"Message envoyé · patient notifié":"Message envoyé, mais une pièce jointe a échoué : ajoutez-la dans la conversation.");
     C.files.forEach(f=>f.url&&URL.revokeObjectURL(f.url)); S.compose=null;
     if(C.patient.child) S.children[C.patient.id]=C.patient; else S.profiles[C.patient.id]=C.patient; S.cscreen="inbox"; S.archive=!C.reply; await refresh();
-    const nr=S.reqs.find(x=>x.id===id); if(nr){ S.tab=nr.queue; S.sel=id; render(); } };
+    const nr=S.reqs.find(x=>x.id===id); if(nr){ S.scope="all"; S.iq=""; S.itype="all"; S.sel=id; render(); } };
 }
 
 /* ----- message vocal dans « Écrire à un patient » ----- */
