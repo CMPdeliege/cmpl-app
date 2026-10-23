@@ -441,10 +441,36 @@ function hydrateAtt(){
   });
 }
 function openViewer(url){
+  // plein écran, avec zoom au doigt (pincer / double-toucher) et déplacement : marche aussi dans l'app iPhone
   const v=document.createElement("div"); v.className="viewer"; v.setAttribute("role","dialog"); v.setAttribute("aria-label","Photo");
-  v.innerHTML=`<img alt="Photo agrandie"><button class="cbtn" aria-label="Fermer">✕</button>`; v.querySelector("img").src=url;
+  v.innerHTML=`<img alt="Photo agrandie" draggable="false"><button class="cbtn" aria-label="Fermer">✕</button><p class="vhint">Pincez ou touchez deux fois pour zoomer</p>`;
+  const img=v.querySelector("img"); img.src=url;
+  let sc=1, tx=0, ty=0, pts=new Map(), start=null, moved=false, lastTap=0;
+  const apply=()=>{ img.style.transform=`translate(${tx}px,${ty}px) scale(${sc})`; v.classList.toggle("zoomed",sc>1.01); };
+  const clamp=()=>{ if(sc<=1){sc=1;tx=0;ty=0;return;} sc=Math.min(sc,6);
+    const r=img.getBoundingClientRect(), w=r.width/sc, h=r.height/sc, mx=Math.max(0,(w*sc-innerWidth)/2), my=Math.max(0,(h*sc-innerHeight)/2);
+    tx=Math.max(-mx,Math.min(mx,tx)); ty=Math.max(-my,Math.min(my,ty)); };
+  const zoomAt=(nsc,cx,cy)=>{ const r=v.getBoundingClientRect(), ox=cx-r.width/2, oy=cy-r.height/2;
+    tx=ox-(ox-tx)*nsc/sc; ty=oy-(oy-ty)*nsc/sc; sc=nsc; };
   const close=()=>{ v.remove(); removeEventListener("keydown",esc_); }; const esc_=e=>{ if(e.key==="Escape") close(); };
-  v.onclick=close; addEventListener("keydown",esc_); document.body.appendChild(v); v.querySelector("button").focus();
+  v.addEventListener("pointerdown",e=>{ if(e.target.closest(".cbtn")) return; v.setPointerCapture?.(e.pointerId); pts.set(e.pointerId,{x:e.clientX,y:e.clientY}); moved=false;
+    const a=[...pts.values()];
+    start=a.length===2?{d:Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y),sc,tx,ty,cx:(a[0].x+a[1].x)/2,cy:(a[0].y+a[1].y)/2}:{x:e.clientX,y:e.clientY,tx,ty}; });
+  v.addEventListener("pointermove",e=>{ if(!pts.has(e.pointerId)) return; pts.set(e.pointerId,{x:e.clientX,y:e.clientY}); const a=[...pts.values()];
+    if(a.length===2&&start&&start.d){ const d=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y); sc=start.sc; tx=start.tx; ty=start.ty;
+      zoomAt(Math.max(1,Math.min(6,start.sc*d/start.d)),start.cx,start.cy); moved=true; apply(); }
+    else if(a.length===1&&start&&start.x!=null){ const dx=e.clientX-start.x, dy=e.clientY-start.y; if(Math.abs(dx)+Math.abs(dy)>6) moved=true;
+      if(sc>1){ tx=start.tx+dx; ty=start.ty+dy; apply(); } } });
+  const up=e=>{ if(!pts.has(e.pointerId)) return; pts.delete(e.pointerId);
+    if(pts.size===0){ clamp(); apply();
+      if(!moved&&!e.target.closest(".cbtn")){ const now=Date.now();
+        if(now-lastTap<320){ lastTap=0; if(sc>1){sc=1;tx=0;ty=0;} else zoomAt(2.5,e.clientX,e.clientY); clamp(); apply(); }
+        else { lastTap=now; const onImg=e.target===img; setTimeout(()=>{ if(lastTap===now&&sc<=1&&!onImg) close(); },330); } } }
+    else { const a=[...pts.values()]; start={x:a[0].x,y:a[0].y,tx,ty}; } };
+  v.addEventListener("pointerup",up); v.addEventListener("pointercancel",up);
+  v.addEventListener("wheel",e=>{ e.preventDefault(); zoomAt(Math.max(1,Math.min(6,sc*(e.deltaY<0?1.15:0.87))),e.clientX,e.clientY); clamp(); apply(); },{passive:false});
+  v.querySelector("button").onclick=e=>{ e.stopPropagation(); close(); };
+  addEventListener("keydown",esc_); document.body.appendChild(v); v.querySelector("button").focus();
 }
 function scrollChat(){
   const c=$("#chat"); if(!c) return;
@@ -751,8 +777,8 @@ const reqName = r => r.child_id ? kidName(r.child_id) : patientName(r.patient_id
 /* ---------- actualités ---------- */
 function newsCard(n, full){
   if(n.image_path&&!(n.body||"").trim())   // annonce « affiche » : l'image seule, affichée en entier
-    return `<article class="news poster ${full?"full":""} ${n.pinned?"pinned":""}"><div class="pimg"><img src="${esc(n.image_path)}" alt="${esc(n.title)}" ${full?`data-zoom="${esc(n.image_path)}"`:""}></div>${full?`<p class="hint center" style="margin:6px 0 0">Touchez l'image pour l'agrandir.</p>`:""}<div class="nbody"><div class="nmeta"><span class="ncat">${esc(n.category)}</span>${n.pinned?'<span class="ncat pin">Épinglé</span>':""}<span>${fmt(n.published_at)}</span></div><h3 translate="no" dir="auto">${esc(n.title)}</h3></div></article>`;
-  return `<article class="news ${n.pinned?"pinned":""}">${n.image_path?`<img src="${esc(n.image_path)}" alt="">`:""}<div class="nbody"><div class="nmeta"><span class="ncat">${esc(n.category)}</span>${n.pinned?'<span class="ncat pin">Épinglé</span>':""}<span>${fmt(n.published_at)}</span></div><h3 translate="no" dir="auto">${esc(n.title)}</h3><p translate="no" dir="auto" class="${full?"":"clamp"}">${esc(n.body)}</p></div></article>`;
+    return `<article class="news poster ${full?"full":""} ${n.pinned?"pinned":""}"><div class="pimg" ${full?`data-zoom="${esc(n.image_path)}" role="button" tabindex="0" aria-label="Agrandir l'affiche"`:""}><img src="${esc(n.image_path)}" alt="${esc(n.title)}"></div>${full?`<button type="button" class="linkbtn zoomhint" data-zoom="${esc(n.image_path)}"><span aria-hidden="true">🔍 </span>Agrandir l'affiche</button>`:""}<div class="nbody"><div class="nmeta"><span class="ncat">${esc(n.category)}</span>${n.pinned?'<span class="ncat pin">Épinglé</span>':""}<span>${fmt(n.published_at)}</span></div><h3 translate="no" dir="auto">${esc(n.title)}</h3></div></article>`;
+  return `<article class="news ${n.pinned?"pinned":""}">${n.image_path?`<img src="${esc(n.image_path)}" alt="" ${full?`data-zoom="${esc(n.image_path)}" style="cursor:zoom-in"`:""}>`:""}<div class="nbody"><div class="nmeta"><span class="ncat">${esc(n.category)}</span>${n.pinned?'<span class="ncat pin">Épinglé</span>':""}<span>${fmt(n.published_at)}</span></div><h3 translate="no" dir="auto">${esc(n.title)}</h3><p translate="no" dir="auto" class="${full?"":"clamp"}">${esc(n.body)}</p></div></article>`;
 }
 
 /* =====================================================================
@@ -1424,7 +1450,7 @@ function patientNews(a){
   <div class="newslist">${one?newsCard(one,true):S.news.length?S.news.map(n=>`<button class="newsbtn" data-news="${n.id}">${newsCard(n,false)}</button>`).join(""):`<div class="empty">Pas d'actualité en ce moment.</div>`}</div>`;
   $("#back").onclick=()=>{ if(S.openNews){S.openNews=null;render()} else {S.screen="home";render()} };
   $$("[data-news]").forEach(b=>b.onclick=()=>{S.openNews=+b.dataset.news;render();scrollTo(0,0)});
-  $$("[data-zoom]").forEach(im=>im.onclick=()=>openViewer(im.dataset.zoom));
+  $$("[data-zoom]").forEach(im=>{ im.onclick=()=>openViewer(im.dataset.zoom); im.onkeydown=e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); openViewer(im.dataset.zoom); } }; });
 }
 function patientNotifs(a){
   a.innerHTML=`<div class="convhead"><button class="back" id="back" aria-label="Retour">${IC.back}</button><div><h2>Notifications</h2></div></div>
@@ -1804,7 +1830,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261023c";
+const APP_VERSION="20261023d";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
