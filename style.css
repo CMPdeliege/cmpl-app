@@ -1008,3 +1008,6 @@ select,input,textarea{max-width:100%}
 .news.poster .zoomhint{display:block;margin:8px auto 0;font-size:14px}
 .news.poster .nbody{padding-top:8px}
 .news.poster h3{font-size:15px}
+/* iPhone : un toucher sur l'affiche doit déclencher un « clic » */
+[data-zoom]{cursor:pointer;-webkit-tap-highlight-color:transparent}
+@media (hover:hover){ [data-zoom]{cursor:zoom-in} }

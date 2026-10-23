@@ -1450,7 +1450,6 @@ function patientNews(a){
   <div class="newslist">${one?newsCard(one,true):S.news.length?S.news.map(n=>`<button class="newsbtn" data-news="${n.id}">${newsCard(n,false)}</button>`).join(""):`<div class="empty">Pas d'actualité en ce moment.</div>`}</div>`;
   $("#back").onclick=()=>{ if(S.openNews){S.openNews=null;render()} else {S.screen="home";render()} };
   $$("[data-news]").forEach(b=>b.onclick=()=>{S.openNews=+b.dataset.news;render();scrollTo(0,0)});
-  $$("[data-zoom]").forEach(im=>{ im.onclick=()=>openViewer(im.dataset.zoom); im.onkeydown=e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); openViewer(im.dataset.zoom); } }; });
 }
 function patientNotifs(a){
   a.innerHTML=`<div class="convhead"><button class="back" id="back" aria-label="Retour">${IC.back}</button><div><h2>Notifications</h2></div></div>
@@ -1830,7 +1829,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261023d";
+const APP_VERSION="20261023e";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -1973,6 +1972,9 @@ function openDD(id){ const d=$("#"+id); if(!d) return; const was=!d.hidden; clos
   d.hidden=false; const b=$("#"+id+"-b"); if(b) b.setAttribute("aria-expanded","true"); const bk=$(".ddback"); if(bk) bk.hidden=false; document.body.classList.add("ddopen");
   const f=d.querySelector(".ddi"); if(f) f.focus({preventScroll:true}); }
 document.addEventListener("keydown",e=>{ if(e.key==="Escape"&&$(".dd:not([hidden])")) closeDD(); });
+// agrandir une image d'annonce, sur tous les écrans (patients, équipe, comptes en attente)
+document.addEventListener("click",e=>{ const z=e.target.closest&&e.target.closest("[data-zoom]"); if(!z) return; e.preventDefault(); e.stopPropagation(); openViewer(z.dataset.zoom); },true);
+document.addEventListener("keydown",e=>{ if(e.key!=="Enter"&&e.key!==" ") return; const z=e.target.closest&&e.target.closest("[data-zoom]"); if(!z||z.tagName==="BUTTON") return; e.preventDefault(); openViewer(z.dataset.zoom); });
 document.addEventListener("click",e=>{ if(!$(".dd:not([hidden])")) return; if(e.target.closest(".dd,[data-dd],#dd-centre-b,#dd-me-b")) return; closeDD(); });
 function leavesHTML(){
   const t=todayISO(), rows=(S.teamAbs||[]).slice().sort((x,y)=>(x.starts||"").localeCompare(y.starts||"")||(x.name||"").localeCompare(y.name||""));
