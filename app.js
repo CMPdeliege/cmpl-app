@@ -750,6 +750,8 @@ const reqName = r => r.child_id ? kidName(r.child_id) : patientName(r.patient_id
 
 /* ---------- actualités ---------- */
 function newsCard(n, full){
+  if(n.image_path&&!(n.body||"").trim())   // annonce « affiche » : l'image seule, affichée en entier
+    return `<article class="news poster ${n.pinned?"pinned":""}"><img src="${esc(n.image_path)}" alt="${esc(n.title)}"><div class="nbody"><div class="nmeta"><span class="ncat">${esc(n.category)}</span>${n.pinned?'<span class="ncat pin">Épinglé</span>':""}<span>${fmt(n.published_at)}</span></div><h3 translate="no" dir="auto">${esc(n.title)}</h3></div></article>`;
   return `<article class="news ${n.pinned?"pinned":""}">${n.image_path?`<img src="${esc(n.image_path)}" alt="">`:""}<div class="nbody"><div class="nmeta"><span class="ncat">${esc(n.category)}</span>${n.pinned?'<span class="ncat pin">Épinglé</span>':""}<span>${fmt(n.published_at)}</span></div><h3 translate="no" dir="auto">${esc(n.title)}</h3><p translate="no" dir="auto" class="${full?"":"clamp"}">${esc(n.body)}</p></div></article>`;
 }
 
@@ -1801,7 +1803,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261023a";
+const APP_VERSION="20261023b";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -2770,16 +2772,20 @@ const NEWS_CATS=["Fermeture","Horaires","Prévention","Nouveau au centre","Prati
 function newsAdminHTML(){
   const now=new Date(), ed=S.editNews?S.allNews.find(n=>n.id===S.editNews):null;
   const v=ed||{category:NEWS_CATS[0],title:"",body:"",pinned:false,expires_at:null,image_path:null};
+  if(S.newsMode==null||S.newsModeFor!==(ed?ed.id:0)){ S.newsMode=ed&&ed.image_path&&!(ed.body||"").trim()?"img":"txt"; S.newsModeFor=ed?ed.id:0; }
+  const IM=S.newsMode==="img";
   return `<div class="chead"><div><h1>Actualités</h1><p>Publiées dans l'app des patients. Informations pratiques uniquement, sans donnée personnelle.</p></div></div>
   <div class="pane">
    <form class="card ${ed?"editing":""}" id="newsform">
     <h3>${ed?"Modifier l'annonce":"Nouvelle annonce"}</h3>
-    <label class="fld" for="n-title">Titre<input type="text" id="n-title" maxlength="80" required value="${esc(v.title)}"></label>
-    <label class="fld" for="n-body">Texte<textarea id="n-body" rows="5" maxlength="800" required>${esc(v.body)}</textarea></label>
+    <div class="seg" role="group" aria-label="Type d'annonce" style="margin-bottom:10px"><button type="button" data-nmode="txt" aria-pressed="${!IM}">📝 Texte</button><button type="button" data-nmode="img" aria-pressed="${IM}">🖼️ Image (affiche)</button></div>
+    ${IM?`<p class="hint" style="margin-top:0">Comme une affiche de l'écran de la salle d'attente : l'image est montrée en entier, sans texte à côté. Paysage ou portrait, PNG ou JPG.</p>`:""}
+    <label class="fld" for="n-title">${IM?"Titre court (pour la notification et les personnes malvoyantes)":"Titre"}<input type="text" id="n-title" maxlength="80" required value="${esc(v.title)}"></label>
+    <label class="fld" for="n-body" ${IM?"hidden":""}>Texte<textarea id="n-body" rows="5" maxlength="800">${esc(v.body)}</textarea></label>
     <div class="pgrid"><label class="fld" for="n-cat">Catégorie<select id="n-cat">${NEWS_CATS.map(c=>`<option ${c===v.category?"selected":""}>${c}</option>`).join("")}</select></label>
     <label class="fld" for="n-exp">Retirer automatiquement le<input type="date" id="n-exp" value="${v.expires_at?esc(new Date(v.expires_at).toLocaleDateString("sv-SE")):""}"></label></div>
     ${ed&&v.image_path?`<div class="curimg"><img src="${esc(v.image_path)}" alt=""><label class="chk2"><input type="checkbox" id="n-noimg"> Retirer cette image</label></div>`:""}
-    <label class="fld" for="n-img">${ed&&v.image_path?"Remplacer l'image (facultatif)":"Image (facultatif)"}<input type="file" id="n-img" accept="image/png,image/jpeg,image/webp"></label>
+    <label class="fld" for="n-img">${ed&&v.image_path?"Remplacer l'image (facultatif)":IM?"Image de l'affiche":"Image (facultatif)"}<input type="file" id="n-img" accept="image/png,image/jpeg,image/webp"></label>
     <label class="chk2"><input type="checkbox" id="n-pin" ${v.pinned?"checked":""}> Épingler en haut de l'accueil</label>
     ${ed?`<p class="hint">La modification corrige l'annonce affichée ; aucune nouvelle notification n'est envoyée aux patients.</p>`
       :`<label class="chk2"><input type="checkbox" id="n-notif"> Envoyer une notification aux patients qui l'ont accepté${typeof S.audience==="number"?` (${S.audience} patient${S.audience>1?"s":""})`:""} <small class="hint">à réserver aux annonces importantes</small></label>`}
@@ -2790,7 +2796,16 @@ function newsAdminHTML(){
    </section>
   </div>`;
 }
+// grande image (affiche en haute définition) : réduite à 1920 px de large et enregistrée en JPEG
+async function shrinkImage(f){
+  try{ const bm=await createImageBitmap(f); const sc=Math.min(1,1920/Math.max(bm.width,bm.height));
+    if(sc===1&&f.size<=1.5e6) return f;
+    const c=document.createElement("canvas"); c.width=Math.round(bm.width*sc); c.height=Math.round(bm.height*sc);
+    const x=c.getContext("2d"); x.fillStyle="#fff"; x.fillRect(0,0,c.width,c.height); x.drawImage(bm,0,0,c.width,c.height);
+    const blob=await new Promise(r=>c.toBlob(r,"image/jpeg",0.86)); if(!blob) return f;
+    return new File([blob],f.name.replace(/\.\w+$/,"")+".jpg",{type:"image/jpeg"}); }catch(e){ return f; } }
 async function uploadNewsImage(f){
+  f=await shrinkImage(f);
   if(f.size>3e6) throw new Error("Image trop lourde (3 Mo maximum).");
   const path=`${Date.now()}-${f.name.replace(/[^\w.-]/g,"_")}`;
   const up=await sb.storage.from("announcements").upload(path,f,{contentType:f.type}); if(up.error) throw up.error;
@@ -2800,8 +2815,11 @@ function bindNewsAdmin(){
   const ed=S.editNews?S.allNews.find(n=>n.id===S.editNews):null;
   $("#newsform").onsubmit=async e=>{ e.preventDefault(); const btn=$("#n-pub"); btn.disabled=true;
     try{
-      const title=$("#n-title").value.trim(), body=$("#n-body").value.trim(); if(!title||!body) throw new Error("Donnez un titre et un texte.");
+      const IM=S.newsMode==="img", title=$("#n-title").value.trim(), body=IM?"":$("#n-body").value.trim();
       const exp=$("#n-exp").value, f=$("#n-img").files[0];
+      if(!title) throw new Error(IM?"Donnez un titre court à l'affiche.":"Donnez un titre et un texte.");
+      if(!IM&&!body) throw new Error("Donnez un titre et un texte.");
+      if(IM&&!f&&!(ed&&ed.image_path&&!$("#n-noimg")?.checked)) throw new Error("Choisissez l'image de l'affiche.");
       const fields={title,body,category:$("#n-cat").value,pinned:$("#n-pin").checked,expires_at:exp?new Date(exp+"T23:59:00").toISOString():null};
       if(ed){
         if(f) fields.image_path=await uploadNewsImage(f); else if($("#n-noimg")?.checked) fields.image_path=null;
@@ -2811,10 +2829,11 @@ function bindNewsAdmin(){
       } else {
         fields.image_path=f?await uploadNewsImage(f):null; fields.notify=$("#n-notif").checked;
         const ins=await sb.from("announcements").insert(fields); if(ins.error) throw ins.error;
-        toast("Annonce publiée"); await refresh();
+        S.newsMode=null; toast("Annonce publiée"); await refresh();
       }
     }catch(err){ toast(frError(err)); btn.disabled=false; } };
   const c=$("#n-cancel"); if(c) c.onclick=()=>{ S.editNews=null; render(); };
+  $$("[data-nmode]").forEach(b=>b.onclick=()=>{ S.newsMode=b.dataset.nmode; render(); });
   $$("[data-edit-news]").forEach(b=>b.onclick=()=>{ S.editNews=+b.dataset.editNews; render(); $("#newsform").scrollIntoView({behavior:"smooth",block:"start"}); $("#n-title").focus({preventScroll:true}); });
   $$("[data-pin]").forEach(b=>b.onclick=async()=>{ if(await run(()=>sb.from("announcements").update({pinned:b.dataset.v==="1"}).eq("id",+b.dataset.pin),"Enregistré")) await refresh(); });
   $$("[data-del]").forEach(b=>b.onclick=async()=>{ if(S.editNews===+b.dataset.del) S.editNews=null; if(await run(()=>sb.from("announcements").delete().eq("id",+b.dataset.del),"Annonce retirée")) await refresh(); });

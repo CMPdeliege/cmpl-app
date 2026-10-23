@@ -997,3 +997,8 @@ select,input,textarea{max-width:100%}
 }
 .tkinds{margin:-2px 0 10px}
 .ipill.orgtag{background:var(--t-rapport);color:var(--t-rapport-i)}
+
+/* annonce « affiche » : image entière */
+.news.poster img{max-height:none;object-fit:contain;background:var(--surface-2)}
+.news.poster .nbody{padding-top:8px}
+.news.poster h3{font-size:15px}
