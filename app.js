@@ -751,7 +751,7 @@ const reqName = r => r.child_id ? kidName(r.child_id) : patientName(r.patient_id
 /* ---------- actualités ---------- */
 function newsCard(n, full){
   if(n.image_path&&!(n.body||"").trim())   // annonce « affiche » : l'image seule, affichée en entier
-    return `<article class="news poster ${n.pinned?"pinned":""}"><img src="${esc(n.image_path)}" alt="${esc(n.title)}"><div class="nbody"><div class="nmeta"><span class="ncat">${esc(n.category)}</span>${n.pinned?'<span class="ncat pin">Épinglé</span>':""}<span>${fmt(n.published_at)}</span></div><h3 translate="no" dir="auto">${esc(n.title)}</h3></div></article>`;
+    return `<article class="news poster ${full?"full":""} ${n.pinned?"pinned":""}"><div class="pimg"><img src="${esc(n.image_path)}" alt="${esc(n.title)}" ${full?`data-zoom="${esc(n.image_path)}"`:""}></div>${full?`<p class="hint center" style="margin:6px 0 0">Touchez l'image pour l'agrandir.</p>`:""}<div class="nbody"><div class="nmeta"><span class="ncat">${esc(n.category)}</span>${n.pinned?'<span class="ncat pin">Épinglé</span>':""}<span>${fmt(n.published_at)}</span></div><h3 translate="no" dir="auto">${esc(n.title)}</h3></div></article>`;
   return `<article class="news ${n.pinned?"pinned":""}">${n.image_path?`<img src="${esc(n.image_path)}" alt="">`:""}<div class="nbody"><div class="nmeta"><span class="ncat">${esc(n.category)}</span>${n.pinned?'<span class="ncat pin">Épinglé</span>':""}<span>${fmt(n.published_at)}</span></div><h3 translate="no" dir="auto">${esc(n.title)}</h3><p translate="no" dir="auto" class="${full?"":"clamp"}">${esc(n.body)}</p></div></article>`;
 }
 
@@ -1424,6 +1424,7 @@ function patientNews(a){
   <div class="newslist">${one?newsCard(one,true):S.news.length?S.news.map(n=>`<button class="newsbtn" data-news="${n.id}">${newsCard(n,false)}</button>`).join(""):`<div class="empty">Pas d'actualité en ce moment.</div>`}</div>`;
   $("#back").onclick=()=>{ if(S.openNews){S.openNews=null;render()} else {S.screen="home";render()} };
   $$("[data-news]").forEach(b=>b.onclick=()=>{S.openNews=+b.dataset.news;render();scrollTo(0,0)});
+  $$("[data-zoom]").forEach(im=>im.onclick=()=>openViewer(im.dataset.zoom));
 }
 function patientNotifs(a){
   a.innerHTML=`<div class="convhead"><button class="back" id="back" aria-label="Retour">${IC.back}</button><div><h2>Notifications</h2></div></div>
@@ -1803,7 +1804,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261023b";
+const APP_VERSION="20261023c";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";

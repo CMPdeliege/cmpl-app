@@ -999,6 +999,9 @@ select,input,textarea{max-width:100%}
 .ipill.orgtag{background:var(--t-rapport);color:var(--t-rapport-i)}
 
 /* annonce « affiche » : image entière */
-.news.poster img{max-height:none;object-fit:contain;background:var(--surface-2)}
+.news.poster .pimg{background:var(--surface-2);display:flex;justify-content:center;align-items:center;height:220px;overflow:hidden}
+.news.poster .pimg img{width:auto;height:auto;max-width:100%;max-height:100%;object-fit:contain;display:block}
+.news.poster.full .pimg{height:auto;max-height:60vh}
+.news.poster.full .pimg img{max-height:60vh;cursor:zoom-in}
 .news.poster .nbody{padding-top:8px}
 .news.poster h3{font-size:15px}
