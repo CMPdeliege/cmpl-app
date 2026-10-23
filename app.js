@@ -1801,7 +1801,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261022d";
+const APP_VERSION="20261023a";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -2625,7 +2625,7 @@ function taskRowHTML(t){
   const canRem=!t.done_at&&t.due_date&&t.due_date>=todayISO();
   return `<div class="taskrow ${t.done_at?"done":""}">
      <button class="tcheck" data-tdone="${t.id}" aria-pressed="${!!t.done_at}" aria-label="${t.done_at?"Marquer comme à faire":"Marquer comme faite"}">${t.done_at?"✓":""}</button>
-     <div><b>${esc(t.title)}</b>${t.notes?`<p class="tnotes">${esc(t.notes)}</p>`:""}${taskLinkHTML(t)}
+     <div><b>${esc(t.title)}</b>${isPatTask(t)?"":` <span class="ipill orgtag">🏥 Organisation</span>`}${t.notes?`<p class="tnotes">${esc(t.notes)}</p>`:""}${taskLinkHTML(t)}
       <small>${t.assigned_group?"Pour : secrétariat":"Pour : "+esc(teamName(t.assigned_to))} · de ${esc(teamName(t.created_by))} · ${fmt(t.created_at)}${t.done_at?` · faite ${fmt(t.done_at)} par ${esc(teamName(t.done_by))}`:""}</small>${dueTag(t)}
       ${canRem?`<label class="tremind${t.remind_days!=null?" on":""}" title="Rappel par e-mail à 8 h à la personne qui doit faire la tâche"><span aria-hidden="true">🔔</span><select data-trem="${t.id}" aria-label="Rappel par e-mail"><option value="">Pas de rappel</option>${remindOpts(t.remind_days)}</select>${t.reminded_at?`<em>envoyé</em>`:""}</label>`:""}</div>
      ${t.created_by===S.me.id?`<button class="linkbtn tdel" data-tdel="${t.id}">Supprimer</button>`:"<span></span>"}</div>`;
@@ -2636,6 +2636,8 @@ function taskListHTML(list,grouped){
   for(const t of list){ const k=dueGroup(t); if(k!==g){ g=k; out+=`<h4 class="tgroup g${k}">${DUE_GROUPS[k]} <span>${list.filter(x=>dueGroup(x)===k).length}</span></h4>`; } out+=taskRowHTML(t); }
   return out;
 }
+// Tâche « Patients » = liée à un patient (compte, enfant ou fiche) ; sinon « Organisation »
+const isPatTask = t => !!(t.patient_id||t.child_id||t.record_id);
 const recName = id => { const r=(S.records||[]).find(x=>x.id===id); return r?`${r.first_name} ${r.last_name}`:"Fiche patient"; };
 function taskLinkHTML(t){
   if(t.record_id){ const r=(S.records||[]).find(x=>x.id===t.record_id);
@@ -2647,7 +2649,9 @@ function tasksHTML(){
   const D=S.tdraft||(S.tdraft={title:"",notes:"",due:"",to:"me",patient:null,q:"",remind:null}), V=S.tview||"todo";
   const all=S.tasks||[], todo=myTasks().sort(byDue), given=all.filter(t=>!t.done_at&&t.created_by===S.me.id&&!forMe(t)).sort(byDue),
         done=all.filter(t=>t.done_at).sort((a,b)=>new Date(b.done_at)-new Date(a.done_at));
-  const list=V==="todo"?todo:V==="given"?given:done;
+  const K=S.tkind||"all", listAll=V==="todo"?todo:V==="given"?given:done;
+  const nP=listAll.filter(isPatTask).length, nO=listAll.length-nP;
+  const list=K==="pat"?listAll.filter(isPatTask):K==="org"?listAll.filter(t=>!isPatTask(t)):listAll;
   const others=S.team.filter(t=>t.id!==S.me.id&&t.status==="active");
   const pt=D.patient;
   return `<div class="chead"><div><h1>Tâches</h1><p>Pour vous, pour un collègue ou pour tout le secrétariat. Une tâche peut être liée à un patient. Elle n'est visible que par vous et la ou les personnes qui doivent la faire.</p></div></div>
@@ -2659,13 +2663,14 @@ function tasksHTML(){
    <label class="fld">Échéance (facultatif)<input id="tk-due" type="date" value="${esc(D.due)}"></label></div>
    ${D.due?`<div class="tkrem"><label class="chk2"><input type="checkbox" id="tk-remon" ${D.remind!=null?"checked":""}> Recevoir un rappel par e-mail</label>
     ${D.remind!=null?`<select id="tk-rem" aria-label="Quand envoyer le rappel">${remindOpts(D.remind)}</select><small class="hint">Envoyé à 8 h à ${D.to==="me"?"vous":D.to==="secretariat"?"tout le secrétariat":"la personne choisie"}. L'e-mail ne contient ni le titre de la tâche ni le nom du patient.</small>`:""}</div>`:""}
-   <div class="fld">Patient lié (facultatif)
+   <div class="fld">Patient lié (facultatif : sans patient, la tâche est rangée dans « Organisation »)
    ${pt?`<div class="recipient">${`<div class="ic">${IC.user}</div>`}<div><b>${esc(`${pt.first_name||""} ${pt.last_name||""}`)}</b><small>Né(e) le ${fmtDate(pt.birth_date)}${pt.child?" · enfant":""}</small></div><button type="button" class="linkbtn" id="tk-unpick">Retirer</button></div>`
    :`<input id="tk-q" type="text" autocomplete="off" placeholder="Nom ou prénom (au moins 2 lettres)" value="${esc(D.q)}"><div id="tk-res"></div>`}</div>
    <div class="btnrow"><button class="btn" id="tk-add" ${D.title.trim()?"":"disabled"}>Ajouter la tâche</button></div>
   </section>
   <section>
    <div class="seg" role="group" aria-label="Afficher" style="margin-bottom:10px"><button data-tv="todo" aria-pressed="${V==="todo"}">À faire (${todo.length})</button><button data-tv="given" aria-pressed="${V==="given"}">Confiées (${given.length})</button><button data-tv="done" aria-pressed="${V==="done"}">Terminées</button></div>
+   <div class="ichips tkinds" role="group" aria-label="Type de tâche"><button class="ichip all" data-tk="all" aria-pressed="${K==="all"}">Toutes <i>${listAll.length}</i></button><button class="ichip t-question" data-tk="pat" aria-pressed="${K==="pat"}">👤 Patients <i>${nP}</i></button><button class="ichip t-rapport" data-tk="org" aria-pressed="${K==="org"}">🏥 Organisation <i>${nO}</i></button></div>
    <div class="list tasks">${list.length?taskListHTML(list,V!=="done")
      :`<div class="empty">${V==="todo"?`<span class="yay" aria-hidden="true">✨</span>Rien à faire pour l'instant.`:V==="given"?"Aucune tâche confiée en cours.":"Aucune tâche terminée (elles sont effacées après 90 jours)."}</div>`}</div>
   </section></div>`;
@@ -2700,6 +2705,7 @@ function bindTasks(){
     if(pt&&!pt.record){ if(pt.child) S.children[pt.id]=pt; else S.profiles[pt.id]=pt; }
     S.tdraft=null; S.tview=D.to==="me"||(D.to==="secretariat"&&isDesk())?"todo":"given"; await refresh(); };
   $$("[data-tv]").forEach(b=>b.onclick=()=>{ S.tview=b.dataset.tv; render(); });
+  $$("[data-tk]").forEach(b=>b.onclick=()=>{ S.tkind=b.dataset.tk; render(); });
   $$("[data-trem]").forEach(sl=>sl.onchange=async()=>{ const t=S.tasks.find(x=>x.id===+sl.dataset.trem), v=sl.value===""?null:+sl.value;
     if(await run(()=>sb.rpc("set_task_reminder",{p_id:t.id,p_days:v}),v==null?"Rappel retiré":"Rappel : "+REMIND[v].toLowerCase())){ t.remind_days=v; t.reminded_at=null; render(); } else render(); });
   $$("[data-tdone]").forEach(b=>b.onclick=async()=>{ const t=S.tasks.find(x=>x.id===+b.dataset.tdone), d=!t.done_at;

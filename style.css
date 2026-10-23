@@ -995,3 +995,5 @@ select,input,textarea{max-width:100%}
   .tcomp{flex-direction:column-reverse;align-items:stretch}
   .tcomp > .cbtn{align-self:flex-start;width:40px;height:40px}
 }
+.tkinds{margin:-2px 0 10px}
+.ipill.orgtag{background:var(--t-rapport);color:var(--t-rapport-i)}
