@@ -315,7 +315,15 @@ const newPatientMsg = r => awaitingStaff(r) && msgsOf(r).some(m=>!m.from_patient
 const closedLabel = r => r.purged_at ? "Effacée" : r.type==="centre" ? "Classée" : (r.request_items||[]).some(i=>i.decision==="accorde") ? "Prescription faite" : "Classée";
 function stLabel(r){ if(r.status==="traite") return closedLabel(r); if(newPatientMsg(r)) return "Nouveau message"; if(!awaitingStaff(r)) return "En attente du patient"; return r.status==="nouveau"?"Nouveau":"En cours"; }
 function stClass(r){ if(r.status==="traite") return "traite"; if(newPatientMsg(r)) return "nouveau"; if(!awaitingStaff(r)) return "wait"; return r.status; }
-function stLabelP(r){ if(r.status==="traite") return closedLabel(r); if(r.last_from==="staff") return r.type==="centre"?"Message reçu":"Réponse reçue"; return r.status==="encours"?"En cours":"Envoyée"; }
+/* ----- suivi « demande vue / transmise » (le patient est prévenu) ----- */
+const updsOf = r => (r.request_updates||[]).slice().sort((a,b)=>a.created_at<b.created_at?-1:1);
+const lastPatientAt = r => { const ms=msgsOf(r).filter(m=>m.from_patient); return ms.length?ms[ms.length-1].created_at:r.created_at; };
+const seenSinceLast = r => updsOf(r).filter(u=>u.kind==="vu"&&u.created_at>lastPatientAt(r)).pop()||null;
+const canMarkSeen = r => r.status!=="traite"&&r.type!=="centre"&&r.last_from!=="staff"&&!seenSinceLast(r);
+const GENERIC_LBL=new Set(["le secrétariat","l'administration du centre","l'équipe du centre"]);
+function updTextP(u){ return u.kind==="vu"?`✓ Votre demande a été vue par ${u.label}. Elle est en cours de traitement.`:`↪ Votre demande a été transmise à ${u.label}, qui va la traiter.`; }
+function updTextC(u){ return u.kind==="vu"?`✓ Patient prévenu : demande vue (${u.label})`:`↪ Patient prévenu du transfert vers ${u.label}`; }
+function stLabelP(r){ if(r.status==="traite") return closedLabel(r); if(r.last_from==="staff") return r.type==="centre"?"Message reçu":"Réponse reçue"; if(seenSinceLast(r)) return "Vue · en cours"; return r.status==="encours"?"En cours":"Envoyée"; }
 function stClassP(r){ if(r.status==="traite") return "traite"; if(r.last_from==="staff") return "reply"; return "encours"; }
 const PRIO_LABEL={haute:"Haute priorité",normale:"Normale",basse:"Pas pressé"};
 function dueHTML(r){ if(r.status==="traite") return ""; if(!awaitingStaff(r)) return `<span class="due wait">En attente de la réponse du patient</span>`;
@@ -374,8 +382,10 @@ function chatHTML(r, viewer){
     if(r.status!=="traite") h+=`<div class="sys"><span>Envoyée à :</span> <b translate="no">${esc(dest)}</b><br><span>${r.priority==="haute"?"Elle sera vue dans les 24 heures (heures d'ouverture).":r.priority==="basse"?"Elle sera vue dès que possible (heures d'ouverture).":"Elle sera vue dans les 72 heures (heures d'ouverture)."}</span> <span>${r.provider_id?"Le délai de réponse est ensuite décidé par le prestataire.":"Le délai de réponse est ensuite décidé par le centre."}</span><br>Urgence vitale : 112.</div>`;
   }
   const ufrom=reqUnreadFrom(r, viewer, mine), allM=msgsOf(r), nNew=allM.filter(m=>!mine(m)&&m.created_at>ufrom).length;
-  let uDone=false;
+  let uDone=false; const upds=updsOf(r); let ui=0;
+  const putUpd=u=>{ sep(u.created_at); who=""; h+=`<div class="sys upd ${u.kind}"><span>${esc(viewer==="patient"?updTextP(u):updTextC(u))}</span> <small class="t">${hm(u.created_at)}</small></div>`; };
   for(const m of allM){
+    while(ui<upds.length&&upds[ui].created_at<=m.created_at) putUpd(upds[ui++]);
     sep(m.created_at);
     if(!uDone&&nNew&&!mine(m)&&m.created_at>ufrom&&(viewer==="patient"||m!==allM[0])){ uDone=true; who=""; h+=unreadLine(nNew); }
     const me=mine(m), atts=m.attachments||[];
@@ -384,6 +394,7 @@ function chatHTML(r, viewer){
     const showBody = !(atts.length && AUTO_BODY.test(m.body));
     h+=`<div class="msg ${me?"me":"them"}">${showName?`<small class="who">${viewer==="patient"&&!m.from_patient&&AV.get(m.author_id)?avatarHTML(AV.get(m.author_id),name,22):""}${esc(name)}</small>`:""}<div class="bub ${me?"me":"bot"}${atts.length?" hasatt":""}">${atts.map(attHTML).join("")}${showBody?`<div class="txt" dir="auto" translate="${AUTO_BODY.test(m.body)?"yes":"no"}">${esc(m.body)}</div>`:""}<span class="t">${hm(m.created_at)}</span></div></div>`;
   }
+  while(ui<upds.length) putUpd(upds[ui++]);
   if(r.purged_at) h+=`<div class="sys">Le contenu de cette conversation a été effacé le ${fmtDate(r.purged_at)} pour protéger les données${viewer==="patient"?" de santé":" du patient"}.</div>`;
   else if(r.status==="traite"&&r.closed_at) h+=`<div class="sys">Conversation classée le ${fmtDate(r.closed_at)}. Elle sera effacée le ${fmtDate(purgeDate(r))}.</div>`;
   return h+`</div>`;
@@ -835,11 +846,15 @@ async function loadMe(){
   const { data } = await sb.from("profiles").select("*").eq("id", S.session.user.id).maybeSingle();
   S.me = data;
 }
-const REQ_SELECT = "*, messages(id,from_patient,author_id,author_label,body,created_at,attachments(id,kind,mime,name,size,duration_s)), request_items(id,label,decision,quantity)";
+const REQ_BASE = "*, messages(id,from_patient,author_id,author_label,body,created_at,attachments(id,kind,mime,name,size,duration_s)), request_items(id,label,decision,quantity)";
+let REQ_SELECT = REQ_BASE+", request_updates(id,kind,label,created_at)";
+// (si la migration 044 n'est pas encore passée, on charge sans le suivi « vue / transmise »)
+async function reqQuery(build){ let r=await build(REQ_SELECT);
+  if(r.error&&REQ_SELECT!==REQ_BASE&&/request_updates/i.test(JSON.stringify(r.error))){ REQ_SELECT=REQ_BASE; r=await build(REQ_SELECT); } return r; }
 async function loadPatient(){
   const uid=S.session.user.id;
   const [rq, md, nt] = await Promise.all([
-    sb.from("requests").select(REQ_SELECT).order("created_at",{ascending:false}).limit(150),
+    reqQuery(sel=>sb.from("requests").select(sel).order("created_at",{ascending:false}).limit(150)),
     sb.from("patient_meds").select("*").order("last_granted_at",{ascending:false}),
     sb.from("notifications").select("*").eq("user_id", uid).order("created_at",{ascending:false}).limit(50)
   ]);
@@ -850,7 +865,7 @@ async function loadPatient(){
 }
 async function loadStaff(){
   const role=S.me.role;
-  const rq = await sb.from("requests").select(REQ_SELECT).order("created_at",{ascending:false}).limit(500);
+  const rq = await reqQuery(sel=>sb.from("requests").select(sel).order("created_at",{ascending:false}).limit(500));
   S.reqs = rq.data||[];
   const ids=[...new Set(S.reqs.map(r=>r.patient_id))];
   const tasks=[];
@@ -1881,7 +1896,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261025b";
+const APP_VERSION="20261025c";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -2273,6 +2288,7 @@ function staffHelpHTML(){
    ["Le menu « Le centre »","Il regroupe ce qui concerne tout le centre : Actualités, Équipe, Classeur, Inventaire, Congés, Comptes à valider (selon votre rôle). Le chiffre rouge indique ce qui attend."],
    ["Trouver et trier les demandes","Onglet Demandes : « Les miennes / Secrétariat / Tout le centre » choisit les demandes affichées ; la recherche trouve un patient par son nom ; les pastilles colorées filtrent par type. Les demandes sont rangées par ce qu'il faut faire : urgent ou en retard, le patient a répondu, nouvelles. « En attente du patient » (vous avez répondu) est replié en bas. Les renouvellements simples peuvent être accordés à la suite dans « Prescriptions en série », après les avoir faits dans CareConnect."],
    ["Un patient sans compte dans l'app","Le centre → Fiches patients : créez une fiche (nom, prénom, date de naissance, téléphone, e-mail). Vous pouvez ensuite lui lier une tâche, en parler à un collègue (« En parler ») ou l'inviter par e-mail à créer son compte. Jamais de note médicale dans une fiche. Quand le patient s'inscrit, l'administrateur relie son compte à la fiche dans Comptes à valider."],
+   ["Rassurer le patient : « Vu »","Dans une demande, le bouton « ✓ Vu · prévenir le patient » lui affiche « Votre demande a été vue… Elle est en cours de traitement » et lui envoie une notification (sans e-mail). Au transfert, la case « Prévenir le patient » (cochée) lui indique à qui sa demande a été transmise."],
    ["Transférer avec un mot","Dans une demande, choisissez le collègue dans « Transférer à », écrivez un mot dans le champ en dessous, puis Transférer. Le collègue voit le mot en haut de la demande ; le patient ne le voit jamais."],
    ["Ne pas être dérangé(e)","Touchez la cloche en haut de l'écran (à côté de « Écrire à un patient »). « Pause des notifications » : 1 heure, jusqu'à demain 8 h ou jusqu'à ce que vous la retiriez ; les demandes arrivent toujours dans l'app et vous recevez un résumé à la fin de la pause. « Je suis absent(e) » : vos alertes vont au collègue choisi et les patients reçoivent un message automatique. Cloche barrée orange = en pause ; rouge = absent(e)."],
    ["Rappel avant l'échéance d'une tâche","Le centre → Tâches : mettez une échéance, cochez « Recevoir un rappel par e-mail » et choisissez quand (le jour même, la veille, 48 h, 72 h ou 1 semaine avant). L'e-mail part à 8 h vers la personne qui doit faire la tâche. Vous pouvez changer le rappel d'une tâche existante avec la petite cloche 🔔. Les tâches sont classées de la plus urgente à la moins urgente."],
@@ -2411,16 +2427,19 @@ function detailHTML(){
     ${extraContactsHTML(p)}
     <div class="meta" style="margin-top:6px"><span class="tag">${TYPES[r.type].label}</span>${durHTML(r)}<span class="pill st-${stClass(r)}">${stLabel(r)}</span><span>Reçue ${fmt(r.created_at)} · ${esc(reqWho(r))}</span></div></div></div>
    ${open?`<div class="prioedit"><span class="hint">Priorité</span>${["haute","normale","basse"].map(k=>`<button class="dec p-${k}" aria-pressed="${r.priority===k}" data-prio="${k}">${PRIO_LABEL[k]}</button>`).join("")}</div><div>${dueHTML(r)}</div>`:""}
+      ${open&&r.type!=="centre"?(canMarkSeen(r)?`<div class="seenrow"><button class="btn ghost seenbtn" id="seen">✓ Vu · prévenir le patient</button><span class="hint">Le patient voit que sa demande est en cours de traitement (notification, sans e-mail).</span></div>`
+     :seenSinceLast(r)?`<div class="seenrow"><span class="seenok">✓ Patient prévenu ${fmt(seenSinceLast(r).created_at)}</span></div>`:""):""}
    ${notesHTML(r)}
    ${r.purged_at?"":`<dl class="qa">${Object.entries(r.answers||{}).filter(([k])=>!HIDDEN_KEYS.has(k)).map(([k,v])=>`<div><dt>${esc(LABELS[k]||k)}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>`}
    ${items.some(i=>i.decision)?`<div class="itemlist">${items.filter(i=>i.decision).map(i=>`<div><span>${esc(i.label)}<small class="qty">${qtyText(i.quantity||1)}</small></span><span class="dtag ${i.decision==="accorde"?"ok":"no"}">${i.decision==="accorde"?"Accordé":"Refusé"}</span></div>`).join("")}</div>`:""}
-   ${msgsOf(r).length||r.purged_at||!open?chatHTML(r,"centre"):""}
+   ${msgsOf(r).length||(r.request_updates||[]).length||r.purged_at||!open?chatHTML(r,"centre"):""}
    ${open?`${isRx?`<div class="rx"><p class="hint" style="margin:0">Décision par médicament</p>${todo.map(it=>`<div class="rxrow"><span>${esc(it.label)}<b class="qty">${qtyText(it.quantity||1)}</b></span><div class="decs"><button class="dec ok" aria-pressed="${dec[it.id]==="accorde"}" data-dec="${it.id}:accorde">Accorder</button><button class="dec no" aria-pressed="${dec[it.id]==="refuse"}" data-dec="${it.id}:refuse">Refuser</button></div></div>`).join("")}</div>`:""}
    ${composerHTML("s"+r.id)}
    <div class="btnrow"><button class="btn" id="close" ${canClose?"":"disabled"}>${closeBtn}</button></div>
    <p class="hint">Le message écrit ci-dessus est envoyé avec la clôture. <b>Avant de classer, reportez dans CareConnect ce qui doit rester au dossier</b> : la conversation et ses pièces jointes sont effacées ${PURGE_DAYS} jours après la clôture.</p>
    <div class="transfer">${r.status==="nouveau"?'<button class="linkbtn" id="take">Je m\'en occupe</button>':""}<label class="hint" for="tr">Transférer à</label><select id="tr">${transferOpts}</select><button class="linkbtn" id="dotr">Transférer</button>
-    <textarea id="trnote" class="trnote" rows="2" maxlength="1000" placeholder="Un mot pour le collègue (facultatif) : visible seulement par l'équipe, jamais par le patient"></textarea></div>
+    <textarea id="trnote" class="trnote" rows="2" maxlength="1000" placeholder="Un mot pour le collègue (facultatif) : visible seulement par l'équipe, jamais par le patient"></textarea>
+    ${r.type!=="centre"?`<label class="chk2 trinform"><input type="checkbox" id="trinform" checked> Prévenir le patient que sa demande est transmise</label>`:""}</div>
    <p class="hint">Envoyer garde la conversation ouverte. Pas de diagnostic ni de résultat détaillé par message : pour un problème médical, proposez un rendez-vous.</p>`
    :r.purged_at?`<div class="closed"><b>Contenu effacé le ${fmtDate(r.purged_at)}</b><span>Effacement automatique ${PURGE_DAYS} jours après la clôture.</span></div>`
    :`<div class="closed"><b>Classée ${r.closed_at?fmt(r.closed_at):""}</b><span>Le patient peut la relire mais plus y écrire. Effacement automatique le ${fmtDate(purgeDate(r))}.</span><button class="btn ghost" id="reopen">Rouvrir</button></div>`}
@@ -2464,10 +2483,13 @@ function bindDetail(){
   close.onclick=async()=>{ close.disabled=true; const text=($("#c-text")?.value||"").trim();
     const decisions={}; for(const [k,v] of Object.entries(dec)) decisions[k]=v;
     if(await run(()=>sb.rpc("close_request",{p_id:r.id,p_body:text||null,p_decisions:decisions}),"Conversation classée")){ S.drafts[key]=""; delete S.drafts["d"+r.id]; clearPend(); await refresh(); } else close.disabled=false; };
+  const sn=$("#seen"); if(sn) sn.onclick=async()=>{ sn.disabled=true; if(await run(()=>sb.rpc("mark_request_seen",{p_id:r.id}),"Patient prévenu : demande vue")) await refresh(); else sn.disabled=false; };
   const tk=$("#take"); if(tk) tk.onclick=async()=>{ if(await run(()=>sb.rpc("take_request",{p_id:r.id}),"Demande prise en charge")) await refresh(); };
   $("#dotr").onclick=async()=>{ const v=$("#tr").value||null, note=($("#trnote")?.value||"").trim();
     if(note){ const tgt=v==="__admin"?"Administration":v?provName(v):"Secrétariat";
       const {error}=await sb.rpc("add_transfer_note",{p_id:r.id,p_body:note,p_target:tgt}); if(error){ toast("Le mot n'a pas pu être enregistré : "+frError(error)); return; } }
+    if($("#trinform")?.checked){ const {error}=await sb.rpc("inform_patient_transfer",{p_id:r.id,p_target:v==="__admin"?"administration":v||"secretariat"});
+      if(error) toast("Le patient n'a pas pu être prévenu : "+frError(error)); }
     const ok = v==="__admin" ? await run(()=>sb.rpc("transfer_to_administration",{p_id:r.id}),"Transférée : Administration")
                              : await run(()=>sb.rpc("transfer_request",{p_id:r.id,p_provider:v}),`Transférée : ${v?provName(v):"Secrétariat"}`);
     if(ok){ S.sel=null; await refresh(); } };
@@ -3014,6 +3036,7 @@ function startRealtime(){
     RT=sb.channel("cmpl-"+S.me.id)
       .on("postgres_changes",{event:"INSERT",schema:"public",table:"messages"},p=>rtQueue(p.new&&p.new.request_id))
       .on("postgres_changes",{event:"*",schema:"public",table:"requests"},p=>rtQueue(p.new&&p.new.id))
+      .on("postgres_changes",{event:"INSERT",schema:"public",table:"request_updates"},p=>rtQueue(p.new&&p.new.request_id))
       .on("postgres_changes",{event:"INSERT",schema:"public",table:"notifications"},()=>rtQueue(null))
       .on("postgres_changes",{event:"INSERT",schema:"public",table:"team_messages"},()=>teamRt())
       .subscribe();
@@ -3024,7 +3047,7 @@ function rtQueue(id){ if(id) RTQ.add(id); clearTimeout(rtTimer); rtTimer=setTime
 async function rtFlush(){
   if(!S.me) return; const ids=[...RTQ]; RTQ.clear(); const pat=S.me.role==="patient";
   try{
-    if(ids.length){ const {data,error}=await sb.from("requests").select(REQ_SELECT).in("id",ids); if(error) throw error;
+    if(ids.length){ const {data,error}=await reqQuery(sel=>sb.from("requests").select(sel).in("id",ids)); if(error) throw error;
       for(const r of data||[]){ const i=S.reqs.findIndex(x=>x.id===r.id); if(i>=0) S.reqs[i]=r; else S.reqs.unshift(r); } }
     if(pat){ const {data}=await sb.from("notifications").select("*").eq("user_id",S.me.id).order("created_at",{ascending:false}).limit(50); if(data) S.notifs=data; }
   }catch(e){ console.error(e); return; }

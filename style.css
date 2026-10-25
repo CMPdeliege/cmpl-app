@@ -1015,3 +1015,12 @@ select,input,textarea{max-width:100%}
 .unreadline{align-self:stretch;display:flex;align-items:center;gap:10px;margin:10px 0 6px;color:var(--accent);font-size:12.5px;font-weight:700}
 .unreadline::before,.unreadline::after{content:"";flex:1;height:1px;background:color-mix(in srgb,var(--accent) 45%,transparent)}
 .unreadline span{background:var(--accent-soft);color:var(--accent);padding:3px 12px;border-radius:999px;white-space:nowrap}
+/* suivi « demande vue / transmise » */
+.chat .sys.upd{background:color-mix(in srgb,var(--ok,#2e7d4f) 12%,var(--surface));color:var(--ink);font-size:13px}
+.chat .sys.upd.transfert{background:var(--info-soft)}
+.chat .sys.upd .t{color:var(--muted);font-size:11.5px;margin-left:4px}
+.seenrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 0 4px}
+.seenrow .hint{margin:0;font-size:12.5px}
+.seenbtn{border-color:color-mix(in srgb,var(--ok,#2e7d4f) 55%,transparent)!important;color:var(--ok,#2e7d4f)!important;font-weight:700}
+.seenok{font-size:13px;font-weight:700;color:var(--ok,#2e7d4f);background:color-mix(in srgb,var(--ok,#2e7d4f) 12%,transparent);padding:4px 10px;border-radius:999px}
+.transfer .trinform{flex-basis:100%;font-size:13.5px}
