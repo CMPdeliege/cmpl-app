@@ -339,6 +339,29 @@ function attHTML(a){
   if(a.kind==="audio") return `<div class="att aud loading" data-att="${a.id}" data-kind="audio" data-dur="${a.duration_s||0}"><audio controls preload="metadata"></audio>${a.duration_s?`<small>${dur(a.duration_s)}</small>`:""}</div>`;
   return `<a class="att pdf loading" data-att="${a.id}" data-kind="pdf" href="#" download="${esc(a.name)}">${IC.doc}<span><b>${esc(a.name)}</b><small>PDF · ${kb(a.size)} · toucher pour ouvrir</small></span></a>`;
 }
+/* ----- ligne « nouveaux messages » dans une conversation (comme WhatsApp) -----
+   À l'ouverture, on fige le moment de la dernière lecture : la ligne reste au même endroit
+   tant que la conversation est affichée. Le moment de lecture est retenu sur cet appareil. */
+const UNREAD={};
+const seenKey = k => "cmpl_seen_"+(S.me?.id||"")+"_"+k;
+function seenGet(k){ try{ return localStorage.getItem(seenKey(k)); }catch(e){ return null; } }
+function seenSet(k,t){ try{ if(t) localStorage.setItem(seenKey(k),t); }catch(e){} }
+function unreadLine(n){ return `<div class="unreadline" role="separator"><span>${n>1?n+" nouveaux messages":"1 nouveau message"}</span></div>`; }
+function reqUnreadFrom(r, viewer, mine){
+  const k="r"+r.id, ms=msgsOf(r);
+  if(!(k in UNREAD)){
+    let at=seenGet(k);
+    if(!at){   // première ouverture sur cet appareil
+      if(viewer==="patient"){ const un=S.notifs.filter(n=>n.request_id===r.id&&!n.read_at&&n.title!=="Demande bien reçue");
+        at=un.length?new Date(Math.min(...un.map(n=>+new Date(n.created_at)))-60000).toISOString():"9999"; }
+      else if(r.status!=="traite"&&r.last_from==="patient"){ const ls=[...ms].reverse().find(m=>!m.from_patient); at=ls?ls.created_at:"9999"; }
+      else at="9999";
+    }
+    UNREAD[k]=at;
+  }
+  if(ms.length) seenSet(k,ms[ms.length-1].created_at);
+  return UNREAD[k];
+}
 function chatHTML(r, viewer){
   const mine = m => viewer==="patient" ? m.from_patient : !m.from_patient;
   const dest = reqWho(r);
@@ -350,8 +373,11 @@ function chatHTML(r, viewer){
     h+=`<div class="msg me"><div class="bub me reqcard"><b>${TYPES[r.type].title}</b>${dl?`<dl>${dl}</dl>`:""}<span class="t">${hm(r.created_at)}</span></div></div>`;
     if(r.status!=="traite") h+=`<div class="sys"><span>Envoyée à :</span> <b translate="no">${esc(dest)}</b><br><span>${r.priority==="haute"?"Elle sera vue dans les 24 heures (heures d'ouverture).":r.priority==="basse"?"Elle sera vue dès que possible (heures d'ouverture).":"Elle sera vue dans les 72 heures (heures d'ouverture)."}</span> <span>${r.provider_id?"Le délai de réponse est ensuite décidé par le prestataire.":"Le délai de réponse est ensuite décidé par le centre."}</span><br>Urgence vitale : 112.</div>`;
   }
-  for(const m of msgsOf(r)){
+  const ufrom=reqUnreadFrom(r, viewer, mine), allM=msgsOf(r), nNew=allM.filter(m=>!mine(m)&&m.created_at>ufrom).length;
+  let uDone=false;
+  for(const m of allM){
     sep(m.created_at);
+    if(!uDone&&nNew&&!mine(m)&&m.created_at>ufrom&&(viewer==="patient"||m!==allM[0])){ uDone=true; who=""; h+=unreadLine(nNew); }
     const me=mine(m), atts=m.attachments||[];
     const name = viewer==="patient" ? (m.from_patient?"":m.author_label) : (m.from_patient?"":m.author_label);
     const showName = !me && name && name!==who; who = me ? "" : name;
@@ -472,8 +498,16 @@ function openViewer(url){
   v.querySelector("button").onclick=e=>{ e.stopPropagation(); close(); };
   addEventListener("keydown",esc_); document.body.appendChild(v); v.querySelector("button").focus();
 }
+function scrollToUnread(box){   // une seule fois par ouverture : la ligne « nouveaux messages » en vue
+  const u=box&&box.querySelector(".unreadline"); if(!u) return false;
+  const k=box.id+":"+(box.id==="tmsgs"?S.tthread:S.me?.role==="patient"?S.openReq:S.sel), t=UNREAD["s:"+k];
+  if(t) return Date.now()-t<2500;   // juste après l'ouverture (photos qui se chargent) : on ne saute pas en bas
+  UNREAD["s:"+k]=Date.now();
+  if(box.scrollHeight>box.clientHeight+4) box.scrollTop=Math.max(0,u.offsetTop-box.offsetTop-40); else u.scrollIntoView({block:"center"});
+  return true; }
 function scrollChat(){
   const c=$("#chat"); if(!c) return;
+  if(scrollToUnread(c)) return;
   if(c.closest(".detail")) c.scrollTop=c.scrollHeight; else scrollTo(0,document.body.scrollHeight);
 }
 
@@ -1120,6 +1154,8 @@ function renderMfa(a){
 function render(){
   if(REC) stopRec();
   draw(); hydrateAtt();
+  { const rid=$("#chat")?(S.me?.role==="patient"?S.openReq:S.sel):null, tid=$("#tmsgs")?S.tthread:null;   // conversations plus affichées : on oublie
+    for(const k in UNREAD){ if((k[0]==="r"&&k!=="r"+rid)||(k.startsWith("s:chat:")&&k!=="s:chat:"+rid)||(k[0]==="t"&&k!=="t"+tid)||(k.startsWith("s:tmsgs:")&&k!=="s:tmsgs:"+tid)) delete UNREAD[k]; } }
   if($("#chat")) requestAnimationFrame(scrollChat);
   updateBadges();
 }
@@ -1845,7 +1881,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261025a";
+const APP_VERSION="20261025b";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -2037,13 +2073,19 @@ function tMsgHTML(m){ const mine=m.author_id===S.me.id;
     :m.file_mime.startsWith("audio")?`<div class="tfile" data-tfile="${m.id}" data-kind="audio"><audio controls preload="none"></audio></div>`
     :`<a class="tfile pdf" href="#" data-tfile="${m.id}" data-kind="pdf">📄 ${esc(m.file_name||"document.pdf")}</a>`):"";
   return `<div class="tm ${mine?"me":""}">${mine?"":`<span class="who">${esc(staffName(m.author_id))}</span>`}${m.body?`<p>${esc(m.body)}</p>`:""}${m.request_id?reqCardHTML(m.request_id):""}${file}<small>${fmt(m.created_at)}</small></div>`; }
+function tMsgsHTML(t){
+  const k="t"+t.id, ms=tMsgs(t.id);
+  if(!(k in UNREAD)){ const me=tMembers(t.id).find(m=>m.user_id===S.me.id); UNREAD[k]=me?me.last_read_at:"9999"; }
+  const from=UNREAD[k], n=ms.filter(m=>m.author_id!==S.me.id&&m.created_at>from).length; let done=false;
+  return ms.map(m=>{ let pre=""; if(!done&&n&&m.author_id!==S.me.id&&m.created_at>from&&m!==ms[0]){ done=true; pre=unreadLine(n); } return pre+tMsgHTML(m); }).join("");
+}
 function teamHTML2(){
   const list=tSorted(), cur=S.team2.threads.find(t=>t.id===S.tthread)||null;
   const listHTML=`<div class="tlist"><button type="button" class="tnew" id="t-new">+ Nouvelle conversation</button>
     ${list.length?list.map(t=>{ const u=tUnread(t), last=tMsgs(t.id).slice(-1)[0]; return `<button type="button" class="trow ${t.id===S.tthread?"on":""} ${u?"unread":""}" data-thread="${t.id}">${tAvatar(t)}<span class="tx"><b>${esc(tTitle(t))}</b><small>${esc(tPreview(last))}</small></span><span class="tside"><small>${last?fmt(last.created_at):""}</small>${u?`<span class="sn">${u}</span>`:""}</span></button>`; }).join(""):`<div class="empty">Aucune conversation.</div>`}</div>`;
   const thHTML=cur?`<div class="tthread"><div class="thd"><button type="button" class="back tback" id="t-back" aria-label="Retour aux conversations">${IC.back}</button>${tAvatar(cur)}<div class="thinfo"><b>${esc(tTitle(cur))}</b><small>${esc(tMembers(cur.id).map(m=>m.user_id===S.me.id?"vous":staffName(m.user_id)).join(", "))}</small></div>
       ${cur.kind==="group"?`<button type="button" class="linkbtn" id="t-addm">Ajouter</button><button type="button" class="linkbtn" id="t-leave">Quitter</button>`:""}</div>
-      <div class="tmsgs" id="tmsgs">${tMsgs(cur.id).map(tMsgHTML).join("")||`<p class="hint center">Écrivez le premier message.</p>`}</div>
+      <div class="tmsgs" id="tmsgs">${tMsgsHTML(cur)||`<p class="hint center">Écrivez le premier message.</p>`}</div>
       ${S.tattach&&S.tattach.thread===cur.id?`<div class="tattach">${reqCardHTML(S.tattach.id)}<button type="button" class="linkbtn" id="t-unreq">Retirer</button></div>`:""}
       <div class="tcomp"><button type="button" class="cbtn" id="t-req" title="Joindre une demande de patient" aria-label="Joindre une demande de patient">📋</button>${composerHTML("t"+cur.id)}</div>
       <p class="hint small">Messages effacés après 90 jours. Ne remplace pas le dossier médical.</p></div>`
@@ -2056,10 +2098,10 @@ function teamRt(){ clearTimeout(teamRtTimer); teamRtTimer=setTimeout(async()=>{ 
   if(audioPlaying()){ updateBadges(); teamRt(); return; }
   const el=document.activeElement, typing=!!(el&&(el.tagName==="TEXTAREA"||el.tagName==="INPUT"));
   if(S.cscreen==="messages"&&S.tthread){ await sb.rpc("team_read",{p_thread:S.tthread}).then(()=>{ const me=tMembers(S.tthread).find(m=>m.user_id===S.me.id); if(me) me.last_read_at=new Date().toISOString(); }); }
-  if(S.cscreen==="messages"&&typing&&$("#tmsgs")){ const t=S.team2.threads.find(x=>x.id===S.tthread); if(t){ $("#tmsgs").innerHTML=tMsgs(t.id).map(tMsgHTML).join(""); hydrateTeam(); tScroll(); } updateBadges(); }
+  if(S.cscreen==="messages"&&typing&&$("#tmsgs")){ const t=S.team2.threads.find(x=>x.id===S.tthread); if(t){ $("#tmsgs").innerHTML=tMsgsHTML(t); hydrateTeam(); tScroll(); } updateBadges(); }
   else if(S.cscreen==="messages"&&!S.pend&&!REC&&!CREC) render(); else updateBadges();
  },500); }
-const tScroll = () => { const b=$("#tmsgs"); if(b) b.scrollTop=b.scrollHeight; };
+const tScroll = () => { const b=$("#tmsgs"); if(!b) return; if(!scrollToUnread(b)) b.scrollTop=b.scrollHeight; };
 const TFILES=new Map();
 async function teamFile(id){ if(TFILES.has(id)) return TFILES.get(id);
   const p=(async()=>{ const {data,error}=await sb.rpc("team_file",{p_id:id}); if(error) throw error; const d=(data||[])[0]; if(!d) throw new Error("absent");
@@ -2099,7 +2141,7 @@ function pickRequest(done){
   v.querySelectorAll("[data-pr]").forEach(b=>b.onclick=()=>{ close(); done(+b.dataset.pr); }); v.querySelector("#pr-q").focus();
 }
 function bindTeam2(){
-  $$("[data-thread]").forEach(b=>b.onclick=()=>{ S.tthread=+b.dataset.thread; const me=tMembers(S.tthread).find(m=>m.user_id===S.me.id); if(me) me.last_read_at=new Date().toISOString(); render(); sb.rpc("team_read",{p_thread:S.tthread}).then(()=>{}); });
+  $$("[data-thread]").forEach(b=>b.onclick=()=>{ S.tthread=+b.dataset.thread; const me=tMembers(S.tthread).find(m=>m.user_id===S.me.id); UNREAD["t"+S.tthread]=me?me.last_read_at:"9999"; delete UNREAD["s:tmsgs:"+S.tthread]; if(me) me.last_read_at=new Date().toISOString(); render(); sb.rpc("team_read",{p_thread:S.tthread}).then(()=>{}); });
   $("#t-new").onclick=()=>pickColleagues("Nouvelle conversation",[],async(ids,name)=>{ const {data,error}=await sb.rpc("team_start",{p_members:ids,p_title:name||null}); if(error){ toast(frError(error)); return false; } await loadTeam(); S.tthread=data; render(); return true; },true);
   const back=$("#t-back"); if(back) back.onclick=()=>{ S.tthread=null; render(); };
   const t=S.team2.threads.find(x=>x.id===S.tthread); if(!t) return;

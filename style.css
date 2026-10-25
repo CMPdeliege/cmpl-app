@@ -1011,3 +1011,7 @@ select,input,textarea{max-width:100%}
 /* iPhone : un toucher sur l'affiche doit déclencher un « clic » */
 [data-zoom]{cursor:pointer;-webkit-tap-highlight-color:transparent}
 @media (hover:hover){ [data-zoom]{cursor:zoom-in} }
+/* ligne « nouveaux messages » (comme WhatsApp) */
+.unreadline{align-self:stretch;display:flex;align-items:center;gap:10px;margin:10px 0 6px;color:var(--accent);font-size:12.5px;font-weight:700}
+.unreadline::before,.unreadline::after{content:"";flex:1;height:1px;background:color-mix(in srgb,var(--accent) 45%,transparent)}
+.unreadline span{background:var(--accent-soft);color:var(--accent);padding:3px 12px;border-radius:999px;white-space:nowrap}
