@@ -907,7 +907,9 @@ const SEC = () => IS_NATIVE ? CAP().CMPLSecure : null;
 let BIO=null;
 async function bioInfo(){ if(BIO) return BIO; const sec=SEC(); if(!sec) return BIO={available:false,type:"none"};
   try{ BIO=await sec.available(); }catch(e){ BIO={available:false,type:"none"}; } return BIO; }
-const bioName = () => BIO&&BIO.type==="touchid"?"Touch ID":"Face ID";
+const bioName = () => BIO&&BIO.type==="touchid"?"Touch ID":BIO&&BIO.type==="biometric"?"l'empreinte digitale":IS_ANDROID?"l'empreinte digitale":"Face ID";
+const BioName = () => { const n=bioName(); return n.charAt(0).toUpperCase()+n.slice(1); };   // en début de phrase
+const bioE = () => /empreinte/.test(bioName())?"e":"";   // « activée » (l'empreinte) / « activé » (Face ID)
 const fidKey = () => "cmpl_faceid_"+(S.session?.user?.id||"");
 const faceIdOn = () => { try{ return !!localStorage.getItem(fidKey()); }catch(e){ return false; } };
 function b32decode(str){ const A="ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"; let bits="", out=[];
@@ -921,7 +923,7 @@ async function totpCode(secret, t=Date.now()){
 async function faceIdSetup(){
   const {data:lf}=await sb.auth.mfa.listFactors();
   for(const f of (lf?.all||[])) if(f.status!=="verified") await sb.auth.mfa.unenroll({factorId:f.id}).catch(()=>{});
-  const {data,error}=await sb.auth.mfa.enroll({factorType:"totp",issuer:"Centre Médical Prince de Liège",friendlyName:bioName()+" iPhone "+new Date().toISOString().slice(0,19)+" "+Math.random().toString(36).slice(2,6)});
+  const {data,error}=await sb.auth.mfa.enroll({factorType:"totp",issuer:"Centre Médical Prince de Liège",friendlyName:(IS_ANDROID?"Empreinte Android ":bioName()+" iPhone ")+new Date().toISOString().slice(0,19)+" "+Math.random().toString(36).slice(2,6)});
   if(error) throw error;
   const v=await sb.auth.mfa.challengeAndVerify({factorId:data.id,code:await totpCode(data.totp.secret)});
   if(v.error){ await sb.auth.mfa.unenroll({factorId:data.id}).catch(()=>{}); throw v.error; }
@@ -975,19 +977,19 @@ function faceIdCardHTML(){
   if(!BIO){ bioInfo().then(()=>{ if(S.cscreen==="settings") render(); }); return ""; }
   if(!BIO.available) return "";
   const n=bioName();
-  return `<section class="card"><h3>${n}</h3>${faceIdOn()?`<p class="hint">${n} est activé sur cet iPhone : il remplace l'application d'authentification pour vous connecter.</p>
+  return `<section class="card"><h3>${IS_ANDROID?"Empreinte digitale":n}</h3>${faceIdOn()?`<p class="hint">${BioName()} est activé${bioE()} sur ce téléphone : il remplace l'application d'authentification pour vous connecter.</p>
     <div class="btnrow"><button class="btn ghost" id="fid-code">Afficher un code pour l'ordinateur</button><button class="linkbtn" id="fid-off">Désactiver ${n}</button></div><div id="fid-out"></div>`
-   :`<p class="hint">Connectez-vous avec ${n} au lieu de taper le code de l'application d'authentification. Cet iPhone pourra aussi vous afficher le code pour vous connecter sur un ordinateur.</p>
-    <div class="btnrow"><button class="btn" id="fid-on">Activer ${n} sur cet iPhone</button></div>`}</section>`;
+   :`<p class="hint">Connectez-vous avec ${n} au lieu de taper le code de l'application d'authentification. Ce téléphone pourra aussi vous afficher le code pour vous connecter sur un ordinateur.</p>
+    <div class="btnrow"><button class="btn" id="fid-on">Activer ${n} sur ce téléphone</button></div>`}</section>`;
 }
 function bindFaceIdCard(){
   const on=$("#fid-on"), off=$("#fid-off"), cd=$("#fid-code");
-  if(on) on.onclick=async()=>{ on.disabled=true; try{ await faceIdSetup(); toast(bioName()+" activé"); }catch(e){ console.error(e); toast("Activation impossible : "+frError(e)); } render(); };
-  if(off) off.onclick=async()=>{ off.disabled=true; await faceIdForget(true); toast(bioName()+" désactivé"); render(); };
+  if(on) on.onclick=async()=>{ on.disabled=true; try{ await faceIdSetup(); toast(BioName()+" activé"+bioE()); }catch(e){ console.error(e); toast("Activation impossible : "+frError(e)); } render(); };
+  if(off) off.onclick=async()=>{ off.disabled=true; await faceIdForget(true); toast(BioName()+" désactivé"+bioE()); render(); };
   if(cd) cd.onclick=async()=>{ try{ const {s:sec}=await faceIdSecret(); const show=async()=>{ const el=$("#fid-out"); if(!el) return clearInterval(tm);
       const left=30-Math.floor(Date.now()/1000)%30; el.innerHTML=`<p class="fidcode" translate="no">${(await totpCode(sec)).replace(/(\d{3})/,"$1 ")}</p><p class="hint">Valable encore ${left} s. Tapez-le sur l'ordinateur.</p>`; };
       await show(); const tm=setInterval(show,1000); setTimeout(()=>{ clearInterval(tm); const el=$("#fid-out"); if(el) el.innerHTML=""; },90000);
-    }catch(e){ if(e&&e.code!=="CANCELED") toast(bioName()+" : lecture impossible. Désactivez puis réactivez "+bioName()+"."); } };
+    }catch(e){ if(e&&e.code!=="CANCELED") toast(BioName()+" : lecture impossible. Désactivez puis réactivez "+bioName()+"."); } };
 }
 
 /* ---------- ordinateur de confiance (poste du centre) ----------
@@ -1065,13 +1067,13 @@ function renderMfa(a){
       const go=async()=>{ const bt=$("#fid-go"); if(bt) bt.disabled=true;
         try{ await faceIdLogin(); markActive(); lastAct=Date.now(); toast("Connecté"); await refresh(); }
         catch(e){ if(bt) bt.disabled=false; if(e&&e.code==="CANCELED") return;
-          if(e&&e.code!=="ERROR"){ await faceIdForget(false); z.innerHTML=""; msg(n+" n'est plus configuré sur cet iPhone : entrez le code de votre application, puis réactivez "+n+" dans Mon profil."); }
-          else msg(n+" n'a pas fonctionné. Réessayez ou entrez le code."); } };
+          if(e&&e.code!=="ERROR"){ await faceIdForget(false); z.innerHTML=""; msg(BioName()+" n'est plus configuré"+bioE()+" sur ce téléphone : entrez le code de votre application, puis réactivez "+n+" dans Mon profil."); }
+          else msg(BioName()+" n'a pas fonctionné. Réessayez ou entrez le code."); } };
       $("#fid-go").onclick=go; go();
     } else if(enroll){
-      z.innerHTML=`<button class="btn full" id="fid-new">Activer avec ${n} (recommandé)</button><p class="hint" style="text-align:center;margin:6px 0 0">Rien à installer : ${n} remplace l'application d'authentification sur cet iPhone. Ou utilisez le code QR ci-dessous.</p>`;
+      z.innerHTML=`<button class="btn full" id="fid-new">Activer avec ${n} (recommandé)</button><p class="hint" style="text-align:center;margin:6px 0 0">Rien à installer : ${n} remplace l'application d'authentification sur ce téléphone. Ou utilisez le code QR ci-dessous.</p>`;
       $("#fid-new").onclick=async e=>{ e.target.disabled=true;
-        try{ await faceIdSetup(); markActive(); lastAct=Date.now(); toast(n+" activé"); await refresh(); }
+        try{ await faceIdSetup(); markActive(); lastAct=Date.now(); toast(BioName()+" activé"+bioE()); await refresh(); }
         catch(err){ e.target.disabled=false; console.error(err); msg("Activation impossible : "+frError(err)); } };
     } });
   (async()=>{
@@ -1087,7 +1089,7 @@ function renderMfa(a){
       // plusieurs appareils possibles (application d'authentification, Face ID sur iPhone…) :
       // le code est essayé sur chacun, l'application d'authentification d'abord
       const vf=(lf?.totp||[]).filter(f=>f.status==="verified");
-      const isBio=f=>/^(Face ID|Touch ID)/.test(f.friendly_name||"");
+      const isBio=f=>/^(Face ID|Touch ID|Empreinte)/.test(f.friendly_name||"");
       factorIds=[...vf.filter(f=>!isBio(f)&&!isTrustFactor(f)),...vf.filter(isBio),...vf.filter(isTrustFactor)].map(f=>f.id); factorId=factorIds[0];
       // ordinateur de confiance : connexion sans code
       const tr=trustGet();
@@ -1160,10 +1162,24 @@ function capPlugin(name, methods){
 const CAP = () => { if(CAP.c) return CAP.c; const c={};
   const pn=capPlugin("PushNotifications",["checkPermissions","requestPermissions","register","unregister","removeAllDeliveredNotifications"]);
   const sec=capPlugin("CMPLSecure",["available","save","load","remove","setBadge","preview"]);
-  if(pn) c.PushNotifications=pn; if(sec) c.CMPLSecure=sec; return CAP.c=c; };
+  const ap=capPlugin("App",["minimizeApp","exitApp"]);
+  if(pn) c.PushNotifications=pn; if(sec) c.CMPLSecure=sec; if(ap) c.App=ap; return CAP.c=c; };
+const IS_ANDROID=/android/i.test(navigator.userAgent);
 const IS_NATIVE=/CMPLApp/.test(navigator.userAgent)||!!(window.Capacitor&&window.Capacitor.isNativePlatform&&window.Capacitor.isNativePlatform());
 const IS_STANDALONE=IS_NATIVE||matchMedia("(display-mode: standalone)").matches||navigator.standalone===true;
 let pushSynced=false;
+// --- app Android : bouton « retour » du téléphone ---
+function androidBack(){
+  const v=$(".viewer"); if(v){ v.querySelector(".cbtn")?.click(); return; }
+  const tops=[...document.querySelectorAll(".modal,.sent,#diagbox,.tour,.scanner")];
+  if(tops.length){ const t=tops[tops.length-1]; const x=t.querySelector('[id$="-x"],#diagx,.cbtn,#sent-home,#t-skip,[data-close]');
+    if(x) x.click(); else t.remove(); return; }
+  if($(".dd:not([hidden])")){ closeDD(); return; }
+  const b=$("#back"); if(b){ b.click(); return; }
+  if(S.me&&S.me.role==="patient"&&S.screen&&S.screen!=="home"){ S.screen="home"; render(); scrollTo(0,0); return; }
+  const ap=CAP().App; if(ap) ap.minimizeApp().catch(()=>{});
+}
+if(IS_NATIVE&&IS_ANDROID) setTimeout(()=>{ try{ const ap=CAP().App; if(ap) ap.addListener("backButton",androidBack); }catch(e){ console.error(e); } },0);
 // --- notifications natives (app iPhone) ---
 let nativePush=null;   // granted | denied | prompt | unsupported
 const NPUSH = () => IS_NATIVE ? CAP().PushNotifications : null;
@@ -1173,7 +1189,7 @@ async function nativePushInit(){
   if(!nativePushInit.done){ nativePushInit.done=true;
     try{
       P.addListener("registration", async t=>{ if(!S.me) return;
-        const {error}=await sb.rpc("register_native_push",{p_token:t.value,p_platform:"ios"}); if(error) console.error(error);
+        const {error}=await sb.rpc("register_native_push",{p_token:t.value,p_platform:IS_ANDROID?"android":"ios"}); if(error) console.error(error);
         try{ localStorage.setItem(ntokKey,t.value); }catch(e){} });
       P.addListener("registrationError", e=>console.error("notifications",e));
       P.addListener("pushNotificationActionPerformed", ()=>{ setTimeout(autoRefresh,300); });
@@ -1829,7 +1845,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261023e";
+const APP_VERSION="20261025a";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
