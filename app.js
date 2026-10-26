@@ -873,6 +873,7 @@ async function loadPatient(){
   ]);
   S.reqs = rq.data||[]; S.meds = md.data||[]; S.notifs = nt.data||[];
   try{ const ab=await sb.rpc("provider_absences"); S.absences=ab.error?[]:(ab.data||[]); }catch(e){ S.absences=[]; }
+  loadPhotos();
   if(S.me.status==="active"){ const f=await sb.rpc("my_family"); S.family=f.error?null:f.data; }
   await Promise.all([loadProviderAvatars(), loadAvatars([uid, ...S.reqs.flatMap(r=>(r.messages||[]).filter(m=>!m.from_patient).map(m=>m.author_id))])]);
 }
@@ -891,6 +892,7 @@ async function loadStaff(){
   if(role==="secretariat"||role==="admin"||role==="gestion") tasks.push(sb.rpc("news_audience").then(r=>S.audience=r.data));
   if(isAdminP(S.me)) tasks.push(sb.from("children").select("id,first_name,last_name,birth_date,status,created_by,created_at").eq("status","pending").is("removed_at",null).order("created_at").then(r=>S.pendingKids=r.data||[]));
   tasks.push(loadTasks());
+  if(isAdminP(S.me)) tasks.push(loadPhotos());
   tasks.push(loadInventory());
   tasks.push(sb.from("patient_records").select("*").order("last_name").then(r=>S.records=r.error?[]:(r.data||[])));
   tasks.push(sb.from("request_notes").select("*").order("created_at").then(r=>S.notes=r.error?[]:(r.data||[])));
@@ -1450,9 +1452,21 @@ async function logout(reason){ if(typeof reason!=="string") await pushForget(); 
 /* =====================================================================
    PATIENT
    ===================================================================== */
+const PBAR_SCREENS=["home","reqs","news","account","notifs","absences","help"];
+function patientBarHTML(){ const sc=S.screen, nU=S.notifs.filter(n=>n.request_id&&!n.read_at&&n.title!=="Demande bien reçue").length;
+  const it=(k,ic,t,n)=>`<button data-pb="${k}" aria-current="${sc===k||(k==="news"&&sc==="news")?"page":"false"}">${ic}<span>${t}</span>${n?`<em class="pbn">${n}</em>`:""}</button>`;
+  return `<nav class="pbar" aria-label="Navigation">${it("home",PI.home,"Accueil")}${it("reqs",IC.question,"Demandes",nU)}<button class="pbmid" id="pb-new" aria-label="Nouvelle demande"><b aria-hidden="true">＋</b><span>Nouvelle</span></button>${it("news",IC.news,"Actualités")}${it("account",IC.user,"Moi")}</nav>`; }
+function bindPatientBar(){ $$("[data-pb]").forEach(b=>b.onclick=()=>{ S.screen=b.dataset.pb; if(S.screen==="news") S.openNews=null; render(); scrollTo(0,0); }); const nb=$("#pb-new"); if(nb) nb.onclick=openNewSheet; }
 function renderPatient(a){
   a.className="wrap";
+  const sc=S.screen, bar=PBAR_SCREENS.includes(sc)&&S.me.status==="active";
+  document.body.classList.toggle("pbaron",bar);
+  _renderPatient(a);
+  if(bar){ a.insertAdjacentHTML("beforeend",patientBarHTML()); bindPatientBar(); }
+}
+function _renderPatient(a){
   const sc=S.screen;
+  if(sc==="reqs") return patientReqs(a);
   if(sc==="flow") return patientFlow(a);
   if(sc==="req") return patientReq(a);
   if(sc==="notifs") return patientNotifs(a);
@@ -1504,9 +1518,11 @@ function patientHome(a){
   const grown=fk.filter(c=>c.status==="active"&&c.age>=CHILD_MAX_AGE), waiting=fk.filter(c=>c.status==="pending");
   const chips=fk.length?`<div class="tabs whochips" role="group" aria-label="Afficher pour">${[["all","Tous"],["me","Moi"],...fk.map(c=>[c.id,c.first_name])].map(([id,l])=>`<button class="tab" data-who="${id}" aria-pressed="${who===id}">${esc(l)}</button>`).join("")}</div>`:"";
   const forTag = x => x.child_id ? ` · pour ${esc(childFirst(x.child_id))}` : "";
+  const eve=new Date().getHours()>=18||new Date().getHours()<5;
   a.innerHTML=`<div class="phero">${topBar()}
-  <div class="phello"><div><h1 class="hello">Bonjour ${esc(S.me.first_name||"")}</h1>
-  <p class="sub">Que pouvons-nous faire pour vous ?</p></div>${SUN_SVG}</div></div>
+  <div class="phello"><div><h1 class="hello">${eve?"Bonsoir":"Bonjour"} ${esc(S.me.first_name||"")}</h1>
+  <p class="sub openst ${isOpen(new Date())?"on":""}"><span class="odot" aria-hidden="true"></span>${esc(openStatusText())}</p></div>${eve?MOON_SVG:SUN_SVG}</div></div>
+  ${photosCarouselHTML()}
   ${S.me.news_choice_at?"":`<section class="consent" aria-labelledby="cq"><h2 id="cq">Annonces du centre</h2><p>Souhaitez-vous recevoir une notification pour les annonces importantes du centre (fermetures exceptionnelles, campagnes de vaccination) ?</p><p class="hint">Les réponses à vos demandes vous sont toujours notifiées. Vous pourrez changer d'avis à tout moment dans Notifications.</p><div class="btnrow"><button class="btn" data-consent="1">Oui, me prévenir</button><button class="btn ghost" data-consent="0">Non merci</button></div></section>`}
   <button class="bignew" id="newreq"><span aria-hidden="true">＋</span> Nouvelle demande</button>
   <div class="urgent compact">${IC.alert}<div><strong>Urgence vitale : appelez le 112.</strong><br>Les demandes envoyées ici sont lues pendant les heures d'ouverture, pas en urgence.</div></div>
@@ -1519,13 +1535,32 @@ function patientHome(a){
   ${chips}
   <div class="sechead"><h2>${fk.length?"Médicaments":"Mes médicaments"}</h2><small class="hint">Accordés par votre médecin</small></div>
   <div class="list" style="margin-bottom:26px">${meds.length?meds.map(m=>`<div class="medrow"><div class="ic">${IC.prescription}</div><div><b>${esc(m.label)}</b><small>${m.child_id?`Pour ${esc(childFirst(m.child_id))} · `:fk.length?"Pour moi · ":""}Dernière prescription ${fmt(m.last_granted_at)} · ${m.times_granted} fois</small></div><div class="acts"><button class="mini" data-renew="${esc(m.label)}" data-renewkid="${m.child_id||""}">Renouveler</button><button class="linkbtn" style="font-size:12px;color:var(--muted)" data-forget="${m.id}">Retirer</button></div></div>`).join(""):`<div class="empty">Vos médicaments apparaîtront ici après votre première prescription accordée.</div>`}</div>
-  <div class="sechead"><h2>${fk.length?"Demandes":"Mes demandes"}</h2></div>
-  <div class="list">${mine.length?mine.map(r=>{const ms=msgsOf(r),last=ms[ms.length-1],unread=S.notifs.some(n=>n.request_id===r.id&&!n.read_at&&n.title!=="Demande bien reçue");
-    const prev=r.purged_at?"Contenu effacé":last?(last.from_patient?"Vous : ":"")+msgPreview(last):summaryLine(r.answers);
-    return `<button class="row chatrow ${unread?"unread":""}" data-req="${r.id}"><div class="ic t-${r.type}">${IC[r.type]}</div><div><b>${esc(reqWho(r))} · ${TYPES[r.type].label}${forTag(r)}</b><small>${esc(prev)}</small></div><div class="rside"><small>${fmt(last?last.created_at:r.created_at)}</small>${unread?`<span class="dot" aria-label="Nouveau message"></span>`:`<span class="pill st-${stClassP(r)}">${stLabelP(r)}</span>`}</div></button>`}).join(""):`<div class="empty">Aucune demande pour l'instant.</div>`}</div>`;
-  bindTop();
+  <div class="sechead"><h2>${fk.length?"Demandes":"Mes demandes"}</h2>${mine.length>4?`<button class="linkbtn" id="allreqs">Tout voir (${mine.length})</button>`:""}</div>
+  <div class="list">${reqRowsHTML(mine.slice(0,4))}</div>`;
+  bindTop(); bindCarousel();
+  const ar=$("#allreqs"); if(ar) ar.onclick=()=>{ S.screen="reqs"; render(); scrollTo(0,0); };
   $$("[data-start]").forEach(b=>b.onclick=()=>startFlow(b.dataset.start));
   $("#newreq").onclick=openNewSheet;
+  bindHomeRest();
+}
+function reqRowsHTML(mine){ const forTag = x => x.child_id ? ` · pour ${esc(childFirst(x.child_id))}` : "";
+  return mine.length?mine.map(r=>{const ms=msgsOf(r),last=ms[ms.length-1],unread=S.notifs.some(n=>n.request_id===r.id&&!n.read_at&&n.title!=="Demande bien reçue");
+    const prev=r.purged_at?"Contenu effacé":last?(last.from_patient?"Vous : ":"")+msgPreview(last):summaryLine(r.answers);
+    return `<button class="row chatrow ${unread?"unread":""}" data-req="${r.id}"><div class="ic t-${r.type}">${IC[r.type]}</div><div><b>${esc(reqWho(r))} · ${TYPES[r.type].label}${forTag(r)}</b><small>${esc(prev)}</small></div><div class="rside"><small>${fmt(last?last.created_at:r.created_at)}</small>${unread?`<span class="dot" aria-label="Nouveau message"></span>`:`<span class="pill st-${stClassP(r)}">${stLabelP(r)}</span>`}</div></button>`}).join(""):`<div class="empty">Aucune demande pour l'instant.</div>`; }
+function patientReqs(a){
+  const fk=famKids(), who=S.who&&(S.who==="me"||fk.some(c=>c.id===S.who))?S.who:"all";
+  const forWho = x => who==="all" || (who==="me" ? !x.child_id : x.child_id===who);
+  const mine=S.reqs.filter(forWho).sort((x,y)=>(x.status==="traite")-(y.status==="traite")||new Date(y.created_at)-new Date(x.created_at));
+  const open=mine.filter(r=>r.status!=="traite"), done=mine.filter(r=>r.status==="traite");
+  const chips=fk.length?`<div class="tabs whochips" role="group" aria-label="Afficher pour">${[["all","Tous"],["me","Moi"],...fk.map(c=>[c.id,c.first_name])].map(([id,l])=>`<button class="tab" data-who="${id}" aria-pressed="${who===id}">${esc(l)}</button>`).join("")}</div>`:"";
+  a.innerHTML=`<div class="convhead"><div><h2>Mes demandes</h2><small>Vos conversations avec le centre</small></div></div>
+  ${chips}
+  <div class="list" style="margin-bottom:22px">${reqRowsHTML(open)}</div>
+  ${done.length?`<div class="sechead"><h2>Classées</h2></div><div class="list">${reqRowsHTML(done)}</div>`:""}`;
+  $$("[data-who]").forEach(b=>b.onclick=()=>{ S.who=b.dataset.who; render(); });
+  $$("[data-req]").forEach(b=>b.onclick=()=>openRequest(+b.dataset.req));
+}
+function bindHomeRest(){
   $$("[data-consent]").forEach(b=>b.onclick=async()=>{ const ok=b.dataset.consent==="1";
     if(await run(()=>sb.rpc("set_news_consent",{p_ok:ok}),ok?"Vous serez prévenu des annonces importantes":"C'est noté : pas de notification pour les annonces")){ S.me.news_push=ok; S.me.news_choice_at=new Date().toISOString(); render(); } });
   $$("[data-news]").forEach(b=>b.onclick=()=>{S.openNews=+b.dataset.news;S.screen="news";render();scrollTo(0,0)});
@@ -1887,6 +1922,63 @@ function bindSummary(){
   };
 }
 /* ---------- après l'envoi : « C'est envoyé ! » ---------- */
+/* ----- Photos du centre (carrousel de l'accueil des patients ; gérées par l'administrateur) ----- */
+async function loadPhotos(){ const {data,error}=await sb.from("centre_photos").select("*").order("sort").order("id"); S.photos=error?null:(data||[]); }
+const PI={ home:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M10 21v-6h4v6"/></svg>' };
+const MOON_SVG = `<svg class="sun moon" viewBox="0 0 64 64" aria-hidden="true"><path d="M40 10a22 22 0 1 0 14 34A18 18 0 0 1 40 10z" fill="#ffd977"/><circle cx="16" cy="14" r="2" fill="#ffd977"/><circle cx="52" cy="22" r="1.6" fill="#ffd977"/><circle cx="10" cy="40" r="1.4" fill="#ffd977"/></svg>`;
+const hmin = m => `${Math.floor(m/60)} h${m%60?" "+String(m%60).padStart(2,"0"):""}`;
+function openStatusText(){
+  const now=new Date(); if(!Object.keys(S.hours||{}).length) return "";
+  if(isOpen(now)) return `Le centre est ouvert jusqu'à ${hmin(S.hours[now.getDay()][1])}`;
+  const t=nextOpen(now); if(t===now) return "Le centre est fermé";
+  const d0=new Date(now.getFullYear(),now.getMonth(),now.getDate()), d1=new Date(t.getFullYear(),t.getMonth(),t.getDate()), diff=Math.round((d1-d0)/864e5), at=hmin(t.getHours()*60+t.getMinutes());
+  return diff===0?`Le centre est fermé – ouvre aujourd'hui à ${at}`:diff===1?`Le centre est fermé – ouvre demain à ${at}`:`Le centre est fermé – ouvre ${t.toLocaleDateString(LOC,{weekday:"long"})} à ${at}`;
+}
+function photosCarouselHTML(){
+  const L=S.photos||[]; if(!L.length) return "";
+  return `<div class="car" id="car" aria-roledescription="carrousel" aria-label="Photos du centre">
+   <div class="ctrack" id="ctrack">${L.map((p,i)=>`<figure class="cslide" data-cview="${esc(p.url)}"><img src="${esc(p.url)}" alt="${esc(p.caption||"Photo du centre")}" ${i?'loading="lazy"':""}>${p.caption?`<figcaption translate="no" dir="auto">${esc(p.caption)}</figcaption>`:""}</figure>`).join("")}</div>
+   ${L.length>1?`<div class="cdots">${L.map((_,i)=>`<button type="button" data-cdot="${i}" aria-label="Photo ${i+1}" aria-current="${i===0}"></button>`).join("")}</div>`:""}</div>`;
+}
+let carTimer=null;
+function bindCarousel(){
+  clearInterval(carTimer); const tr=$("#ctrack"); if(!tr) return;
+  const n=tr.children.length; let touched=0;
+  const idx=()=>Math.round(tr.scrollLeft/Math.max(1,tr.clientWidth));
+  const go=i=>tr.scrollTo({left:i*tr.clientWidth,behavior:"smooth"});
+  const dots=()=>$$("[data-cdot]").forEach((d,i)=>d.setAttribute("aria-current",String(i===idx())));
+  tr.addEventListener("scroll",()=>{ clearTimeout(tr._t); tr._t=setTimeout(dots,80); },{passive:true});
+  ["pointerdown","touchstart","wheel"].forEach(ev=>tr.addEventListener(ev,()=>{ touched=Date.now(); },{passive:true}));
+  $$("[data-cdot]").forEach(d=>d.onclick=()=>{ touched=Date.now(); go(+d.dataset.cdot); });
+  $$("[data-cview]").forEach(f=>f.onclick=()=>openViewer(f.dataset.cview));
+  if(n>1&&!matchMedia("(prefers-reduced-motion: reduce)").matches)
+    carTimer=setInterval(()=>{ if(!document.body.contains(tr)){ clearInterval(carTimer); return; } if(document.hidden||Date.now()-touched<8000) return; go((idx()+1)%n); },5000);
+}
+function photosAdminHTML(){
+  const L=S.photos;
+  if(L===undefined){ loadPhotos().then(()=>{ if(S.cscreen==="news") render(); }); return ""; }
+  if(L===null) return `<section class="card"><h3>Photos de l'accueil des patients</h3><p class="hint">Pas encore activé (migration 047 à exécuter dans Supabase).</p></section>`;
+  return `<section class="card phadmin"><h3>Photos de l'accueil des patients <small class="hint">(administrateur)</small></h3>
+   <p class="hint">Elles défilent en haut de l'accueil des patients. Façade, salle d'attente, cabinets, équipe… En paysage, <b>jamais de patient reconnaissable</b>. 8 photos au maximum.</p>
+   <div class="phlist">${L.map((p,i)=>`<div class="phrow"><img src="${esc(p.url)}" alt=""><div class="phc"><input type="text" maxlength="80" data-phcap="${p.id}" value="${esc(p.caption||"")}" placeholder="Légende (facultative), ex. Notre salle d'attente" aria-label="Légende"></div>
+     <div class="phacts"><button type="button" class="cbtn sm" data-phmv="${p.id}:-1" ${i===0?"disabled":""} aria-label="Monter">↑</button><button type="button" class="cbtn sm" data-phmv="${p.id}:1" ${i===L.length-1?"disabled":""} aria-label="Descendre">↓</button><button type="button" class="linkbtn" data-phdel="${p.id}">Retirer</button></div></div>`).join("")||`<p class="hint">Aucune photo pour l'instant.</p>`}</div>
+   ${L.length<8?`<label class="btn ghost phadd">＋ Ajouter une photo<input type="file" id="ph-file" accept="image/*" hidden></label>`:""}</section>`;
+}
+function bindPhotosAdmin(){
+  const f=$("#ph-file"); if(f) f.onchange=async()=>{ const x=f.files[0]; if(!x) return; f.disabled=true;
+    try{ let im=await shrinkPoster(x); if(im.size>3e6) throw new Error("Image trop lourde (3 Mo maximum).");
+      const path=`accueil/${Date.now()}-${Math.random().toString(36).slice(2,8)}.jpg`;
+      const up=await sb.storage.from("announcements").upload(path,im,{contentType:im.type||"image/jpeg"}); if(up.error) throw up.error;
+      const url=sb.storage.from("announcements").getPublicUrl(path).data.publicUrl;
+      if(await run(()=>sb.rpc("add_centre_photo",{p_url:url,p_caption:null}),"Photo ajoutée")){ await loadPhotos(); render(); }
+      else await sb.storage.from("announcements").remove([path]);
+    }catch(e){ toast("La photo n'a pas pu être ajoutée : "+frError(e)); } f.disabled=false; };
+  $$("[data-phcap]").forEach(i=>i.onchange=async()=>{ if(await run(()=>sb.rpc("edit_centre_photo",{p_id:+i.dataset.phcap,p_caption:i.value}),"Légende enregistrée")) await loadPhotos(); });
+  $$("[data-phmv]").forEach(b=>b.onclick=async()=>{ const [id,d]=b.dataset.phmv.split(":"); if(await run(()=>sb.rpc("move_centre_photo",{p_id:+id,p_dir:+d}))){ await loadPhotos(); render(); } });
+  $$("[data-phdel]").forEach(b=>b.onclick=async()=>{ if(b.dataset.sure!=="1"){ b.dataset.sure="1"; b.textContent="Confirmer ?"; b.style.color="var(--danger)"; return; }
+    const r=await run(()=>sb.rpc("delete_centre_photo",{p_id:+b.dataset.phdel}),"Photo retirée");
+    if(r){ const url=r.data||""; const m=url.split("/announcements/")[1]; if(m) await sb.storage.from("announcements").remove([decodeURIComponent(m)]); await loadPhotos(); render(); } });
+}
 const SUN_SVG = `<svg class="sun" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="14" fill="#ffc94d"/><g stroke="#ffb020" stroke-width="3.5" stroke-linecap="round"><path d="M32 5v7M32 52v7M5 32h7M52 32h7M13 13l5 5M46 46l5 5M13 51l5-5M46 18l5-5"/></g></svg>`;
 function showSent(r){
   const old=$("#sent"); if(old) old.remove();
@@ -1926,7 +2018,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261026c";
+const APP_VERSION="20261026d";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -2322,6 +2414,7 @@ function staffHelpHTML(){
    ["Le menu « Le centre »","Il regroupe ce qui concerne tout le centre : Actualités, Équipe, Classeur, Inventaire, Congés, Comptes à valider (selon votre rôle). Le chiffre rouge indique ce qui attend."],
    ["Trouver et trier les demandes","Onglet Demandes : « Les miennes / Secrétariat / Tout le centre » choisit les demandes affichées ; la recherche trouve un patient par son nom ; les pastilles colorées filtrent par type. Les demandes sont rangées par ce qu'il faut faire : urgent ou en retard, le patient a répondu, nouvelles. « En attente du patient » (vous avez répondu) est replié en bas. Les renouvellements simples peuvent être accordés à la suite dans « Prescriptions en série », après les avoir faits dans CareConnect."],
    ["Un patient sans compte dans l'app","Le centre → Fiches patients : créez une fiche (nom, prénom, date de naissance, téléphone, e-mail). Vous pouvez ensuite lui lier une tâche, en parler à un collègue (« En parler ») ou l'inviter par e-mail à créer son compte. Jamais de note médicale dans une fiche. Quand le patient s'inscrit, l'administrateur relie son compte à la fiche dans Comptes à valider."],
+   ["Photos de l'accueil des patients","Administrateur : Le centre → Actualités → « Photos de l'accueil des patients ». Ajoutez jusqu'à 8 photos du centre (en paysage, jamais de patient reconnaissable), une légende si vous voulez, et l'ordre avec ↑ ↓. Elles défilent en haut de l'accueil des patients."],
    ["La liste de l'accueil","Le centre → Accueil : la liste commune du secrétariat (appels à passer, choses à ne pas oublier). Écrivez la tâche, choisissez le jour et, si besoin, l'heure (« vers 14h30 ») : à cette heure-là, le secrétariat reçoit une notification. Toute l'équipe peut y ajouter quelque chose ; le secrétariat coche quand c'est fait."],
    ["Les listes d'attente","Le centre → Listes d'attente : un patient à rappeler en cas de désistement, pour un prestataire. Ajoutez-le (patient de l'app, fiche ou simplement nom + téléphone), avec un motif court et ses disponibilités. Quand une place se libère : « Pas de réponse » note l'appel, « RDV fixé » le retire de la liste. Jamais de détail médical."],
    ["Rassurer le patient : « Vu »","Dans une demande, le bouton « ✓ Vu · prévenir le patient » lui affiche « Votre demande a été vue… Elle est en cours de traitement » et lui envoie une notification (sans e-mail). Au transfert, la case « Prévenir le patient » (cochée) lui indique à qui sa demande a été transmise."],
@@ -3079,6 +3172,7 @@ function newsAdminHTML(){
   if(S.newsMode==null||S.newsModeFor!==(ed?ed.id:0)){ S.newsMode=ed&&ed.image_path&&!(ed.body||"").trim()?"img":"txt"; S.newsModeFor=ed?ed.id:0; }
   const IM=S.newsMode==="img";
   return `<div class="chead"><div><h1>Actualités</h1><p>Publiées dans l'app des patients. Informations pratiques uniquement, sans donnée personnelle.</p></div></div>
+  ${isAdmin()?photosAdminHTML():""}
   <div class="pane">
    <form class="card ${ed?"editing":""}" id="newsform">
     <h3>${ed?"Modifier l'annonce":"Nouvelle annonce"}</h3>
@@ -3116,6 +3210,7 @@ async function uploadNewsImage(f){
   return sb.storage.from("announcements").getPublicUrl(path).data.publicUrl;
 }
 function bindNewsAdmin(){
+  if(isAdmin()&&S.photos) bindPhotosAdmin();
   const ed=S.editNews?S.allNews.find(n=>n.id===S.editNews):null;
   $("#newsform").onsubmit=async e=>{ e.preventDefault(); const btn=$("#n-pub"); btn.disabled=true;
     try{

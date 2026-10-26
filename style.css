@@ -1098,3 +1098,34 @@ select,input,textarea{max-width:100%}
 @keyframes shup{from{transform:translateY(100%)}to{transform:none}}
 @keyframes shfade{from{background:transparent}}
 body.sheeton{overflow:hidden}
+/* Accueil patient : état ouvert/fermé, carrousel de photos, barre du bas */
+.openst{display:flex;align-items:center;gap:7px}
+.odot{width:9px;height:9px;border-radius:50%;background:var(--muted);flex:none;opacity:.7}
+.openst.on .odot{background:#2e8b57;opacity:1;box-shadow:0 0 0 0 rgb(46 139 87/.5);animation:odot 2.4s infinite}
+@keyframes odot{0%{box-shadow:0 0 0 0 rgb(46 139 87/.45)}70%{box-shadow:0 0 0 8px rgb(46 139 87/0)}100%{box-shadow:0 0 0 0 rgb(46 139 87/0)}}
+.car{position:relative;border-radius:22px;overflow:hidden;margin:0 0 14px;background:var(--surface-2);box-shadow:0 6px 18px rgb(60 20 20/.10)}
+.ctrack{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.ctrack::-webkit-scrollbar{display:none}
+.cslide{flex:0 0 100%;scroll-snap-align:center;margin:0;position:relative;aspect-ratio:16/9;cursor:zoom-in}
+.cslide img{width:100%;height:100%;object-fit:cover;display:block}
+.cslide figcaption{position:absolute;left:0;right:0;bottom:0;padding:28px 14px 12px;color:#fff;font-weight:700;font-size:15px;background:linear-gradient(transparent,rgb(30 10 10/.6))}
+.cdots{position:absolute;top:10px;right:12px;display:flex;gap:5px}
+.cdots button{width:8px;height:8px;border-radius:4px;border:0;padding:0;background:rgb(255 255 255/.6);transition:width .25s;cursor:pointer}
+.cdots button[aria-current="true"]{width:20px;background:#fff}
+.sun.moon{animation:none}
+body.pbaron{padding-bottom:calc(92px + var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))}
+.pbar{position:fixed;left:50%;transform:translateX(-50%);bottom:0;width:100%;max-width:640px;z-index:70;display:flex;justify-content:space-around;align-items:flex-end;background:var(--surface);border-top:1px solid var(--line);border-radius:20px 20px 0 0;box-shadow:0 -4px 18px rgb(60 20 20/.08);padding:6px 4px calc(8px + var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))}
+.pbar button{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;border:0;background:transparent;color:var(--muted);font:inherit;font-size:11.5px;font-weight:600;padding:4px 0;position:relative;cursor:pointer}
+.pbar button svg{width:22px;height:22px}
+.pbar button[aria-current="page"]{color:var(--accent)}
+.pbar .pbn{position:absolute;top:0;left:calc(50% + 6px);background:var(--danger);color:#fff;font-style:normal;font-size:10px;font-weight:700;border-radius:9px;padding:1px 5px;line-height:1.3}
+.pbar .pbmid{color:var(--accent)}
+.pbar .pbmid b{width:58px;height:58px;border-radius:50%;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;font-size:30px;margin-top:-28px;border:4px solid var(--surface);box-shadow:0 6px 16px color-mix(in srgb,var(--accent) 40%,transparent)}
+.phlist{display:flex;flex-direction:column;gap:8px;margin:8px 0 12px}
+.phrow{display:flex;gap:10px;align-items:center}
+.phrow img{width:96px;height:54px;object-fit:cover;border-radius:10px;flex:none}
+.phc{flex:1;min-width:0}.phc input{width:100%}
+.phacts{display:flex;gap:6px;align-items:center}
+.phadd{cursor:pointer}
+@media (max-width:520px){ .phrow{flex-wrap:wrap} .phc{flex-basis:calc(100% - 110px)} .phacts{margin-left:106px} }
+.openst{align-items:flex-start}.openst .odot{margin-top:.5em}
