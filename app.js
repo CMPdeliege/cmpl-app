@@ -1518,35 +1518,35 @@ function patientHome(a){
   const grown=fk.filter(c=>c.status==="active"&&c.age>=CHILD_MAX_AGE), waiting=fk.filter(c=>c.status==="pending");
   const chips=fk.length?`<div class="tabs whochips" role="group" aria-label="Afficher pour">${[["all","Tous"],["me","Moi"],...fk.map(c=>[c.id,c.first_name])].map(([id,l])=>`<button class="tab" data-who="${id}" aria-pressed="${who===id}">${esc(l)}</button>`).join("")}</div>`:"";
   const forTag = x => x.child_id ? ` · pour ${esc(childFirst(x.child_id))}` : "";
+  const medsSec=`  <div class="sechead"><h2>${fk.length?"Médicaments":"Mes médicaments"}</h2><small class="hint">Accordés par votre médecin</small></div>
+  <div class="list" style="margin-bottom:26px">${meds.length?meds.map(m=>`<div class="medrow"><div class="ic">${IC.prescription}</div><div><b>${esc(m.label)}</b><small>${m.child_id?`Pour ${esc(childFirst(m.child_id))} · `:fk.length?"Pour moi · ":""}Dernière prescription ${fmt(m.last_granted_at)} · ${m.times_granted} fois</small></div><div class="acts"><button class="mini" data-renew="${esc(m.label)}" data-renewkid="${m.child_id||""}">Renouveler</button><button class="linkbtn" style="font-size:12px;color:var(--muted)" data-forget="${m.id}">Retirer</button></div></div>`).join(""):`<div class="empty">Vos médicaments apparaîtront ici après votre première prescription accordée.</div>`}</div>`;
   const eve=new Date().getHours()>=18||new Date().getHours()<5;
   a.innerHTML=`<div class="phero">${topBar()}
   <div class="phello"><div><h1 class="hello">${eve?"Bonsoir":"Bonjour"} ${esc(S.me.first_name||"")}</h1>
   <p class="sub openst ${isOpen(new Date())?"on":""}"><span class="odot" aria-hidden="true"></span>${esc(openStatusText())}</p></div>${eve?MOON_SVG:SUN_SVG}</div></div>
   ${photosCarouselHTML()}
   ${S.me.news_choice_at?"":`<section class="consent" aria-labelledby="cq"><h2 id="cq">Annonces du centre</h2><p>Souhaitez-vous recevoir une notification pour les annonces importantes du centre (fermetures exceptionnelles, campagnes de vaccination) ?</p><p class="hint">Les réponses à vos demandes vous sont toujours notifiées. Vous pourrez changer d'avis à tout moment dans Notifications.</p><div class="btnrow"><button class="btn" data-consent="1">Oui, me prévenir</button><button class="btn ghost" data-consent="0">Non merci</button></div></section>`}
-  <button class="bignew" id="newreq"><span aria-hidden="true">＋</span> Nouvelle demande</button>
   <div class="urgent compact">${IC.alert}<div><strong>Urgence vitale : appelez le 112.</strong><br>Les demandes envoyées ici sont lues pendant les heures d'ouverture, pas en urgence.</div></div>
-  ${pinned.length?`<div class="nbans">${pinned.map(newsBanner).join("")}</div>`:""}
   ${grown.map(c=>`<div class="famnote"><b>${esc(c.first_name)} a ${c.age} ans.</b> Il ou elle doit maintenant créer son propre compte dans l'app pour ses demandes (Créer un compte, avec sa propre adresse e-mail).</div>`).join("")}
   ${waiting.length?`<div class="famnote soft">En attente de validation par le centre : ${waiting.map(c=>esc(c.first_name)).join(", ")}. Vous pourrez ensuite faire des demandes en son nom.</div>`:""}
-  <button class="absrow" id="absbtn">${IC.rdv}<span>Absences des prestataires</span><span aria-hidden="true">›</span></button>
-  ${others.length?`<div class="sechead"><h2>Actualités</h2><button class="linkbtn" id="allnews">Tout voir</button></div>
-  <div class="nbans" style="margin-bottom:26px">${others.slice(0,3).map(newsBanner).join("")}</div>`:""}
   ${chips}
-  <div class="sechead"><h2>${fk.length?"Médicaments":"Mes médicaments"}</h2><small class="hint">Accordés par votre médecin</small></div>
-  <div class="list" style="margin-bottom:26px">${meds.length?meds.map(m=>`<div class="medrow"><div class="ic">${IC.prescription}</div><div><b>${esc(m.label)}</b><small>${m.child_id?`Pour ${esc(childFirst(m.child_id))} · `:fk.length?"Pour moi · ":""}Dernière prescription ${fmt(m.last_granted_at)} · ${m.times_granted} fois</small></div><div class="acts"><button class="mini" data-renew="${esc(m.label)}" data-renewkid="${m.child_id||""}">Renouveler</button><button class="linkbtn" style="font-size:12px;color:var(--muted)" data-forget="${m.id}">Retirer</button></div></div>`).join(""):`<div class="empty">Vos médicaments apparaîtront ici après votre première prescription accordée.</div>`}</div>
   <div class="sechead"><h2>${fk.length?"Demandes":"Mes demandes"}</h2>${mine.length>4?`<button class="linkbtn" id="allreqs">Tout voir (${mine.length})</button>`:""}</div>
-  <div class="list">${reqRowsHTML(mine.slice(0,4))}</div>`;
+  <div class="list">${reqRowsHTML(mine.slice(0,4))}</div>
+  <div style="height:22px"></div>
+  ${S.news.length?`<div class="sechead"><h2>Actualités</h2>${S.news.length>3?`<button class="linkbtn" id="allnews">Tout voir</button>`:""}</div>
+  <div class="nbans" style="margin-bottom:22px">${[...pinned,...others].slice(0,3).map(newsBanner).join("")}</div>`:""}
+  ${meds.length?medsSec:""}
+  <button class="absrow" id="absbtn">${IC.rdv}<span>Absences des prestataires</span><span aria-hidden="true">›</span></button>
+`;
   bindTop(); bindCarousel();
   const ar=$("#allreqs"); if(ar) ar.onclick=()=>{ S.screen="reqs"; render(); scrollTo(0,0); };
   $$("[data-start]").forEach(b=>b.onclick=()=>startFlow(b.dataset.start));
-  $("#newreq").onclick=openNewSheet;
   bindHomeRest();
 }
 function reqRowsHTML(mine){ const forTag = x => x.child_id ? ` · pour ${esc(childFirst(x.child_id))}` : "";
   return mine.length?mine.map(r=>{const ms=msgsOf(r),last=ms[ms.length-1],unread=S.notifs.some(n=>n.request_id===r.id&&!n.read_at&&n.title!=="Demande bien reçue");
     const prev=r.purged_at?"Contenu effacé":last?(last.from_patient?"Vous : ":"")+msgPreview(last):summaryLine(r.answers);
-    return `<button class="row chatrow ${unread?"unread":""}" data-req="${r.id}"><div class="ic t-${r.type}">${IC[r.type]}</div><div><b>${esc(reqWho(r))} · ${TYPES[r.type].label}${forTag(r)}</b><small>${esc(prev)}</small></div><div class="rside"><small>${fmt(last?last.created_at:r.created_at)}</small>${unread?`<span class="dot" aria-label="Nouveau message"></span>`:`<span class="pill st-${stClassP(r)}">${stLabelP(r)}</span>`}</div></button>`}).join(""):`<div class="empty">Aucune demande pour l'instant.</div>`; }
+    return `<button class="row chatrow ${unread?"unread":""}" data-req="${r.id}"><div class="ic t-${r.type}">${IC[r.type]}</div><div><b>${esc(reqWho(r))} · ${TYPES[r.type].label}${forTag(r)}</b><small>${esc(prev)}</small></div><div class="rside"><small>${fmt(last?last.created_at:r.created_at)}</small>${unread?`<span class="dot" aria-label="Nouveau message"></span>`:`<span class="pill st-${stClassP(r)}">${stLabelP(r)}</span>`}</div></button>`}).join(""):`<div class="empty">Aucune demande pour l'instant.<br><small>Touchez ＋ en bas de l'écran pour en faire une.</small></div>`; }
 function patientReqs(a){
   const fk=famKids(), who=S.who&&(S.who==="me"||fk.some(c=>c.id===S.who))?S.who:"all";
   const forWho = x => who==="all" || (who==="me" ? !x.child_id : x.child_id===who);
@@ -2021,7 +2021,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261026e";
+const APP_VERSION="20261026f";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
