@@ -1062,3 +1062,14 @@ select,input,textarea{max-width:100%}
 .wlform .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .wlform .row2 input{width:100%;min-width:0}
 @media (max-width:600px){ .wlform .row2{grid-template-columns:1fr} .deskrow .tasklink{flex-wrap:wrap} }
+/* emojis (ordinateur) */
+.cbrow{position:relative}
+.emob{font-size:20px}
+@media (pointer:coarse){ .emob{display:none} }
+.emopop{position:absolute;bottom:calc(100% + 6px);left:0;z-index:30;display:grid;grid-template-columns:repeat(10,1fr);gap:2px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:8px;box-shadow:0 8px 24px rgb(0 0 0/.14);width:min(380px,92vw)}
+.emopop button{border:0;background:transparent;font-size:21px;line-height:1;padding:6px 0;border-radius:8px;cursor:pointer}
+.emopop button:hover,.emopop button:focus-visible{background:var(--surface-2)}
+/* tâches : plusieurs personnes */
+.tkextra{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:2px 0 10px}
+.tkextra .hint{margin:0}
+.tppl{font-size:12px;margin-left:4px}

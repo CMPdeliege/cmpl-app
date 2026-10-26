@@ -530,6 +530,7 @@ function composerHTML(key){
    <div class="cbrow" id="cbrow">
     <button type="button" class="cbtn" id="c-att" aria-label="Joindre une photo ou un PDF" title="Photo ou PDF">${IC.clip}</button>
     <button type="button" class="cbtn" id="c-scan" aria-label="Scanner un document" title="Scanner un document">${IC.scan}</button>
+    <button type="button" class="cbtn emob" id="c-emo" aria-label="Emojis" title="Emojis" aria-haspopup="true">🙂</button>
     ${tpl?`<button type="button" class="cbtn tplb" id="c-tpl" aria-label="Réponses types" title="Réponses types" aria-haspopup="true">${SI.tpl}</button>`:""}
     <input type="file" id="c-file" accept="image/*,application/pdf" hidden>
     <textarea id="c-text" rows="1" maxlength="4000" placeholder="${pf?"Ajouter un message (facultatif)":"Écrire un message"}" aria-label="Message">${esc(draft)}</textarea>
@@ -543,6 +544,7 @@ function composerHTML(key){
   </div>`;
 }
 const canRecord = () => !!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia&&window.MediaRecorder);
+const EMOJIS=["😊","🙂","😀","😄","😉","😅","😂","🙃","🤔","😮","😢","😴","😷","🤒","🤧","🙏","👍","👌","👏","👋","🤝","💪","❤️","💙","🌞","☀️","🌧️","❄️","🎉","🎂","💐","🍀","✅","❌","⚠️","❗","❓","📅","⏰","📞","📄","📎","💊","🩺","🏥","🚗","👶","👨‍⚕️","👩‍⚕️"];
 function bindComposer(key, send, onInput){
   const ta=$("#c-text"), go=$("#c-go"), file=$("#c-file"); if(!ta) return;
   const upd=()=>{ const has=!!(ta.value.trim()||(S.pend&&S.pend.key===key)), mic=!has&&canRecord();
@@ -551,6 +553,14 @@ function bindComposer(key, send, onInput){
   const grow=()=>{ ta.style.height="auto"; ta.style.height=Math.min(ta.scrollHeight,150)+"px"; };
   ta.oninput=()=>{ S.drafts[key]=ta.value; grow(); upd(); if(onInput) onInput(ta.value); };
   grow(); upd();
+  const emo=$("#c-emo"); if(emo) emo.onclick=e=>{ e.stopPropagation(); const old=$("#emopop"); if(old){ old.remove(); return; }
+    const pop=document.createElement("div"); pop.id="emopop"; pop.className="emopop"; pop.setAttribute("role","dialog"); pop.setAttribute("aria-label","Emojis");
+    pop.innerHTML=EMOJIS.map(x=>`<button type="button" data-emo="${x}" aria-label="${x}">${x}</button>`).join("");
+    $("#cbrow").appendChild(pop);
+    pop.querySelectorAll("[data-emo]").forEach(b=>b.onclick=ev=>{ ev.stopPropagation(); const v=b.dataset.emo, a=ta.selectionStart??ta.value.length, z=ta.selectionEnd??a;
+      ta.value=ta.value.slice(0,a)+v+ta.value.slice(z); ta.focus(); ta.setSelectionRange(a+v.length,a+v.length); ta.dispatchEvent(new Event("input")); });
+    const off=ev=>{ if(!pop.contains(ev.target)&&ev.target!==emo){ pop.remove(); document.removeEventListener("click",off); } }; setTimeout(()=>document.addEventListener("click",off),0);
+    const esc_=ev=>{ if(ev.key==="Escape"){ pop.remove(); document.removeEventListener("keydown",esc_); } }; document.addEventListener("keydown",esc_); };
   $("#c-att").onclick=()=>file.click();
   $("#c-scan").onclick=()=>openScanner(pend=>{ clearPend(); S.pend={...pend,key}; render(); $("#c-text")?.focus({preventScroll:true}); });
   file.onchange=async()=>{ const f=file.files[0]; file.value=""; if(!f) return;
@@ -784,7 +794,7 @@ async function startRec(key, send){
   let stream; try{ stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}}); }
   catch(e){ return toast("Le micro n'est pas autorisé. Autorisez-le dans les réglages du navigateur."); }
   const type=recType(); let mr;
-  try{ mr=new MediaRecorder(stream, type?{mimeType:type}:undefined); }
+  try{ mr=new MediaRecorder(stream, type?{mimeType:type,audioBitsPerSecond:32000}:{audioBitsPerSecond:32000}); }
   catch(e){ try{ mr=new MediaRecorder(stream); }catch(e2){ stream.getTracks().forEach(t=>t.stop()); return toast("L'enregistrement vocal n'est pas disponible sur cet appareil."); } }
   // Niveau du micro : montre que le son est bien capté, et évite d'envoyer un message muet
   let ac=null, an=null, buf=null, peak=0;
@@ -820,7 +830,10 @@ const kidName = id => { const c=S.children?.[id]; return c ? `${c.first_name} ${
 const reqName = r => r.child_id ? kidName(r.child_id) : patientName(r.patient_id);
 
 /* ---------- actualités ---------- */
-function newsCard(n, full){
+function newsCard(n, full, inline){
+  // inline : affichée telle quelle dans une page (écran de connexion…) : l'affiche reste dans un cadre, agrandie au toucher
+  if(n.image_path&&!(n.body||"").trim()&&inline)
+    return `<article class="news poster ${n.pinned?"pinned":""}"><div class="pimg" data-zoom="${esc(n.image_path)}" role="button" tabindex="0" aria-label="Agrandir l'affiche"><img src="${esc(n.image_path)}" alt="${esc(n.title)}"></div><button type="button" class="linkbtn zoomhint" data-zoom="${esc(n.image_path)}"><span aria-hidden="true">🔍 </span>Agrandir l'affiche</button><div class="nbody"><div class="nmeta"><span class="ncat">${esc(n.category)}</span>${n.pinned?'<span class="ncat pin">Épinglé</span>':""}<span>${fmt(n.published_at)}</span></div><h3 translate="no" dir="auto">${esc(n.title)}</h3></div></article>`;
   if(n.image_path&&!(n.body||"").trim())   // annonce « affiche » : l'image seule, affichée en entier
     return `<article class="news poster ${full?"full":""} ${n.pinned?"pinned":""}"><div class="pimg" ${full?`data-zoom="${esc(n.image_path)}" role="button" tabindex="0" aria-label="Agrandir l'affiche"`:""}><img src="${esc(n.image_path)}" alt="${esc(n.title)}"></div>${full?`<button type="button" class="linkbtn zoomhint" data-zoom="${esc(n.image_path)}"><span aria-hidden="true">🔍 </span>Agrandir l'affiche</button>`:""}<div class="nbody"><div class="nmeta"><span class="ncat">${esc(n.category)}</span>${n.pinned?'<span class="ncat pin">Épinglé</span>':""}<span>${fmt(n.published_at)}</span></div><h3 translate="no" dir="auto">${esc(n.title)}</h3></div></article>`;
   return `<article class="news ${n.pinned?"pinned":""}">${n.image_path?`<img src="${esc(n.image_path)}" alt="" ${full?`data-zoom="${esc(n.image_path)}" style="cursor:zoom-in"`:""}>`:""}<div class="nbody"><div class="nmeta"><span class="ncat">${esc(n.category)}</span>${n.pinned?'<span class="ncat pin">Épinglé</span>':""}<span>${fmt(n.published_at)}</span></div><h3 translate="no" dir="auto">${esc(n.title)}</h3><p translate="no" dir="auto" class="${full?"":"clamp"}">${esc(n.body)}</p></div></article>`;
@@ -877,7 +890,7 @@ async function loadStaff(){
   if(role==="secretariat"||role==="admin"||role==="gestion") tasks.push(sb.from("announcements").select("*").order("published_at",{ascending:false}).limit(100).then(r=>S.allNews=r.data||[]));
   if(role==="secretariat"||role==="admin"||role==="gestion") tasks.push(sb.rpc("news_audience").then(r=>S.audience=r.data));
   if(isAdminP(S.me)) tasks.push(sb.from("children").select("id,first_name,last_name,birth_date,status,created_by,created_at").eq("status","pending").is("removed_at",null).order("created_at").then(r=>S.pendingKids=r.data||[]));
-  tasks.push(sb.from("tasks").select("*").order("created_at",{ascending:false}).limit(500).then(r=>S.tasks=r.data||[]));
+  tasks.push(loadTasks());
   tasks.push(loadInventory());
   tasks.push(sb.from("patient_records").select("*").order("last_name").then(r=>S.records=r.error?[]:(r.data||[])));
   tasks.push(sb.from("request_notes").select("*").order("created_at").then(r=>S.notes=r.error?[]:(r.data||[])));
@@ -1339,7 +1352,7 @@ function renderAuth(a){
   const m=S.authMode;
   const pinned=S.news.filter(n=>n.pinned);
   a.innerHTML=`<div class="langbar">${langPickerHTML()}</div>${AUTHLOGO}
-  ${pinned.map(n=>`<div style="margin-bottom:12px">${newsCard(n,true)}</div>`).join("")}
+  ${pinned.map(n=>`<div style="margin-bottom:12px">${newsCard(n,true,true)}</div>`).join("")}
   <div class="auth">
    <h1>${m==="signup"?"Créer mon compte":m==="forgot"?"Mot de passe oublié":"Connexion"}</h1>
    <div class="seg" role="group" aria-label="Connexion ou inscription">
@@ -1423,7 +1436,7 @@ function renderPending(a){
   <h1 class="hello">Bonjour ${esc(S.me.first_name||"")}</h1>
   <div class="promise" style="margin:12px 0 18px;max-width:none"><b>Votre compte est en attente de validation</b><span>Le secrétariat vérifie que vous êtes bien patient du centre. Vous pourrez ensuite envoyer vos demandes. Revenez dans l'app après la validation.</span></div>
   ${BANNER112}
-  ${S.news.length?`<div class="sechead"><h2>Actualités</h2></div><div class="newslist">${S.news.map(n=>newsCard(n,true)).join("")}</div>`:""}`;
+  ${S.news.length?`<div class="sechead"><h2>Actualités</h2></div><div class="newslist">${S.news.map(n=>newsCard(n,true,true)).join("")}</div>`:""}`;
   $("#logout").onclick=logout; bindLangPicker();
 }
 function renderBlocked(a){
@@ -1897,7 +1910,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261026a";
+const APP_VERSION="20261026b";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -2134,18 +2147,18 @@ function hydrateTeam(){ $$("[data-tfile]:not([data-ready])").forEach(async el=>{
     else if(el.dataset.kind==="audio"){ const au=el.querySelector("audio"); au.src=f.url; fixAudio(au, f.blob, 0); }
     else el.onclick=async e=>{ e.preventDefault(); if(IS_NATIVE&&SEC()){ try{ await nativePreview(f.blob,f.name); }catch(_){ toast("Ce document n'a pas pu être ouvert."); } } else window.open(f.url,"_blank","noopener"); };
   }catch(e){ el.textContent="Fichier indisponible"; } }); }
-function pickColleagues(title, exclude, done, withName){
+function pickColleagues(title, exclude, done, withName, pre){
   const others=(S.team||[]).filter(t=>t.status==="active"&&t.id!==S.me.id&&!exclude.includes(t.id)).sort((a,b)=>staffName(a.id).localeCompare(staffName(b.id)));
   const v=document.createElement("div"); v.className="modal"; v.setAttribute("role","dialog"); v.setAttribute("aria-modal","true");
   v.innerHTML=`<div class="mbox"><h2>${esc(title)}</h2>${withName?`<label class="fld">Nom du groupe (obligatoire si plusieurs collègues)<input id="pc-name" maxlength="60" placeholder="Ex. Médecins, Secrétariat…"></label>`:""}
     <input id="pc-q" class="pcq" placeholder="Rechercher un collègue…" aria-label="Rechercher un collègue">
-    <div class="pclist">${others.map(t=>`<label class="chk2 pcrow" data-n="${esc(staffName(t.id).toLowerCase())}"><input type="checkbox" value="${t.id}"> ${esc(staffName(t.id))} <small>· ${ROLE_LABEL[t.role]}</small></label>`).join("")||`<p class="hint">Personne d'autre à ajouter.</p>`}</div>
+    <div class="pclist">${others.map(t=>`<label class="chk2 pcrow" data-n="${esc(staffName(t.id).toLowerCase())}"><input type="checkbox" value="${t.id}" ${(pre||[]).includes(t.id)?"checked":""}> ${esc(staffName(t.id))} <small>· ${ROLE_LABEL[t.role]}</small></label>`).join("")||`<p class="hint">Personne d'autre à ajouter.</p>`}</div>
     <div class="btnrow"><button class="btn" id="pc-ok">Valider</button><button class="btn ghost" id="pc-x">Annuler</button></div></div>`;
   document.body.appendChild(v); const close=()=>v.remove();
   v.querySelector("#pc-x").onclick=close; v.onclick=e=>{ if(e.target===v) close(); };
   v.querySelector("#pc-q").oninput=e=>{ const q=e.target.value.toLowerCase(); v.querySelectorAll(".pcrow").forEach(r=>r.hidden=!r.dataset.n.includes(q)); };
   v.querySelector("#pc-ok").onclick=async()=>{ const ids=[...v.querySelectorAll(".pcrow input:checked")].map(i=>i.value), name=withName?v.querySelector("#pc-name").value.trim():"";
-    if(!ids.length) return toast("Choisissez au moins un collègue.");
+    if(!ids.length&&!pre) return toast("Choisissez au moins un collègue.");
     if(withName&&ids.length>1&&!name) return toast("Donnez un nom au groupe.");
     if(await done(ids,name)) close(); };
   v.querySelector("#pc-q").focus();
@@ -2580,7 +2593,7 @@ async function composeRecStart(){
   let stream; try{ stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}}); }
   catch(e){ return toast("Le micro n'est pas autorisé. Autorisez-le dans les réglages du navigateur."); }
   const type=recType(); let mr;
-  try{ mr=new MediaRecorder(stream, type?{mimeType:type}:undefined); }
+  try{ mr=new MediaRecorder(stream, type?{mimeType:type,audioBitsPerSecond:32000}:{audioBitsPerSecond:32000}); }
   catch(e){ try{ mr=new MediaRecorder(stream); }catch(e2){ stream.getTracks().forEach(t=>t.stop()); return toast("L'enregistrement vocal n'est pas disponible sur cet appareil."); } }
   const chunks=[], t0=Date.now(); mr.ondataavailable=e=>{ if(e.data&&e.data.size) chunks.push(e.data); };
   CREC={mr,stream,chunks,t0,type,tick:setInterval(()=>{ const s=Math.floor((Date.now()-t0)/1000), el=$("#cp-rtime"); if(el) el.textContent=dur(s); if(s>=180) composeRecStop(true); },250)};
@@ -2726,7 +2739,10 @@ function bindPatients(){
 /* ----- tâches (équipe) ----- */
 const todayISO = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
 const teamName = id => { if(id===S.me.id) return "moi"; const t=S.team.find(x=>x.id===id); return t?`${t.first_name||""} ${t.last_name||""}`.trim()||ROLE_LABEL[t.role]:"—"; };
-const forMe = t => t.assigned_to===S.me.id || (t.assigned_group==="secretariat" && isDesk());
+const taskPeople = t => (t.task_people||[]).map(p=>p.user_id);
+const forMe = t => t.assigned_to===S.me.id || (t.assigned_group==="secretariat" && isDesk()) || taskPeople(t).includes(S.me.id);
+const taskForLabel = t => { const main=t.assigned_group?"secrétariat":teamName(t.assigned_to); const more=taskPeople(t).filter(id=>id!==t.assigned_to).map(teamName);
+  return [main,...more].join(", "); };
 const myTasks = () => (S.tasks||[]).filter(t=>!t.done_at&&forMe(t));
 const byDue = (a,b) => (a.due_date||"9999")<(b.due_date||"9999")?-1:(a.due_date||"9999")>(b.due_date||"9999")?1:new Date(b.created_at)-new Date(a.created_at);
 function dueTag(t){ if(!t.due_date||t.done_at) return ""; const td=todayISO();
@@ -2745,7 +2761,7 @@ function taskRowHTML(t){
   return `<div class="taskrow ${t.done_at?"done":""}">
      <button class="tcheck" data-tdone="${t.id}" aria-pressed="${!!t.done_at}" aria-label="${t.done_at?"Marquer comme à faire":"Marquer comme faite"}">${t.done_at?"✓":""}</button>
      <div><b>${esc(t.title)}</b>${isPatTask(t)?"":` <span class="ipill orgtag">🏥 Organisation</span>`}${t.notes?`<p class="tnotes">${esc(t.notes)}</p>`:""}${taskLinkHTML(t)}
-      <small>${t.assigned_group?"Pour : secrétariat":"Pour : "+esc(teamName(t.assigned_to))} · de ${esc(teamName(t.created_by))} · ${fmt(t.created_at)}${t.done_at?` · faite ${fmt(t.done_at)} par ${esc(teamName(t.done_by))}`:""}</small>${dueTag(t)}
+      <small>Pour : ${esc(taskForLabel(t))}${t.created_by===S.me.id&&!t.done_at?` <button type="button" class="linkbtn tppl" data-tppl="${t.id}">👥 Personnes</button>`:""} · de ${esc(teamName(t.created_by))} · ${fmt(t.created_at)}${t.done_at?` · faite ${fmt(t.done_at)} par ${esc(teamName(t.done_by))}`:""}</small>${dueTag(t)}
       ${canRem?`<label class="tremind${t.remind_days!=null?" on":""}" title="Rappel par e-mail à 8 h à la personne qui doit faire la tâche"><span aria-hidden="true">🔔</span><select data-trem="${t.id}" aria-label="Rappel par e-mail"><option value="">Pas de rappel</option>${remindOpts(t.remind_days)}</select>${t.reminded_at?`<em>envoyé</em>`:""}</label>`:""}</div>
      ${t.created_by===S.me.id?`<button class="linkbtn tdel" data-tdel="${t.id}">Supprimer</button>`:"<span></span>"}</div>`;
 }
@@ -2780,6 +2796,8 @@ function tasksHTML(){
    <label class="fld">Note (facultatif)<textarea id="tk-notes" rows="3" maxlength="2000" placeholder="Ex. Vérifier sa prise de sang et l'appeler si anomalie">${esc(D.notes)}</textarea></label>
    <div class="row2"><label class="fld">Pour<select id="tk-to"><option value="me" ${D.to==="me"?"selected":""}>Moi</option><option value="secretariat" ${D.to==="secretariat"?"selected":""}>Secrétariat (toute l'équipe du secrétariat)</option>${others.map(t=>`<option value="${t.id}" ${D.to===t.id?"selected":""}>${esc(`${t.first_name||""} ${t.last_name||""}`.trim())} · ${ROLE_LABEL[t.role]}</option>`).join("")}</select></label>
    <label class="fld">Échéance (facultatif)<input id="tk-due" type="date" value="${esc(D.due)}"></label></div>
+   <div class="tkextra"><span class="hint">Aussi concernés :</span>${(D.extra||[]).map(id=>`<span class="ipill">${esc(teamName(id))}</span>`).join("")||`<span class="hint">personne d'autre</span>`}
+    <button type="button" class="linkbtn" id="tk-extra">${(D.extra||[]).length?"Modifier":"+ Ajouter des personnes"}</button></div>
    ${D.due?`<div class="tkrem"><label class="chk2"><input type="checkbox" id="tk-remon" ${D.remind!=null?"checked":""}> Recevoir un rappel par e-mail</label>
     ${D.remind!=null?`<select id="tk-rem" aria-label="Quand envoyer le rappel">${remindOpts(D.remind)}</select><small class="hint">Envoyé à 8 h à ${D.to==="me"?"vous":D.to==="secretariat"?"tout le secrétariat":"la personne choisie"}. L'e-mail ne contient ni le titre de la tâche ni le nom du patient.</small>`:""}</div>`:""}
    <div class="fld">Patient lié (facultatif : sans patient, la tâche est rangée dans « Organisation »)
@@ -2800,6 +2818,7 @@ function bindTasks(){
   $("#tk-title").oninput=e=>{ D.title=e.target.value; upd(); };
   $("#tk-notes").oninput=e=>{ D.notes=e.target.value; };
   $("#tk-to").onchange=e=>{ D.to=e.target.value; if(D.due&&D.remind!=null) render(); };
+  $("#tk-extra").onclick=()=>pickColleagues("Aussi concernés par cette tâche",[],async ids=>{ D.extra=ids; render(); return true; },false,D.extra||[]);
   $("#tk-due").onchange=e=>{ const had=!!D.due; D.due=e.target.value; if(!D.due) D.remind=null; if(had!==!!D.due) render(); };
   const ron=$("#tk-remon"); if(ron) ron.onchange=()=>{ D.remind=ron.checked?1:null; render(); };
   const rs=$("#tk-rem"); if(rs) rs.onchange=()=>{ D.remind=+rs.value; };
@@ -2819,11 +2838,14 @@ function bindTasks(){
       p_assignee:D.to==="me"?S.me.id:D.to==="secretariat"?null:D.to,p_group:D.to==="secretariat"?"secretariat":null,
       p_patient:pt&&!pt.child&&!pt.record?pt.id:null,p_child:pt&&pt.child?pt.id:null,p_record:pt&&pt.record?pt.id:null}),D.due&&D.remind!=null?null:"Tâche ajoutée");
     if(!r){ upd(); return; }
+    if((D.extra||[]).length){ const {error}=await sb.rpc("set_task_people",{p_id:r.data,p_users:D.extra}); if(error) toast("Tâche ajoutée, mais les autres personnes n'ont pas pu être ajoutées : "+frError(error)); }
     if(D.due&&D.remind!=null){ const {error}=await sb.rpc("set_task_reminder",{p_id:r.data,p_days:D.remind});
       toast(error?"Tâche ajoutée, mais le rappel n'a pas pu être enregistré : "+frError(error):"Tâche ajoutée · rappel "+REMIND[D.remind].toLowerCase()); }
     if(pt&&!pt.record){ if(pt.child) S.children[pt.id]=pt; else S.profiles[pt.id]=pt; }
     S.tdraft=null; S.tview=D.to==="me"||(D.to==="secretariat"&&isDesk())?"todo":"given"; await refresh(); };
   $$("[data-tv]").forEach(b=>b.onclick=()=>{ S.tview=b.dataset.tv; render(); });
+  $$("[data-tppl]").forEach(b=>b.onclick=()=>{ const t=S.tasks.find(x=>x.id===+b.dataset.tppl);
+    pickColleagues("Personnes concernées par cette tâche",t.assigned_to?[t.assigned_to]:[],async ids=>{ if(await run(()=>sb.rpc("set_task_people",{p_id:t.id,p_users:ids}),ids.length?"Personnes mises à jour":"Plus personne en plus")){ t.task_people=ids.map(user_id=>({user_id})); render(); return true; } return false; },false,taskPeople(t)); });
   $$("[data-tk]").forEach(b=>b.onclick=()=>{ S.tkind=b.dataset.tk; render(); });
   $$("[data-trem]").forEach(sl=>sl.onchange=async()=>{ const t=S.tasks.find(x=>x.id===+sl.dataset.trem), v=sl.value===""?null:+sl.value;
     if(await run(()=>sb.rpc("set_task_reminder",{p_id:t.id,p_days:v}),v==null?"Rappel retiré":"Rappel : "+REMIND[v].toLowerCase())){ t.remind_days=v; t.reminded_at=null; render(); } else render(); });
@@ -2870,13 +2892,17 @@ function deskHTML(){
   <div class="desklist">${list||`<div class="empty"><span class="yay" aria-hidden="true">✨</span>Rien à faire à l'accueil pour l'instant.</div>`}</div>
   ${doneToday.length?`<details class="deskdone"><summary>Fait aujourd'hui (${doneToday.length})</summary><div class="desklist">${doneToday.map(deskRowHTML).join("")}</div></details>`:""}`;
 }
+let TASK_SEL="*, task_people(user_id)";
+async function loadTasks(){ let r=await sb.from("tasks").select(TASK_SEL).order("created_at",{ascending:false}).limit(500);
+  if(r.error&&TASK_SEL!=="*"){ TASK_SEL="*"; r=await sb.from("tasks").select("*").order("created_at",{ascending:false}).limit(500); }
+  if(!r.error) S.tasks=r.data||[]; return r; }
 let deskTimer=null;
 function bindDesk(){
   clearInterval(deskTimer);
   deskTimer=setInterval(async()=>{ if(S.cscreen!=="desk"){ clearInterval(deskTimer); return; }
     const el=document.activeElement; if(el&&(el.tagName==="INPUT"||el.tagName==="TEXTAREA")) return;
-    const {data,error}=await sb.from("tasks").select("*").order("created_at",{ascending:false}).limit(500);
-    if(!error&&data&&JSON.stringify(data)!==JSON.stringify(S.tasks)){ S.tasks=data; if(S.cscreen==="desk") render(); } },45000);
+    const before=JSON.stringify(S.tasks); const r=await loadTasks();
+    if(!r.error&&JSON.stringify(S.tasks)!==before&&S.cscreen==="desk") render(); },45000);
   const D=S.ddraft, add=$("#dk-add"); const upd=()=>{ add.disabled=!D.title.trim(); };
   $("#dk-title").oninput=e=>{ D.title=e.target.value; upd(); };
   $("#dk-title").onkeydown=e=>{ if(e.key==="Enter"&&!add.disabled){ e.preventDefault(); add.click(); } };
@@ -3059,7 +3085,7 @@ function newsAdminHTML(){
   </div>`;
 }
 // grande image (affiche en haute définition) : réduite à 1920 px de large et enregistrée en JPEG
-async function shrinkImage(f){
+async function shrinkPoster(f){
   try{ const bm=await createImageBitmap(f); const sc=Math.min(1,1920/Math.max(bm.width,bm.height));
     if(sc===1&&f.size<=1.5e6) return f;
     const c=document.createElement("canvas"); c.width=Math.round(bm.width*sc); c.height=Math.round(bm.height*sc);
@@ -3067,7 +3093,7 @@ async function shrinkImage(f){
     const blob=await new Promise(r=>c.toBlob(r,"image/jpeg",0.86)); if(!blob) return f;
     return new File([blob],f.name.replace(/\.\w+$/,"")+".jpg",{type:"image/jpeg"}); }catch(e){ return f; } }
 async function uploadNewsImage(f){
-  f=await shrinkImage(f);
+  f=await shrinkPoster(f);
   if(f.size>3e6) throw new Error("Image trop lourde (3 Mo maximum).");
   const path=`${Date.now()}-${f.name.replace(/[^\w.-]/g,"_")}`;
   const up=await sb.storage.from("announcements").upload(path,f,{contentType:f.type}); if(up.error) throw up.error;
