@@ -1133,4 +1133,13 @@ body.pbaron{padding-bottom:calc(92px + var(--safe-area-inset-bottom,env(safe-are
 .cslide figcaption{position:absolute;left:0;right:0;bottom:0;padding:22px 14px 9px;color:#fff;font-weight:700;font-size:14px;background:linear-gradient(transparent,rgb(30 10 10/.6))}
 @media (prefers-reduced-motion: reduce){ .cslide img,.cslide.on img{transform:none;transition:none} .cslide{transition:opacity .3s} }
 @media (min-width:700px){ .car{max-width:520px;height:200px;margin:0 auto 16px} }
-@media (min-width:700px){ .car{max-width:none;height:clamp(220px,24vw,300px);margin:0 0 18px} }
+
+/* ordinateur : la photo entière au centre, les côtés remplis par la même photo floutée */
+.cblur{display:none}
+@media (min-width:700px){
+  .car{max-width:none;height:clamp(240px,26vw,320px);margin:0 0 18px;background:#2b1b1c}
+  .cblur{display:block;position:absolute;inset:-30px;background-size:cover;background-position:center;filter:blur(22px) brightness(.72) saturate(1.1)}
+  .cslide img{position:relative;object-fit:contain;transform:none!important;transition:none}
+  .cslide.on .cblur{animation:cblur 8s ease-out both}
+}
+@keyframes cblur{from{transform:scale(1)}to{transform:scale(1.08)}}

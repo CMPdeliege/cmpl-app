@@ -1937,7 +1937,7 @@ function openStatusText(){
 function photosCarouselHTML(){
   const L=S.photos||[]; if(!L.length) return "";
   return `<div class="car" id="car" aria-roledescription="carrousel" aria-label="Photos du centre">
-   ${L.map((p,i)=>`<figure class="cslide ${i===0?"on":""}" data-cview="${esc(p.url)}" aria-hidden="${i!==0}"><img src="${esc(p.url)}" alt="${esc(p.caption||"Photo du centre")}">${p.caption?`<figcaption translate="no" dir="auto">${esc(p.caption)}</figcaption>`:""}</figure>`).join("")}
+   ${L.map((p,i)=>`<figure class="cslide ${i===0?"on":""}" data-cview="${esc(p.url)}" aria-hidden="${i!==0}"><span class="cblur" aria-hidden="true" style="background-image:url('${esc(p.url)}')"></span><img src="${esc(p.url)}" alt="${esc(p.caption||"Photo du centre")}">${p.caption?`<figcaption translate="no" dir="auto">${esc(p.caption)}</figcaption>`:""}</figure>`).join("")}
    ${L.length>1?`<div class="cdots">${L.map((_,i)=>`<button type="button" data-cdot="${i}" aria-label="Photo ${i+1}" aria-current="${i===0}"></button>`).join("")}</div>`:""}</div>`;
 }
 // diaporama : une photo après l'autre (fondu), toutes les 4 secondes ; glisser du doigt pour changer
@@ -2021,7 +2021,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261026f";
+const APP_VERSION="20261026g";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
