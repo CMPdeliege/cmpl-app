@@ -1937,22 +1937,25 @@ function openStatusText(){
 function photosCarouselHTML(){
   const L=S.photos||[]; if(!L.length) return "";
   return `<div class="car" id="car" aria-roledescription="carrousel" aria-label="Photos du centre">
-   <div class="ctrack" id="ctrack">${L.map((p,i)=>`<figure class="cslide" data-cview="${esc(p.url)}"><img src="${esc(p.url)}" alt="${esc(p.caption||"Photo du centre")}" ${i?'loading="lazy"':""}>${p.caption?`<figcaption translate="no" dir="auto">${esc(p.caption)}</figcaption>`:""}</figure>`).join("")}</div>
+   ${L.map((p,i)=>`<figure class="cslide ${i===0?"on":""}" data-cview="${esc(p.url)}" aria-hidden="${i!==0}"><img src="${esc(p.url)}" alt="${esc(p.caption||"Photo du centre")}">${p.caption?`<figcaption translate="no" dir="auto">${esc(p.caption)}</figcaption>`:""}</figure>`).join("")}
    ${L.length>1?`<div class="cdots">${L.map((_,i)=>`<button type="button" data-cdot="${i}" aria-label="Photo ${i+1}" aria-current="${i===0}"></button>`).join("")}</div>`:""}</div>`;
 }
-let carTimer=null;
+// diaporama : une photo après l'autre (fondu), toutes les 4 secondes ; glisser du doigt pour changer
+let carTimer=null, carIdx=0;
 function bindCarousel(){
-  clearInterval(carTimer); const tr=$("#ctrack"); if(!tr) return;
-  const n=tr.children.length; let touched=0;
-  const idx=()=>Math.round(tr.scrollLeft/Math.max(1,tr.clientWidth));
-  const go=i=>tr.scrollTo({left:i*tr.clientWidth,behavior:"smooth"});
-  const dots=()=>$$("[data-cdot]").forEach((d,i)=>d.setAttribute("aria-current",String(i===idx())));
-  tr.addEventListener("scroll",()=>{ clearTimeout(tr._t); tr._t=setTimeout(dots,80); },{passive:true});
-  ["pointerdown","touchstart","wheel"].forEach(ev=>tr.addEventListener(ev,()=>{ touched=Date.now(); },{passive:true}));
-  $$("[data-cdot]").forEach(d=>d.onclick=()=>{ touched=Date.now(); go(+d.dataset.cdot); });
-  $$("[data-cview]").forEach(f=>f.onclick=()=>openViewer(f.dataset.cview));
-  if(n>1&&!matchMedia("(prefers-reduced-motion: reduce)").matches)
-    carTimer=setInterval(()=>{ if(!document.body.contains(tr)){ clearInterval(carTimer); return; } if(document.hidden||Date.now()-touched<8000) return; go((idx()+1)%n); },5000);
+  clearInterval(carTimer); const car=$("#car"); if(!car) return;
+  const slides=[...car.querySelectorAll(".cslide")], n=slides.length; let paused=0;
+  if(carIdx>=n) carIdx=0;
+  const show=i=>{ carIdx=(i+n)%n; slides.forEach((x,k)=>{ x.classList.toggle("on",k===carIdx); x.setAttribute("aria-hidden",String(k!==carIdx)); });
+    $$("[data-cdot]").forEach((d,k)=>d.setAttribute("aria-current",String(k===carIdx))); };
+  show(carIdx);
+  $$("[data-cdot]").forEach(d=>d.onclick=e=>{ e.stopPropagation(); paused=Date.now(); show(+d.dataset.cdot); });
+  let x0=null, moved=false;
+  car.addEventListener("pointerdown",e=>{ x0=e.clientX; moved=false; });
+  car.addEventListener("pointerup",e=>{ if(x0==null) return; const dx=e.clientX-x0; x0=null;
+    if(Math.abs(dx)>40&&n>1){ moved=true; paused=Date.now(); show(carIdx+(dx<0?1:-1)); } });
+  car.addEventListener("click",e=>{ if(moved||e.target.closest("[data-cdot]")) return; const f=slides[carIdx]; if(f) openViewer(f.dataset.cview); });
+  if(n>1) carTimer=setInterval(()=>{ if(!document.body.contains(car)){ clearInterval(carTimer); return; } if(document.hidden||Date.now()-paused<8000) return; show(carIdx+1); },4000);
 }
 function photosAdminHTML(){
   const L=S.photos;
@@ -2018,7 +2021,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261026d";
+const APP_VERSION="20261026e";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
