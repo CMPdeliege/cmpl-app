@@ -883,6 +883,7 @@ async function loadStaff(){
   tasks.push(sb.from("request_notes").select("*").order("created_at").then(r=>S.notes=r.error?[]:(r.data||[])));
   tasks.push(loadLeaves());
   tasks.push(loadTeam());
+  if(S.waitlist!==undefined||S.cscreen==="waitlist") tasks.push(loadWaitlist());
   await Promise.all(tasks);
   // enfants (demandes, tâches) et parents à afficher
   const kidIds=[...new Set([...S.reqs.map(r=>r.child_id),...(S.tasks||[]).map(t=>t.child_id)].filter(Boolean))].filter(id=>!S.children[id]);
@@ -1896,7 +1897,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261025c";
+const APP_VERSION="20261026a";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -1916,6 +1917,8 @@ const SI={
  ext:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>',
  team:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
  box:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg>',
+ phone:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg>',
+ hourglass:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.17a2 2 0 0 0-.59-1.42L12 12l-4.41 4.41A2 2 0 0 0 7 17.83V22"/><path d="M7 2v4.17a2 2 0 0 0 .59 1.42L12 12l4.41-4.41A2 2 0 0 0 17 6.17V2"/></svg>',
  ucheck:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="m16 11 2 2 4-4"/></svg>',
  out:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>',
  chat:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
@@ -1929,6 +1932,8 @@ function centreItems(){
   const it=[];
   if(canPub()) it.push({cs:"news",ic:SI.news||IC.news,t:"Actualités",d:"Annonces pour les patients",n:0});
   if(isAdmin()||isGestion()) it.push({cs:"team",ic:SI.team,t:"Équipe",d:"Collègues et comptes de l'équipe",n:0});
+  it.push({cs:"desk",ic:SI.phone,t:"Accueil",d:"La liste commune du secrétariat",n:isDesk()?deskTodayCount():0});
+  it.push({cs:"waitlist",ic:SI.hourglass,t:"Listes d'attente",d:"Patients à rappeler en cas de désistement",n:0});
   it.push({cs:"tasks",ic:SI.tasks,t:"Tâches",d:"Ce que l'équipe doit faire",n:myTasks().length,mob:true});
   it.push({cs:"binder",ic:SI.book,t:"Classeur",d:"Numéros utiles, procédures, documents",n:0});
   it.push({cs:"inventory",ic:SI.box,t:"Inventaire",d:"Matériel à commander",n:invOpen()});
@@ -2288,6 +2293,8 @@ function staffHelpHTML(){
    ["Le menu « Le centre »","Il regroupe ce qui concerne tout le centre : Actualités, Équipe, Classeur, Inventaire, Congés, Comptes à valider (selon votre rôle). Le chiffre rouge indique ce qui attend."],
    ["Trouver et trier les demandes","Onglet Demandes : « Les miennes / Secrétariat / Tout le centre » choisit les demandes affichées ; la recherche trouve un patient par son nom ; les pastilles colorées filtrent par type. Les demandes sont rangées par ce qu'il faut faire : urgent ou en retard, le patient a répondu, nouvelles. « En attente du patient » (vous avez répondu) est replié en bas. Les renouvellements simples peuvent être accordés à la suite dans « Prescriptions en série », après les avoir faits dans CareConnect."],
    ["Un patient sans compte dans l'app","Le centre → Fiches patients : créez une fiche (nom, prénom, date de naissance, téléphone, e-mail). Vous pouvez ensuite lui lier une tâche, en parler à un collègue (« En parler ») ou l'inviter par e-mail à créer son compte. Jamais de note médicale dans une fiche. Quand le patient s'inscrit, l'administrateur relie son compte à la fiche dans Comptes à valider."],
+   ["La liste de l'accueil","Le centre → Accueil : la liste commune du secrétariat (appels à passer, choses à ne pas oublier). Écrivez la tâche, choisissez le jour et, si besoin, l'heure (« vers 14h30 ») : à cette heure-là, le secrétariat reçoit une notification. Toute l'équipe peut y ajouter quelque chose ; le secrétariat coche quand c'est fait."],
+   ["Les listes d'attente","Le centre → Listes d'attente : un patient à rappeler en cas de désistement, pour un prestataire. Ajoutez-le (patient de l'app, fiche ou simplement nom + téléphone), avec un motif court et ses disponibilités. Quand une place se libère : « Pas de réponse » note l'appel, « RDV fixé » le retire de la liste. Jamais de détail médical."],
    ["Rassurer le patient : « Vu »","Dans une demande, le bouton « ✓ Vu · prévenir le patient » lui affiche « Votre demande a été vue… Elle est en cours de traitement » et lui envoie une notification (sans e-mail). Au transfert, la case « Prévenir le patient » (cochée) lui indique à qui sa demande a été transmise."],
    ["Transférer avec un mot","Dans une demande, choisissez le collègue dans « Transférer à », écrivez un mot dans le champ en dessous, puis Transférer. Le collègue voit le mot en haut de la demande ; le patient ne le voit jamais."],
    ["Ne pas être dérangé(e)","Touchez la cloche en haut de l'écran (à côté de « Écrire à un patient »). « Pause des notifications » : 1 heure, jusqu'à demain 8 h ou jusqu'à ce que vous la retiriez ; les demandes arrivent toujours dans l'app et vous recevez un résumé à la fin de la pause. « Je suis absent(e) » : vos alertes vont au collègue choisi et les patients reçoivent un message automatique. Cloche barrée orange = en pause ; rouge = absent(e)."],
@@ -2304,7 +2311,7 @@ function renderStaff(a){
   const sc=S.cscreen;
   const nav=staffNavHTML(sc);
   let body="";
-  if(sc==="compose") body=composeHTML(); else if(sc==="inventory") body=inventoryHTML(); else if(sc==="tasks") body=tasksHTML(); else if(sc==="accounts") body=accountsHTML(); else if(sc==="news") body=newsAdminHTML(); else if(sc==="team") body=teamHTML(); else if(sc==="settings") body=settingsHTML(); else if(sc==="help") body=staffHelpHTML(); else if(sc==="leaves") body=leavesHTML(); else if(sc==="patients") body=patientsHTML(); else if(sc==="messages") body=teamHTML2(); else if(sc==="templates") body=templatesHTML(); else if(sc==="binder") body=binderHTML(); else body=inboxHTML();
+  if(sc==="compose") body=composeHTML(); else if(sc==="inventory") body=inventoryHTML(); else if(sc==="tasks") body=tasksHTML(); else if(sc==="accounts") body=accountsHTML(); else if(sc==="news") body=newsAdminHTML(); else if(sc==="team") body=teamHTML(); else if(sc==="settings") body=settingsHTML(); else if(sc==="help") body=staffHelpHTML(); else if(sc==="leaves") body=leavesHTML(); else if(sc==="patients") body=patientsHTML(); else if(sc==="messages") body=teamHTML2(); else if(sc==="templates") body=templatesHTML(); else if(sc==="binder") body=binderHTML(); else if(sc==="desk") body=deskHTML(); else if(sc==="waitlist") body=waitlistHTML(); else body=inboxHTML();
   document.body.classList.add("hasbar"); document.body.classList.remove("ddopen");
   a.innerHTML=nav+body;
   $("#logout").onclick=()=>{ closeDD(); logout(); };
@@ -2315,7 +2322,7 @@ function renderStaff(a){
   const bk=$(".ddback"); if(bk) bk.onclick=closeDD;
   $$(".ddrosa").forEach(l=>l.addEventListener("click",()=>closeDD()));
   $$("[data-cs]").forEach(b=>b.onclick=()=>{ closeDD(); if(CREC&&b.dataset.cs!=="compose") composeRecStop(false); S.cscreen=b.dataset.cs; render(); window.scrollTo(0,0); });
-  if(sc==="compose") bindCompose(); else if(sc==="inventory") bindInventory(); else if(sc==="tasks") bindTasks(); else if(sc==="accounts") bindAccounts(); else if(sc==="news") bindNewsAdmin(); else if(sc==="team") bindTeam(); else if(sc==="settings") bindSettings(); else if(sc==="help"||sc==="leaves") {} else if(sc==="patients") bindPatients(); else if(sc==="messages") bindTeam2(); else if(sc==="templates") bindTemplates(); else if(sc==="binder") bindBinder(); else bindInbox();
+  if(sc==="compose") bindCompose(); else if(sc==="inventory") bindInventory(); else if(sc==="tasks") bindTasks(); else if(sc==="accounts") bindAccounts(); else if(sc==="news") bindNewsAdmin(); else if(sc==="team") bindTeam(); else if(sc==="settings") bindSettings(); else if(sc==="help"||sc==="leaves") {} else if(sc==="patients") bindPatients(); else if(sc==="messages") bindTeam2(); else if(sc==="templates") bindTemplates(); else if(sc==="binder") bindBinder(); else if(sc==="desk") bindDesk(); else if(sc==="waitlist"){ if(S.waitlist) bindWaitlist(); } else bindInbox();
 }
 
 /* ----- durée estimée des rendez-vous de médecine générale (visible par l'équipe seulement) ----- */
@@ -2724,7 +2731,8 @@ const myTasks = () => (S.tasks||[]).filter(t=>!t.done_at&&forMe(t));
 const byDue = (a,b) => (a.due_date||"9999")<(b.due_date||"9999")?-1:(a.due_date||"9999")>(b.due_date||"9999")?1:new Date(b.created_at)-new Date(a.created_at);
 function dueTag(t){ if(!t.due_date||t.done_at) return ""; const td=todayISO();
   const d=new Date(t.due_date+"T12:00").toLocaleDateString(LOC,{weekday:"short",day:"numeric",month:"short"});
-  return t.due_date<td?`<span class="due late">En retard · ${d}</span>`:t.due_date===td?`<span class="due haute">Aujourd'hui</span>`:`<span class="due">Pour le ${d}</span>`; }
+  const h=t.due_time?` · vers ${String(t.due_time).slice(0,5).replace(":","h")}`:"";
+  return t.due_date<td?`<span class="due late">En retard · ${d}${h}</span>`:t.due_date===td?`<span class="due haute">Aujourd'hui${h}</span>`:`<span class="due">Pour le ${d}${h}</span>`; }
 const REMIND={0:"Le jour même",1:"La veille",2:"48 h avant",3:"72 h avant",7:"1 semaine avant"};
 const remindOpts = v => Object.entries(REMIND).map(([k,l])=>`<option value="${k}" ${String(v)===k?"selected":""}>${l}</option>`).join("");
 // regroupement par urgence (échéance)
@@ -2823,6 +2831,151 @@ function bindTasks(){
     if(await run(()=>sb.rpc("set_task_done",{p_id:t.id,p_done:d}),d?"Tâche faite":"Tâche remise à faire")){ t.done_at=d?new Date().toISOString():null; t.done_by=d?S.me.id:null; render(); } });
   $$("[data-tdel]").forEach(b=>b.onclick=async()=>{ if(b.dataset.sure!=="1"){ b.dataset.sure="1"; b.textContent="Confirmer ?"; b.style.color="var(--danger)"; return; }
     if(await run(()=>sb.rpc("delete_task",{p_id:+b.dataset.tdel}),"Tâche supprimée")){ S.tasks=S.tasks.filter(x=>x.id!==+b.dataset.tdel); render(); } });
+}
+
+/* ----- Accueil : la liste commune du secrétariat (tâches « secrétariat », avec une heure facultative) ----- */
+const nowHM = () => { const d=new Date(); return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; };
+const hm5 = t => t?String(t).slice(0,5):"";
+const deskTasks = () => (S.tasks||[]).filter(t=>t.assigned_group==="secretariat");
+const deskLate = t => !t.done_at&&t.due_date&&(t.due_date<todayISO()||(t.due_date===todayISO()&&t.due_time&&hm5(t.due_time)<=nowHM()));
+const deskTodayCount = () => deskTasks().filter(t=>!t.done_at&&t.due_date&&t.due_date<=todayISO()).length;
+function deskGroup(t){ const td=todayISO(); if(!t.due_date) return 4; if(deskLate(t)) return 0; if(t.due_date===td) return 1;
+  const tm=new Date(); tm.setDate(tm.getDate()+1); const tmr=`${tm.getFullYear()}-${String(tm.getMonth()+1).padStart(2,"0")}-${String(tm.getDate()).padStart(2,"0")}`;
+  return t.due_date===tmr?2:3; }
+const DESK_GROUPS=["À faire maintenant","Aujourd'hui","Demain","Plus tard","Sans date"];
+const deskSort = (a,b) => (a.due_date||"9999")<(b.due_date||"9999")?-1:(a.due_date||"9999")>(b.due_date||"9999")?1:(hm5(a.due_time)||"99")<(hm5(b.due_time)||"99")?-1:(hm5(a.due_time)||"99")>(hm5(b.due_time)||"99")?1:new Date(a.created_at)-new Date(b.created_at);
+function deskRowHTML(t){
+  const d=t.due_date&&t.due_date!==todayISO()?new Date(t.due_date+"T12:00").toLocaleDateString(LOC,{weekday:"short",day:"numeric",month:"short"}):"";
+  return `<div class="deskrow ${t.done_at?"done":""} ${deskLate(t)?"late":""}">
+    <button class="tcheck" data-ddone="${t.id}" aria-pressed="${!!t.done_at}" aria-label="${t.done_at?"Remettre à faire":"Fait"}">${t.done_at?"✓":""}</button>
+    <div class="dtime">${t.due_time?`<b>${hm5(t.due_time).replace(":","h")}</b>`:`<span>—</span>`}${d?`<small>${esc(d)}</small>`:""}</div>
+    <div class="dbody"><b>${esc(t.title)}</b>${t.notes?`<p class="tnotes">${esc(t.notes)}</p>`:""}${taskLinkHTML(t)}
+     <small>Ajouté par ${esc(teamName(t.created_by))} · ${fmt(t.created_at)}${t.done_at?` · fait ${fmt(t.done_at)} par ${esc(teamName(t.done_by))}`:""}</small></div>
+    <div class="dacts">${t.done_at?"":`<label class="dtimeedit" title="Changer l'heure"><span aria-hidden="true">🕑</span><input type="time" data-dtime="${t.id}" value="${hm5(t.due_time)}" aria-label="Heure"></label>`}
+     ${t.created_by===S.me.id||isDesk()?`<button class="linkbtn tdel" data-ddel="${t.id}">Supprimer</button>`:""}</div></div>`;
+}
+function deskHTML(){
+  const D=S.ddraft||(S.ddraft={title:"",notes:"",date:todayISO(),time:""});
+  const open=deskTasks().filter(t=>!t.done_at).sort(deskSort), doneToday=deskTasks().filter(t=>t.done_at&&t.done_at.slice(0,10)>=todayISO()).sort((a,b)=>new Date(b.done_at)-new Date(a.done_at));
+  let list="", g=-1;
+  for(const t of open){ const k=deskGroup(t); if(k!==g){ g=k; list+=`<h4 class="tgroup g${k===0?0:k===1?1:k===2?2:3}">${DESK_GROUPS[k]} <span>${open.filter(x=>deskGroup(x)===k).length}</span></h4>`; } list+=deskRowHTML(t); }
+  return `<div class="chead"><div><h1>Accueil</h1><p>La liste commune de l'accueil : appels à passer, choses à ne pas oublier. ${isDesk()?"Tout le secrétariat la voit et peut cocher.":"Ce que vous ajoutez ici va à tout le secrétariat (vous ne voyez que vos propres ajouts)."} À l'heure indiquée, le secrétariat reçoit une notification.</p></div></div>
+  <section class="card deskform">
+   <div class="deskadd"><label class="fld grow">À faire<input id="dk-title" maxlength="200" autocomplete="off" placeholder="Ex. Rappeler Mme Dupont (0470 12 34 56) pour son rendez-vous" value="${esc(D.title)}"></label>
+    <label class="fld">Jour<input id="dk-date" type="date" value="${esc(D.date)}"></label>
+    <label class="fld">Vers (heure)<input id="dk-time" type="time" value="${esc(D.time)}"></label>
+    <button class="btn" id="dk-add" ${D.title.trim()?"":"disabled"}>Ajouter</button></div>
+   <details class="dkmore" ${D.notes?"open":""}><summary>Ajouter une précision</summary><textarea id="dk-notes" rows="2" maxlength="2000" placeholder="Facultatif. Pas de détail médical.">${esc(D.notes)}</textarea></details>
+  </section>
+  <div class="desklist">${list||`<div class="empty"><span class="yay" aria-hidden="true">✨</span>Rien à faire à l'accueil pour l'instant.</div>`}</div>
+  ${doneToday.length?`<details class="deskdone"><summary>Fait aujourd'hui (${doneToday.length})</summary><div class="desklist">${doneToday.map(deskRowHTML).join("")}</div></details>`:""}`;
+}
+let deskTimer=null;
+function bindDesk(){
+  clearInterval(deskTimer);
+  deskTimer=setInterval(async()=>{ if(S.cscreen!=="desk"){ clearInterval(deskTimer); return; }
+    const el=document.activeElement; if(el&&(el.tagName==="INPUT"||el.tagName==="TEXTAREA")) return;
+    const {data,error}=await sb.from("tasks").select("*").order("created_at",{ascending:false}).limit(500);
+    if(!error&&data&&JSON.stringify(data)!==JSON.stringify(S.tasks)){ S.tasks=data; if(S.cscreen==="desk") render(); } },45000);
+  const D=S.ddraft, add=$("#dk-add"); const upd=()=>{ add.disabled=!D.title.trim(); };
+  $("#dk-title").oninput=e=>{ D.title=e.target.value; upd(); };
+  $("#dk-title").onkeydown=e=>{ if(e.key==="Enter"&&!add.disabled){ e.preventDefault(); add.click(); } };
+  $("#dk-date").onchange=e=>{ D.date=e.target.value; };
+  $("#dk-time").onchange=e=>{ D.time=e.target.value; };
+  const nt=$("#dk-notes"); if(nt) nt.oninput=e=>{ D.notes=e.target.value; };
+  add.onclick=async()=>{ add.disabled=true;
+    const r=await run(()=>sb.rpc("create_task",{p_title:D.title.trim(),p_notes:D.notes.trim()||null,p_due:D.date||(D.time?todayISO():null),p_assignee:null,p_group:"secretariat",p_patient:null,p_child:null,p_record:null}),D.time?null:"Ajouté à la liste de l'accueil");
+    if(!r){ upd(); return; }
+    if(D.time){ const {error}=await sb.rpc("set_task_time",{p_id:r.data,p_time:D.time}); toast(error?"Ajouté, mais l'heure n'a pas pu être enregistrée : "+frError(error):`Ajouté · vers ${D.time.replace(":","h")}`); }
+    S.ddraft=null; await refresh(); $("#dk-title")?.focus(); };
+  $$("[data-ddone]").forEach(b=>b.onclick=async()=>{ const t=S.tasks.find(x=>x.id===+b.dataset.ddone), d=!t.done_at;
+    if(await run(()=>sb.rpc("set_task_done",{p_id:t.id,p_done:d}),d?"Fait":"Remis à faire")){ t.done_at=d?new Date().toISOString():null; t.done_by=d?S.me.id:null; render(); } });
+  $$("[data-dtime]").forEach(i=>i.onchange=async()=>{ const t=S.tasks.find(x=>x.id===+i.dataset.dtime), v=i.value||null;
+    if(await run(()=>sb.rpc("set_task_time",{p_id:t.id,p_time:v}),v?`Heure : ${v.replace(":","h")}`:"Heure retirée")){ t.due_time=v; if(v&&!t.due_date) t.due_date=todayISO(); t.time_notified_at=null; render(); } });
+  $$("[data-ddel]").forEach(b=>b.onclick=async()=>{ if(b.dataset.sure!=="1"){ b.dataset.sure="1"; b.textContent="Confirmer ?"; b.style.color="var(--danger)"; return; }
+    if(await run(()=>sb.rpc("delete_task",{p_id:+b.dataset.ddel}),"Supprimé")){ S.tasks=S.tasks.filter(x=>x.id!==+b.dataset.ddel); render(); } });
+}
+
+/* ----- Listes d'attente par prestataire (désistements) ----- */
+const WL_SELECT="*, patient:profiles!waitlist_patient_id_fkey(first_name,last_name,birth_date,phone), child:children(first_name,last_name,birth_date,created_by), record:patient_records(first_name,last_name,birth_date,phone)";
+async function loadWaitlist(){ const {data,error}=await sb.from("waitlist").select(WL_SELECT).order("created_at"); S.waitlist=error?null:(data||[]); }
+const wlOpen = () => (S.waitlist||[]).filter(w=>w.status==="attente");
+function wlWho(w){ const p=w.patient||w.child||w.record;
+  const name=p?`${p.first_name||""} ${p.last_name||""}`.trim():(w.name||"Patient");
+  const phone=w.phone||(w.patient&&w.patient.phone)||(w.record&&w.record.phone)||(w.child&&S.profiles[w.child.created_by]?.phone)||"";
+  return {name,phone,birth:p&&p.birth_date,kind:w.child?"enfant":w.record?"fiche sans compte":w.patient?"":"sans compte"}; }
+const daysSince = iso => Math.max(0,Math.floor((Date.now()-new Date(iso).getTime())/864e5));
+function wlRowHTML(w,showProv){
+  const x=wlWho(w), d=daysSince(w.created_at);
+  return `<div class="wlrow ${w.urgent?"urgent":""} ${w.status!=="attente"?"closed":""}">
+   <div class="wlmain"><b>${esc(x.name)}</b>${w.urgent?` <span class="ipill wlurg">Prioritaire</span>`:""}${showProv?` <span class="ipill">${esc(provName(w.provider_id))}</span>`:""}
+    <small>${x.birth?`Né(e) le ${fmtDate(x.birth)} · `:""}${x.kind?esc(x.kind)+" · ":""}${x.phone?`<a href="tel:${esc(x.phone.replace(/\s/g,""))}">📞 ${esc(x.phone)}</a>`:"pas de téléphone"}</small>
+    ${w.reason||w.availability?`<p class="wlinfo">${w.reason?`<span><i>Motif</i> ${esc(w.reason)}</span>`:""}${w.availability?`<span><i>Disponible</i> ${esc(w.availability)}</span>`:""}</p>`:""}
+    <small class="wlmeta">${w.status==="attente"?`En attente depuis ${d===0?"aujourd'hui":d===1?"hier":d+" jours"}`:w.status==="fixe"?`Rendez-vous fixé ${fmt(w.closed_at)} par ${esc(teamName(w.closed_by))}`:`Retiré ${fmt(w.closed_at)} par ${esc(teamName(w.closed_by))}`} · ajouté par ${esc(teamName(w.created_by))}${w.attempts?` · <b>appelé ${w.attempts}× sans réponse</b> (dernier ${fmt(w.last_attempt_at)})`:""}</small></div>
+   <div class="wlacts">${w.status==="attente"?`<button class="btn ghost sm" data-wl="${w.id}:appel">📞 Pas de réponse</button><button class="btn sm" data-wl="${w.id}:fixe">✓ RDV fixé</button>
+     <button class="linkbtn" data-wl="${w.id}:${w.urgent?"normal":"urgent"}">${w.urgent?"Plus prioritaire":"Prioritaire"}</button><button class="linkbtn" data-wl="${w.id}:retire">Retirer</button>`
+     :`<button class="linkbtn" data-wl="${w.id}:remettre">Remettre dans la liste</button>`}</div></div>`;
+}
+function waitlistHTML(){
+  if(S.waitlist===undefined){ loadWaitlist().then(()=>{ if(S.cscreen==="waitlist") render(); }); return `<div class="chead"><div><h1>Listes d'attente</h1></div></div><p class="hint">Chargement…</p>`; }
+  if(S.waitlist===null) return `<div class="chead"><div><h1>Listes d'attente</h1></div></div><div class="empty">Les listes d'attente ne sont pas encore activées (migration 045 à exécuter dans Supabase).</div>`;
+  const F=S.wlProv||(S.me.provider_id&&S.providers.some(p=>p.id===S.me.provider_id)?S.me.provider_id:"all"), open=wlOpen();
+  const provs=S.providers.filter(p=>open.some(w=>w.provider_id===p.id)||p.id===F);
+  const sorted=l=>l.slice().sort((a,b)=>(b.urgent-a.urgent)||new Date(a.created_at)-new Date(b.created_at));
+  const shown=sorted(F==="all"?open:open.filter(w=>w.provider_id===F));
+  const closed=(S.waitlist||[]).filter(w=>w.status!=="attente"&&(F==="all"||w.provider_id===F)).sort((a,b)=>new Date(b.closed_at)-new Date(a.closed_at));
+  const A=S.wlAdd;
+  return `<div class="chead"><div><h1>Listes d'attente</h1><p>Les patients à appeler en cas de désistement, par prestataire. Les plus anciens et les prioritaires sont en haut. Identité, téléphone et un motif court seulement : jamais de détail médical.</p></div></div>
+  <div class="ichips wlprov" role="group" aria-label="Prestataire"><button class="ichip all" data-wlp="all" aria-pressed="${F==="all"}">Tous <i>${open.length}</i></button>${provs.map(p=>`<button class="ichip" data-wlp="${p.id}" aria-pressed="${F===p.id}">${esc(P.label(p))} <i>${open.filter(w=>w.provider_id===p.id).length}</i></button>`).join("")}
+   <button class="ichip" id="wl-pick" aria-label="Choisir un autre prestataire">+ Autre prestataire</button></div>
+  ${A?`<section class="card wlform"><h3>Ajouter à la liste d'attente</h3>
+    <label class="fld">Prestataire<select id="wl-prov">${S.providers.map(p=>`<option value="${p.id}" ${p.id===A.prov?"selected":""}>${esc(P.label(p))}</option>`).join("")}</select></label>
+    <div class="fld">Patient
+     ${A.patient?`<div class="recipient"><div class="ic">${IC.user}</div><div><b>${esc(`${A.patient.first_name||""} ${A.patient.last_name||""}`)}</b><small>Né(e) le ${fmtDate(A.patient.birth_date)}${A.patient.child?" · enfant":A.patient.record?" · fiche sans compte":""}</small></div><button type="button" class="linkbtn" id="wl-unpick">Changer</button></div>`
+     :A.free?`<div class="row2"><label class="fld">Nom et prénom<input id="wl-name" maxlength="120" value="${esc(A.name||"")}"></label><label class="fld">Téléphone<input id="wl-phone" type="tel" maxlength="40" value="${esc(A.phone||"")}"></label></div><button type="button" class="linkbtn" id="wl-search">Chercher plutôt un patient de l'app</button>`
+     :`<input id="wl-q" type="text" autocomplete="off" placeholder="Nom ou prénom (au moins 2 lettres)" value="${esc(A.q||"")}"><div id="wl-res"></div><p class="hint">Patient pas dans l'app ? <button type="button" class="linkbtn" id="wl-free">Écrire son nom et son téléphone</button></p>`}</div>
+    ${A.patient?`<label class="fld">Téléphone à appeler (facultatif si déjà connu)<input id="wl-phone2" type="tel" maxlength="40" value="${esc(A.phone||"")}" placeholder="${esc(A.patient.phone||"")}"></label>`:""}
+    <div class="row2"><label class="fld">Motif court<input id="wl-reason" maxlength="200" value="${esc(A.reason||"")}" placeholder="Ex. Contrôle, premier rendez-vous (pas de détail médical)"></label>
+    <label class="fld">Disponibilités<input id="wl-avail" maxlength="200" value="${esc(A.avail||"")}" placeholder="Ex. matins, pas le mercredi, prévenir 2 h avant"></label></div>
+    <label class="chk2"><input type="checkbox" id="wl-urg" ${A.urgent?"checked":""}> Prioritaire (à appeler en premier)</label>
+    <div class="btnrow"><button class="btn" id="wl-save">Ajouter</button><button class="btn ghost" id="wl-cancel">Annuler</button></div></section>`
+  :`<div class="btnrow"><button class="btn" id="wl-new">+ Ajouter un patient à une liste d'attente</button></div>`}
+  <div class="wllist">${shown.length?shown.map(w=>wlRowHTML(w,F==="all")).join(""):`<div class="empty">Personne en attente${F==="all"?"":" pour "+esc(provName(F))}.</div>`}</div>
+  ${closed.length?`<details class="deskdone"><summary>Sortis de la liste (${closed.length}, gardés 90 jours)</summary><div class="wllist">${closed.map(w=>wlRowHTML(w,F==="all")).join("")}</div></details>`:""}`;
+}
+function bindWaitlist(){
+  $$("[data-wlp]").forEach(b=>b.onclick=()=>{ S.wlProv=b.dataset.wlp; render(); });
+  const pk=$("#wl-pick"); if(pk) pk.onclick=()=>{ const v=document.createElement("div"); v.className="modal"; v.setAttribute("role","dialog"); v.setAttribute("aria-modal","true");
+    v.innerHTML=`<div class="mbox"><h2>Choisir un prestataire</h2><div class="pclist">${S.providers.map(p=>`<button type="button" class="prrow" data-pp="${p.id}"><b>${esc(P.label(p))}</b></button>`).join("")}</div><div class="btnrow"><button class="btn ghost" id="pp-x">Annuler</button></div></div>`;
+    document.body.appendChild(v); const close=()=>v.remove(); v.querySelector("#pp-x").onclick=close; v.onclick=e=>{ if(e.target===v) close(); };
+    v.querySelectorAll("[data-pp]").forEach(b=>b.onclick=()=>{ close(); S.wlProv=b.dataset.pp; render(); }); };
+  const nw=$("#wl-new"); if(nw) nw.onclick=()=>{ S.wlAdd={prov:S.wlProv&&S.wlProv!=="all"?S.wlProv:(S.me.provider_id||S.providers[0]?.id),patient:null,q:""}; render(); $("#wl-q")?.focus(); };
+  const A=S.wlAdd;
+  if(A){
+    const keep=()=>{ const g=id=>$(id)?.value; A.prov=g("#wl-prov")||A.prov; if($("#wl-name")) A.name=g("#wl-name"); if($("#wl-phone")) A.phone=g("#wl-phone"); if($("#wl-phone2")) A.phone=g("#wl-phone2");
+      A.reason=g("#wl-reason")||""; A.avail=g("#wl-avail")||""; A.urgent=$("#wl-urg")?.checked||false; };
+    $("#wl-cancel").onclick=()=>{ S.wlAdd=null; render(); };
+    const un=$("#wl-unpick"); if(un) un.onclick=()=>{ keep(); A.patient=null; render(); $("#wl-q")?.focus(); };
+    const fr=$("#wl-free"); if(fr) fr.onclick=()=>{ keep(); A.free=true; render(); $("#wl-name")?.focus(); };
+    const se=$("#wl-search"); if(se) se.onclick=()=>{ keep(); A.free=false; render(); $("#wl-q")?.focus(); };
+    const q=$("#wl-q");
+    if(q){ let tm; const go=async()=>{ A.q=q.value; const words=norm(q.value).replace(/[*%,().]/g," ").split(/\s+/).filter(w=>w.length>=2), out=$("#wl-res");
+        if(!words.length){ out.innerHTML=""; return; }
+        let rows=await searchPatients(words); if(rows===null){ out.innerHTML=`<p class="hint">La recherche n'a pas fonctionné.</p>`; return; }
+        rows=[...rows,...recordsMatching(words)].slice(0,14);
+        out.innerHTML=rows.length?`<div class="list">${rows.map(patientPickRow).join("")}</div>`:`<p class="hint">Aucun patient ne correspond.</p>`;
+        out.querySelectorAll("[data-pick]").forEach(b=>b.onclick=()=>{ keep(); A.patient=rows.find(p=>p.id===b.dataset.pick); render(); }); };
+      q.oninput=()=>{ clearTimeout(tm); tm=setTimeout(go,300); }; if(A.q) go(); }
+    $("#wl-save").onclick=async e=>{ keep(); const pt=A.patient, b=e.target; b.disabled=true;
+      const ok=await run(()=>sb.rpc("waitlist_add",{p_provider:A.prov,p_patient:pt&&!pt.child&&!pt.record?pt.id:null,p_child:pt&&pt.child?pt.id:null,p_record:pt&&pt.record?pt.id:null,
+        p_name:pt?null:(A.name||null),p_phone:A.phone||null,p_reason:A.reason||null,p_availability:A.avail||null,p_urgent:!!A.urgent}),`Ajouté à la liste d'attente de ${provName(A.prov)}`);
+      if(!ok){ b.disabled=false; return; }
+      S.wlProv=A.prov; S.wlAdd=null; await loadWaitlist(); render(); };
+  }
+  $$("[data-wl]").forEach(b=>b.onclick=async()=>{ const [id,act]=b.dataset.wl.split(":");
+    if((act==="retire"||act==="fixe")&&b.dataset.sure!=="1"){ b.dataset.sure="1"; b.textContent=act==="fixe"?"Confirmer : RDV fixé ?":"Confirmer ?"; return; }
+    const msg={appel:"Appel noté : pas de réponse",fixe:"Rendez-vous fixé · retiré de la liste",retire:"Retiré de la liste",remettre:"Remis dans la liste",urgent:"Marqué prioritaire",normal:"Plus prioritaire"}[act];
+    b.disabled=true; if(await run(()=>sb.rpc("waitlist_update",{p_id:+id,p_action:act}),msg)){ await loadWaitlist(); render(); } else b.disabled=false; });
 }
 
 /* ----- comptes à valider ----- */
