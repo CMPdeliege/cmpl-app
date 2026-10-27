@@ -2022,7 +2022,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261027a";
+const APP_VERSION="20261027b";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -2395,7 +2395,7 @@ function staffHelpHTML(){
    ["Épingler et classer les conversations","Messages : touchez « Épingler » en haut d'une conversation pour la garder tout en haut de votre liste (vos épingles ne changent rien pour les collègues). Les filtres Non lues · Groupes · À deux · Patients trient la liste."],
    ["Ce qui est gardé, ce qui est effacé","Gardé : messages de l'équipe sur l'organisation, inventaire, congés, tâches sans patient, classeur, horaires (5 ans), caisse (10 ans). Effacé : conversations avec les patients (15 jours après la clôture), conversations d'équipe marquées « Concerne des patients » et messages qui joignent une demande (90 jours), tâches liées à un patient (90 jours après)."],
    ["Agenda Rosa","« Agenda Rosa » ouvre votre agenda Rosa dans l'app (téléphone) ou dans une fenêtre à côté (ordinateur). Connexion avec votre propre compte Rosa."],
-   ["Horaires de l'accueil","Secrétariat → Horaires : chaque accueillante touche une case pour encoder son arrivée, son départ et sa pause (ou un congé, une maladie…). Les heures de la semaine se calculent toutes seules. L'administration valide la semaine. Onglet « Mois » : le total par personne et le fichier Excel pour le secrétariat social."],
+   ["Horaires de l'accueil","Secrétariat → Horaires : touchez une case pour encoder l'arrivée, le départ et la pause d'une accueillante (ou un congé, une maladie…) ; chaque accueillante peut corriger les heures de toute l'équipe de l'accueil. Sous le tableau, une case libre pour les désidératas et indisponibilités de la semaine. Les heures de la semaine se calculent toutes seules. L'administration valide la semaine. Onglet « Mois » : le total par personne et le fichier Excel pour le secrétariat social."],
    ["Caisse","Secrétariat → Caisse : encodez chaque paiement en espèces (montant, prestataire, prestation). Jamais de nom de patient. Une erreur ne s'efface pas : « Annuler » avec un motif. Le 1er du mois, le résumé du mois précédent part par e-mail à l'administration, avec le fichier Excel."],
    ["Trouver et trier les demandes","Onglet Demandes : « Les miennes / Secrétariat / Tout le centre » choisit les demandes affichées ; la recherche trouve un patient par son nom ; les pastilles colorées filtrent par type. Les demandes sont rangées par ce qu'il faut faire : urgent ou en retard, le patient a répondu, nouvelles. « En attente du patient » (vous avez répondu) est replié en bas. Les renouvellements simples peuvent être accordés à la suite dans « Prescriptions en série », après les avoir faits dans CareConnect."],
    ["Un patient sans compte dans l'app","Patients → Fiches patients : créez une fiche (nom, prénom, date de naissance, téléphone, e-mail). Vous pouvez ensuite lui lier une tâche, en parler à un collègue (« En parler ») ou l'inviter par e-mail à créer son compte. Jamais de note médicale dans une fiche. Quand le patient s'inscrit, l'administrateur relie son compte à la fiche dans Comptes à valider."],
@@ -3617,6 +3617,8 @@ async function loadHours(fromISO,toISO){
   if(h.error){ S.hours2=[]; S.hoursErr=frError(h.error); return; }
   S.hoursErr=null;
   const keep=(S.hours2||[]).filter(x=>x.day<fromISO||x.day>toISO); S.hours2=[...keep,...(h.data||[])];
+  if(S.hnotesOk!==false){ const nt=await sb.from("staff_hours_notes").select("*").gte("week_start",addDays(fromISO,-6)).lte("week_start",toISO);
+    if(nt.error) S.hnotesOk=false; else { S.hnotesOk=true; const ks=new Set((nt.data||[]).map(x=>x.week_start)); S.hnotes=[...(S.hnotes||[]).filter(x=>!ks.has(x.week_start)),...(nt.data||[])]; } }
   const keepW=(S.hweeks||[]).filter(x=>!(w.data||[]).some(y=>y.user_id===x.user_id&&y.week_start===x.week_start)); S.hweeks=[...keepW,...(w.data||[])];
 }
 const hourRow = (uid,day) => (S.hours2||[]).find(h=>h.user_id===uid&&h.day===day);
@@ -3624,14 +3626,29 @@ const weekOk = (uid,wk) => !!(S.hweeks||[]).find(w=>w.user_id===uid&&w.week_star
 function hoursHTML(){
   const H=S.hv||(S.hv={week:mondayOf(todayISO()),mode:"week",month:todayISO().slice(0,7)});
   const tabs=`<div class="seg" role="group" aria-label="Affichage"><button data-hmode="week" aria-pressed="${H.mode==="week"}">Semaine</button><button data-hmode="month" aria-pressed="${H.mode==="month"}">Mois (secrétariat social)</button></div>`;
-  const head=`<div class="chead"><div><h1>Horaires de l'accueil</h1><p>Chaque accueillante encode ses heures de la semaine${canManageOffice()?" ; l'administration vérifie puis valide":" ; l'administration les vérifie et les valide"}. Les totaux se calculent tout seuls.</p></div>${tabs}</div>`;
+  const head=`<div class="chead"><div><h1>Horaires de l'accueil</h1><p>Les accueillantes encodent et corrigent les heures de toute l'équipe de l'accueil ; l'administration vérifie et valide chaque semaine. Les totaux se calculent tout seuls.</p></div>${tabs}</div>`;
   if(S.hoursLoaded!==`${H.mode}:${H.mode==="week"?H.week:H.month}`) return head+`<div class="empty">Chargement…</div>`;
   if(S.hoursErr) return head+`<div class="empty">Les horaires ne sont pas encore disponibles (${esc(S.hoursErr)}). La mise à jour du serveur (migration 049) est-elle faite ?</div>`;
   return head+(H.mode==="week"?hoursWeekHTML(H):hoursMonthHTML(H));
 }
+// accueillantes : elles encodent pour toute l'équipe de l'accueil ; l'administration pour tout le monde
+const canEditHours = uid => canManageOffice() || uid===S.me.id || (S.team||[]).some(t=>t.id===uid&&t.role==="secretariat");
+function hoursNoteHTML(wk){
+  if(S.hnotesOk===false) return "";
+  const n=(S.hnotes||[]).find(x=>x.week_start===wk), d=S.hnoteDraft&&S.hnoteDraft.wk===wk?S.hnoteDraft.body:(n?.body||"");
+  return `<section class="card hnote"><label class="fld" for="hn-body"><b>Désidératas et indisponibilités de la semaine</b>
+    <textarea id="hn-body" rows="4" maxlength="4000" placeholder="Ex. Leïla : pas disponible jeudi après-midi. Fatima : souhaite finir à 17 h mercredi.">${esc(d)}</textarea></label>
+    <div class="btnrow"><button type="button" class="btn" id="hn-save" ${S.hnoteDraft&&S.hnoteDraft.wk===wk?"":"disabled"}>Enregistrer</button><small class="hint">${n?`Modifié par ${esc(teamName(n.updated_by))} ${fmt(n.updated_at)}`:"Visible par le secrétariat et l'administration."}</small></div></section>`;
+}
+function bindHoursNote(wk){
+  const t=$("#hn-body"), b=$("#hn-save"); if(!t) return;
+  t.oninput=()=>{ S.hnoteDraft={wk,body:t.value}; b.disabled=false; };
+  b.onclick=async()=>{ b.disabled=true; const body=t.value;
+    if(await run(()=>sb.rpc("set_hours_note",{p_week:wk,p_body:body}),"Enregistré")){ S.hnotes=(S.hnotes||[]).filter(x=>x.week_start!==wk); if(body.trim()) S.hnotes.push({week_start:wk,body,updated_by:S.me.id,updated_at:new Date().toISOString()}); S.hnoteDraft=null; render(); } else b.disabled=false; };
+}
 function hoursWeekHTML(H){
   const days=[...Array(6)].map((_,i)=>addDays(H.week,i)), wkEnd=addDays(H.week,6), people=officePeople(H.week,wkEnd), mgr=canManageOffice();
-  const cell=(uid,day,tag)=>{ const r=hourRow(uid,day), can=mgr||(uid===S.me.id&&!weekOk(uid,H.week));
+  const cell=(uid,day,tag)=>{ const r=hourRow(uid,day), can=mgr||(canEditHours(uid)&&!weekOk(uid,H.week));
     const inner=!r?`<span class="hz">—</span>`:r.kind==="travail"?`<b>${t5(r.start_t)}–${t5(r.end_t)}</b><small>${r.break_min?`pause ${r.break_min} min · `:""}${minTxt(hoursOf(r))}</small>`:`<b class="hk hk-${r.kind}">${HK[r.kind][0]}</b>${r.note?`<small>${esc(r.note)}</small>`:""}`;
     const btn=can?`<button type="button" class="hcell" data-hc="${uid}|${day}" aria-label="${esc(staffName(uid))}, ${fmtDate(day+"T12:00")}">${inner}</button>`:`<div class="hcell ro">${inner}</div>`;
     return tag==="li"?`<li class="${day===todayISO()?"today":""}"><span class="hday">${DOWS[(new Date(day+"T12:00").getDay()+6)%7]} ${day.slice(8)}/${day.slice(5,7)}</span>${btn}</li>`:`<td class="${day===todayISO()?"today":""}">${btn}</td>`; };
@@ -3643,8 +3660,9 @@ function hoursWeekHTML(H){
      <td class="htot"><b>${minTxt(tot(uid))}</b>${abs(uid)?`<small>${abs(uid)} j. d'absence</small>`:""}${mgr?`<button type="button" class="mini ${ok?"ghostmini":""}" data-hval="${uid}" data-ok="${ok?0:1}">${ok?"Rouvrir":"Valider"}</button>`:""}</td></tr>`; }).join("")
      :`<tr><td colspan="8"><div class="empty">Aucune accueillante. Les comptes avec le rôle « Secrétariat » apparaissent ici.</div></td></tr>`}</tbody></table></div>
    <div class="hcards">${people.map(uid=>{ const ok=weekOk(uid,H.week); return `<section class="hcard"><header><b>${esc(staffName(uid))}${uid===S.me.id?" <small>(moi)</small>":""}</b>${ok?`<span class="pill st-traite">Validée</span>`:""}<span class="htot2">${minTxt(tot(uid))}</span></header><ul>${days.map(d=>cell(uid,d,"li")).join("")}</ul>${mgr?`<button type="button" class="mini ${ok?"ghostmini":""}" data-hval="${uid}" data-ok="${ok?0:1}">${ok?"Rouvrir la semaine":"Valider la semaine"}</button>`:""}</section>`; }).join("")}</div>
-   <div class="btnrow">${mgr?`<button type="button" class="btn ghost" id="h-addp">+ Ajouter une personne au tableau</button>`:""}<button type="button" class="btn ghost" id="h-copy">${mgr?"Copier la semaine précédente (cases vides)":"Copier ma semaine précédente"}</button></div>
-   <p class="hint">Touchez une case pour encoder l'heure d'arrivée, de départ et la pause. Une semaine validée ne peut plus être changée que par l'administration. Gardé 5 ans.</p></div>`;
+   <div class="btnrow">${mgr?`<button type="button" class="btn ghost" id="h-addp">+ Ajouter une personne au tableau</button>`:""}<button type="button" class="btn ghost" id="h-copy">Copier la semaine précédente (cases vides)</button></div>
+   <p class="hint">Touchez une case pour encoder l'heure d'arrivée, de départ et la pause. Une semaine validée ne peut plus être changée que par l'administration. Gardé 5 ans.</p>
+   ${hoursNoteHTML(H.week)}</div>`;
 }
 function monthDays(ym){ const [y,m]=ym.split("-").map(Number), n=new Date(y,m,0).getDate(); return [...Array(n)].map((_,i)=>`${ym}-${String(i+1).padStart(2,"0")}`); }
 function hoursMonthHTML(H){
@@ -3700,7 +3718,8 @@ function bindHours(){
     if(await run(()=>sb.rpc("validate_hours_week",{p_user:b.dataset.hval,p_week:H.week,p_ok:ok}),ok?"Semaine validée":"Semaine rouverte")){
       S.hweeks=(S.hweeks||[]).filter(w=>!(w.user_id===b.dataset.hval&&w.week_start===H.week)); S.hweeks.push({user_id:b.dataset.hval,week_start:H.week,validated_at:ok?new Date().toISOString():null}); render(); } });
   const ap=$("#h-addp"); if(ap) ap.onclick=()=>pickColleagues("Ajouter au tableau",officePeople(H.week,addDays(H.week,6)),async ids=>{ S.hoursExtra=[...new Set([...(S.hoursExtra||[]),...ids])]; render(); return true; });
-  const cp=$("#h-copy"); if(cp) cp.onclick=async()=>{ const who=canManageOffice()?officePeople(H.week,addDays(H.week,6)):[S.me.id]; let n=0;
+  bindHoursNote(H.week);
+  const cp=$("#h-copy"); if(cp) cp.onclick=async()=>{ const who=officePeople(H.week,addDays(H.week,6)).filter(canEditHours); let n=0;
     for(const uid of who){ if(!canManageOffice()&&weekOk(uid,H.week)) continue;
       for(let i=0;i<6;i++){ const d=addDays(H.week,i), src=hourRow(uid,addDays(d,-7)); if(!src||hourRow(uid,d)) continue;
         const {error}=await sb.rpc("set_hours",{p_user:uid,p_day:d,p_kind:src.kind,p_start:src.start_t,p_end:src.end_t,p_break:src.break_min,p_note:src.note});
@@ -3739,7 +3758,7 @@ function cashHTML(){
    <section class="card taskform"><h3>Nouveau paiement</h3>
     <div class="row2"><label class="fld">Montant (€)<input id="ca-amt" type="text" inputmode="decimal" autocomplete="off" placeholder="Ex. 25" value="${esc(D.amount)}"></label>
      <label class="fld">Date<input id="ca-day" type="date" value="${esc(D.day)}" max="${todayISO()}"></label></div>
-    <div class="cachips" role="group" aria-label="Montant rapide">${[5,10,15,20,25,30,40,50].map(v=>`<button type="button" class="mini ghostmini" data-camt="${v}">${v} €</button>`).join("")}</div>
+    <div class="cachips" role="group" aria-label="Montant rapide">${[3,4,6,11].map(v=>`<button type="button" class="mini ghostmini" data-camt="${v}">${v} €</button>`).join("")}</div>
     <div class="row2"><label class="fld">Prestataire<select id="ca-prov"><option value="">— (aucun)</option>${P.list().map(p=>`<option value="${p.id}" ${D.prov===p.id?"selected":""}>${esc(p.display_name)}</option>`).join("")}</select></label>
      <label class="fld">Prestation<select id="ca-kind">${Object.entries(CASH_KINDS).map(([k,l])=>`<option value="${k}" ${D.kind===k?"selected":""}>${l}</option>`).join("")}</select></label></div>
     <label class="fld">Remarque (facultatif, jamais de nom de patient)<input id="ca-note" maxlength="80" value="${esc(D.note)}" placeholder="Ex. 2 certificats"></label>

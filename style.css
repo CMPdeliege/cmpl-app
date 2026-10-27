@@ -1320,3 +1320,5 @@ button.hcell .hz{color:var(--muted);opacity:.45}
 .htable thead th:last-child,.htable td.htot{position:sticky;right:0;background:var(--surface);box-shadow:-6px 0 8px -6px rgb(0 0 0/.12)}
 .htable thead th:last-child{background:var(--surface-2)}
 .hmonth thead th:last-child{position:static;box-shadow:none}
+.hnote textarea{width:100%;resize:vertical;margin-top:6px}
+.hnote .btnrow{align-items:center;gap:12px}
