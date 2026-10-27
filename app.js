@@ -2022,7 +2022,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261027b";
+const APP_VERSION="20261027c";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -3385,7 +3385,10 @@ async function openRosa(){
   closeDD();
   if(IS_NATIVE){
     const br=capPlugin("Browser",["open"]);
-    if(br){ try{ await br.open({url:ROSA_PRO_URL,presentationStyle:"popover",toolbarColor:"#702629"}); return; }catch(e){ /* module absent : on continue */ } }
+    if(br){ try{ await Promise.race([br.open({url:ROSA_PRO_URL,presentationStyle:"popover"}),new Promise((_,ko)=>setTimeout(()=>ko(new Error("délai")),2500))]); return; }
+      catch(e){ console.warn("Rosa dans l'app indisponible :",e&&e.message); } }
+    // ancienne version de l'app (sans le module) : l'app ouvre le site externe dans Safari
+    location.href=ROSA_PRO_URL; return;
   }
   if(!ON_PHONE&&!IS_NATIVE){
     // une fenêtre posée à droite de l'écran, réutilisée à chaque clic (pas un nouvel onglet)
