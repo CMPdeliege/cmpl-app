@@ -428,12 +428,12 @@ async function squarePhoto(file){
 function photoCardHTML(hint){
   const url=AV.get(S.me.id), name=`${S.me.first_name||""} ${S.me.last_name||""}`;
   return `<section class="card photocard"><div class="photorow">${avatarHTML(url,name,84)}<div><h3>Photo de profil</h3><p class="hint">${hint}</p>
-   <div class="btnrow"><button type="button" class="btn ghost" id="ph-pick">${url?"Changer la photo":"Ajouter une photo"}</button>${url?`<button type="button" class="linkbtn" id="ph-del">Retirer</button>`:""}</div></div></div>
+   <div class="btnrow"><button type="button" class="btn ghost" id="ph-pick">${url?"Changer la photo":"Ajouter une photo"}</button><button type="button" class="btn ghost" id="ph-draw">Choisir un dessin</button>${url?`<button type="button" class="linkbtn" id="ph-del">Retirer</button>`:""}</div></div></div>
    <input type="file" id="ph-file" accept="image/*" hidden></section>`;
 }
 function bindPhotoCard(){
   const inp=$("#ph-file"); if(!inp) return;
-  $("#ph-pick").onclick=()=>inp.click();
+  $("#ph-pick").onclick=()=>inp.click(); $("#ph-draw").onclick=openAvatarPicker;
   inp.onchange=async()=>{ const f=inp.files[0]; inp.value=""; if(!f) return;
     try{ const blob=await squarePhoto(f); const data=await blobToB64(blob);
       if(await run(()=>sb.rpc("set_my_avatar",{p_data:data}),"Photo enregistrée")){ const old=AV.get(S.me.id); if(old) URL.revokeObjectURL(old); AV.set(S.me.id,URL.createObjectURL(blob)); render(); } }
@@ -1324,7 +1324,7 @@ setInterval(async()=>{ if(!document.hidden||!S.me||S.me.status!=="active") retur
   }catch(e){}
 },120000);
 function draw(){
-  const a=app(); document.body.classList.remove("hasbar","ddopen");
+  const a=app(); document.body.classList.remove("hasbar","ddopen","sidenav");
   if(S.loading){ a.className="wrap"; a.innerHTML=`<div class="loading">Chargement…</div>`; return; }
   if(S.recovery) return renderRecovery(a);
   if(!S.session) return renderAuth(a);
@@ -1479,7 +1479,7 @@ function _renderPatient(a){
 }
 function topBar(){
   const unread=S.notifs.filter(n=>!n.read_at).length;
-  return `<div class="top">${BRAND}<div class="menu"><button class="iconbtn" id="help" aria-label="Aide">${IC.help}</button><button class="iconbtn bell" id="bell" aria-label="Notifications">${IC.bell}${unread?`<span class="badge">${unread}</span>`:""}</button><button class="iconbtn" id="acct" aria-label="Mon compte">${AV.get(S.me.id)?avatarHTML(AV.get(S.me.id),"",42):IC.user}</button></div></div>`;
+  return `<div class="top">${BRAND}<div class="menu"><button class="iconbtn" data-search aria-label="Rechercher">${SI.search}</button><button class="iconbtn" id="help" aria-label="Aide">${IC.help}</button><button class="iconbtn bell" id="bell" aria-label="Notifications">${IC.bell}${unread?`<span class="badge">${unread}</span>`:""}</button><button class="iconbtn" id="acct" aria-label="Mon compte">${AV.get(S.me.id)?avatarHTML(AV.get(S.me.id),"",42):IC.user}</button></div></div>`;
 }
 function bindTop(){ $("#help").onclick=()=>{S.screen="help";render();scrollTo(0,0)}; $("#bell").onclick=()=>{S.screen="notifs";render()}; $("#acct").onclick=()=>{S.screen="account";render()}; }
 function patientAbsences(a){
@@ -1661,6 +1661,7 @@ function patientHelp(a){
 function patientAccount(a){
   const m=S.me;
   a.innerHTML=`<div class="convhead"><button class="back" id="back" aria-label="Retour">${IC.back}</button><div><h2>Mon compte</h2><small>${esc(S.session.user.email)}</small></div></div>
+  <button type="button" class="absrow helprow" data-cs-help>${IC.help}<span>Aide et questions fréquentes</span>${IC.chev||"›"}</button>
   <section class="card langcard"><h3>Langue de l'application</h3><p class="hint">Les messages restent écrits par le centre en français.</p>${langPickerHTML()}</section>
   ${textSizeHTML()}
   ${photoCardHTML("Facultatif. Visible uniquement par vous et par l'équipe du centre, pour vous reconnaître.")}
@@ -2021,7 +2022,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261026g";
+const APP_VERSION="20261027a";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -2083,7 +2084,7 @@ const AVAIL_ICON={on:IC.bell,pause:'<svg width="20" height="20" viewBox="0 0 24 
   away:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12h8"/></svg>'};
 AVAIL_ICON.leave=AVAIL_ICON.away;
 function availBtnHTML(){ const a=availState(), lab={on:"Disponible",pause:"En pause",away:"Absent(e)",leave:"En congé"}[a.k];
-  return `<button class="savail av-${a.k}" id="avail-b" title="Pause des notifications ou absence">${AVAIL_ICON[a.k]}<span>${lab}</span></button>`; }
+  return `<button type="button" class="savail av-${a.k}" data-avail title="Pause des notifications ou absence">${AVAIL_ICON[a.k]}<span>${lab}</span></button>`; }
 function openAvail(){
   const a=availState(), s=S.settings||{}, others=S.team.filter(t=>t.id!==S.me.id&&t.status==="active"&&t.role!=="patient");
   const tomorrow8=()=>{ const d=new Date(); d.setDate(d.getDate()+1); d.setHours(8,0,0,0); return d.toISOString(); };
@@ -2125,47 +2126,9 @@ function openAvail(){
     ga.disabled=true;
     if(await run(()=>sb.from("staff_settings").upsert(row),"Absence enregistrée")){ S.settings={...(S.settings||{}),...row}; done(); } else ga.disabled=false; };
 }
-function staffNavHTML(sc){
-  const ci=centreItems(), ciD=ci.filter(x=>!x.mob), cn=ciD.reduce((t,x)=>t+(x.n||0),0), cnM=ci.reduce((t,x)=>t+(x.n||0),0), nIn=S.reqs.filter(awaitingStaff).length, nT=myTasks().length, nM=teamUnread();
-  const inCentre=ciD.some(x=>x.cs===sc), inCentreM=ci.some(x=>x.cs===sc), single=null;
-  const av=AV.get(S.me.id)?avatarHTML(AV.get(S.me.id),"",36):`<span class="avl">${esc((S.me.first_name||"?").slice(0,1).toUpperCase())}</span>`;
-  const who=`${esc([S.me.first_name,S.me.last_name].filter(Boolean).join(" ")||"")}`;
-  const centreBtn = single
-    ? `<button class="stab" data-cs="${single.cs}" aria-current="${sc===single.cs?"page":"false"}">${single.ic}<span>${single.t}</span>${badge(single.n)}</button>`
-    : `<div class="ddwrap"><button class="stab" id="dd-centre-b" aria-haspopup="true" aria-expanded="false" aria-controls="dd-centre" aria-current="${inCentre?"page":"false"}">${SI.centre}<span>Le centre</span>${badge(cn)}${SI.down}</button>
-       <div class="dd" id="dd-centre" hidden role="menu" aria-label="Le centre"><p class="ddh">Le centre</p>${ci.map(x=>`<button role="menuitem" class="ddi${x.mob?" mobonly":""}" data-cs="${x.cs}" aria-current="${sc===x.cs?"page":"false"}">${x.ic}<span>${x.t}<small>${x.d}</small></span>${badge(x.n)}</button>`).join("")}</div></div>`;
-  const meMenu=`<div class="dd ddme" id="dd-me" hidden role="menu" aria-label="Mon compte"><p class="ddwho"><b>${who}</b>${ROLE_LABEL[S.me.role]}${S.me.provider_id?` · ${esc(provName(S.me.provider_id))}`:""}</p>
-     <button role="menuitem" class="ddi" data-cs="settings">${IC.bell}<span>Mon profil et notifications</span></button>
-     <button role="menuitem" class="ddi" data-cs="templates">${SI.tpl}<span>Mes réponses types</span></button>
-     <button role="menuitem" class="ddi" data-cs="help">${IC.help}<span>Aide</span></button>
-     <a role="menuitem" class="ddi ddrosa" href="${ROSA_PRO_URL}" target="_blank" rel="noopener">${SI.cal}<span>Mon agenda Rosa</span>${SI.ext}</a>
-     <hr><button role="menuitem" class="ddi" id="logout">${SI.out}<span>Se déconnecter</span></button></div>`;
-  return `<header class="top stop">${BRAND}
-   <nav class="snav" aria-label="Navigation de l'équipe">
-    <button class="stab" data-cs="inbox" aria-current="${sc==="inbox"?"page":"false"}">${SI.inbox}<span>Demandes</span>${badge(nIn)}</button>
-    <button class="stab" data-cs="messages" aria-current="${sc==="messages"?"page":"false"}">${SI.chat}<span>Messages</span>${badge(nM)}</button>
-    <button class="stab" data-cs="tasks" aria-current="${sc==="tasks"?"page":"false"}">${SI.tasks}<span>Tâches</span>${badge(nT)}</button>
-    ${centreBtn}
-   </nav>
-   <div class="sact">
-    ${availBtnHTML()}
-    <button class="swrite" data-cs="compose" aria-current="${sc==="compose"?"page":"false"}">${SI.pen}<span><b class="lg">Écrire à un patient</b><b class="sh">Écrire</b></span></button>
-    <a class="srosa" href="${ROSA_PRO_URL}" target="_blank" rel="noopener" title="Ouvre votre agenda Rosa (connexion avec votre propre compte Rosa)">${SI.cal}<span>Rosa</span>${SI.ext}</a>
-    <div class="ddwrap"><button class="savbtn" id="dd-me-b" aria-haspopup="true" aria-expanded="false" aria-controls="dd-me" aria-label="Mon compte : ${who}" aria-current="${["settings","help"].includes(sc)?"page":"false"}">${av}</button>${meMenu}</div>
-   </div>
-  </header>
-  <nav class="sbar" aria-label="Navigation de l'équipe">
-   <button data-cs="inbox" aria-current="${sc==="inbox"?"page":"false"}">${SI.inbox}<span>Demandes</span>${badge(nIn)}</button>
-   <button data-cs="messages" aria-current="${sc==="messages"?"page":"false"}">${SI.chat}<span>Messages</span>${badge(nM)}</button>
-   <button class="sfab" data-cs="compose" aria-current="${sc==="compose"?"page":"false"}"><i>${SI.pen}</i><span>Écrire</span></button>
-   ${single?`<button data-cs="${single.cs}" aria-current="${sc===single.cs?"page":"false"}">${single.ic}<span>${single.t}</span>${badge(single.n)}</button>`
-     :`<button data-dd="dd-centre" aria-current="${inCentreM?"page":"false"}">${SI.centre}<span>Le centre</span>${badge(cnM)}</button>`}
-   <button data-dd="dd-me" aria-current="${["settings","help","templates"].includes(sc)?"page":"false"}">${IC.user}<span>Moi</span></button>
-  </nav><div class="ddback" hidden></div>`;
-}
 function closeDD(){ $$(".dd").forEach(d=>d.hidden=true); $$("[aria-expanded]").forEach(b=>b.setAttribute("aria-expanded","false")); const bk=$(".ddback"); if(bk) bk.hidden=true; document.body.classList.remove("ddopen"); }
 function openDD(id){ const d=$("#"+id); if(!d) return; const was=!d.hidden; closeDD(); if(was) return;
-  d.hidden=false; const b=$("#"+id+"-b"); if(b) b.setAttribute("aria-expanded","true"); const bk=$(".ddback"); if(bk) bk.hidden=false; document.body.classList.add("ddopen");
+  d.hidden=false; $$(`[data-dd="${id}"]`).forEach(b=>b.setAttribute("aria-expanded","true")); const bk=$(".ddback"); if(bk) bk.hidden=false; document.body.classList.add("ddopen");
   const f=d.querySelector(".ddi"); if(f) f.focus({preventScroll:true}); }
 document.addEventListener("keydown",e=>{ if(e.key==="Escape"&&$(".dd:not([hidden])")) closeDD(); });
 // agrandir une image d'annonce, sur tous les écrans (patients, équipe, comptes en attente)
@@ -2189,11 +2152,12 @@ async function loadTeam(){
     const since=new Date(Date.now()-90*864e5).toISOString();
     const [t,m,g,tp,b]=await Promise.all([
       sb.from("team_threads").select("*").order("last_at",{ascending:false}),
-      sb.from("team_members").select("thread_id,user_id,last_read_at"),
+      Promise.resolve(sb.from("team_members").select("thread_id,user_id,last_read_at,pinned_at")).then(r=>r.error?sb.from("team_members").select("thread_id,user_id,last_read_at"):r),
       sb.from("team_messages").select("id,thread_id,author_id,body,request_id,file_mime,file_name,file_size,created_at").gte("created_at",since).order("created_at").limit(3000),
       sb.from("reply_templates").select("*").order("title"),
       sb.from("binder_items").select("id,category,title,body,phone,url,file_mime,file_name,file_size,updated_by,updated_at,created_at").order("title")]);
-    S.team2={threads:t.data||[],members:m.data||[],msgs:g.data||[]}; S.tpls=tp.data||[]; S.binder=b.data||[];
+    const older=(S.team2.msgs||[]).filter(x=>x.created_at<since&&(t.data||[]).some(th=>th.id===x.thread_id));
+    S.team2={threads:t.data||[],members:m.data||[],msgs:[...older,...(g.data||[])],older:S.team2.older||{}}; S.tpls=tp.data||[]; S.binder=b.data||[];
   }catch(e){ console.error(e); }
 }
 const staffName = id => { const t=(S.team||[]).find(x=>x.id===id); if(!t) return "Ancien membre"; return (t.provider_id?provName(t.provider_id):"")||`${t.first_name||""} ${t.last_name||""}`.trim()||ROLE_LABEL[t.role]; };
@@ -2224,15 +2188,21 @@ function tMsgsHTML(t){
   return ms.map(m=>{ let pre=""; if(!done&&n&&m.author_id!==S.me.id&&m.created_at>from&&m!==ms[0]){ done=true; pre=unreadLine(n); } return pre+tMsgHTML(m); }).join("");
 }
 function teamHTML2(){
-  const list=tSorted(), cur=S.team2.threads.find(t=>t.id===S.tthread)||null;
+  const F=S.tfilter||"all", all=tSorted(), list=all.filter(t=>tFilterOk(t,F)), cur=S.team2.threads.find(t=>t.id===S.tthread)||null;
+  const pins=list.filter(tPinned), rest=list.filter(t=>!tPinned(t));
+  const rowH=t=>{ const u=tUnread(t), last=tMsgs(t.id).slice(-1)[0]; return `<button type="button" class="trow ${t.id===S.tthread?"on":""} ${u?"unread":""}" data-thread="${t.id}">${tAvatar(t)}<span class="tx"><b>${tPinned(t)?`<i class="tpin" aria-label="Épinglée">${SI.pin}</i>`:""}${esc(tTitle(t))}${t.patient_related?`<i class="tpat" title="Concerne des patients : effacée après 90 jours">patients</i>`:""}</b><small>${esc(tPreview(last))}</small></span><span class="tside"><small>${last?fmt(last.created_at):""}</small>${u?`<span class="sn">${u}</span>`:""}</span></button>`; };
   const listHTML=`<div class="tlist"><button type="button" class="tnew" id="t-new">+ Nouvelle conversation</button>
-    ${list.length?list.map(t=>{ const u=tUnread(t), last=tMsgs(t.id).slice(-1)[0]; return `<button type="button" class="trow ${t.id===S.tthread?"on":""} ${u?"unread":""}" data-thread="${t.id}">${tAvatar(t)}<span class="tx"><b>${esc(tTitle(t))}</b><small>${esc(tPreview(last))}</small></span><span class="tside"><small>${last?fmt(last.created_at):""}</small>${u?`<span class="sn">${u}</span>`:""}</span></button>`; }).join(""):`<div class="empty">Aucune conversation.</div>`}</div>`;
+    <div class="tfil" role="group" aria-label="Afficher">${TFILTERS.map(([k,l])=>{ const n=k==="all"?0:all.filter(t=>tFilterOk(t,k)).length; return k!=="all"&&!n?"":`<button type="button" data-tf="${k}" aria-pressed="${F===k}">${l}${k==="unread"&&n?` <i>${n}</i>`:""}</button>`; }).join("")}</div>
+    ${pins.length?`<p class="tsec">${SI.pin} Épinglées</p>${pins.map(rowH).join("")}${rest.length?`<p class="tsec">Autres conversations</p>`:""}`:""}
+    ${list.length?rest.map(rowH).join(""):`<div class="empty">${F==="all"?"Aucune conversation.":"Aucune conversation dans ce filtre."}</div>`}</div>`;
   const thHTML=cur?`<div class="tthread"><div class="thd"><button type="button" class="back tback" id="t-back" aria-label="Retour aux conversations">${IC.back}</button>${tAvatar(cur)}<div class="thinfo"><b>${esc(tTitle(cur))}</b><small>${esc(tMembers(cur.id).map(m=>m.user_id===S.me.id?"vous":staffName(m.user_id)).join(", "))}</small></div>
+      <button type="button" class="tpinbtn" id="t-pin" aria-pressed="${tPinned(cur)}" title="${tPinned(cur)?"Désépingler":"Épingler en haut de la liste"}">${SI.pin}<span>${tPinned(cur)?"Épinglée":"Épingler"}</span></button>
       ${cur.kind==="group"?`<button type="button" class="linkbtn" id="t-addm">Ajouter</button><button type="button" class="linkbtn" id="t-leave">Quitter</button>`:""}</div>
-      <div class="tmsgs" id="tmsgs">${tMsgsHTML(cur)||`<p class="hint center">Écrivez le premier message.</p>`}</div>
+      <label class="tpatsw"><input type="checkbox" id="t-pat" ${cur.patient_related?"checked":""}> <span><b>Concerne des patients</b> ${cur.patient_related?"– messages effacés après 90 jours":"– sinon, les messages sont gardés (organisation du centre)"}</span></label>
+      <div class="tmsgs" id="tmsgs">${S.team2.older?.[cur.id]!=="fin"&&!cur.patient_related?`<button type="button" class="linkbtn tolder" id="t-older">Afficher les messages plus anciens</button>`:""}${tMsgsHTML(cur)||`<p class="hint center">Écrivez le premier message.</p>`}</div>
       ${S.tattach&&S.tattach.thread===cur.id?`<div class="tattach">${reqCardHTML(S.tattach.id)}<button type="button" class="linkbtn" id="t-unreq">Retirer</button></div>`:""}
       <div class="tcomp"><button type="button" class="cbtn" id="t-req" title="Joindre une demande de patient" aria-label="Joindre une demande de patient">📋</button>${composerHTML("t"+cur.id)}</div>
-      <p class="hint small">Messages effacés après 90 jours. Ne remplace pas le dossier médical.</p></div>`
+      <p class="hint small">${cur.patient_related?"Conversation sur des patients : messages effacés après 90 jours.":"Messages gardés. Un message qui joint une demande de patient est effacé après 90 jours."} Ne remplace pas le dossier médical.</p></div>`
     :`<div class="tthread empty-th"><p class="hint center">Choisissez une conversation, ou créez-en une nouvelle.</p></div>`;
   return `<div class="chead"><div><h1>Messages de l'équipe</h1><p>Conversations à deux ou en groupe. Jamais visibles par les patients.</p></div></div>
   <div class="tpane ${cur?"open":""}">${listHTML}${thHTML}</div>`;
@@ -2262,6 +2232,7 @@ function pickColleagues(title, exclude, done, withName, pre){
   const others=(S.team||[]).filter(t=>t.status==="active"&&t.id!==S.me.id&&!exclude.includes(t.id)).sort((a,b)=>staffName(a.id).localeCompare(staffName(b.id)));
   const v=document.createElement("div"); v.className="modal"; v.setAttribute("role","dialog"); v.setAttribute("aria-modal","true");
   v.innerHTML=`<div class="mbox"><h2>${esc(title)}</h2>${withName?`<label class="fld">Nom du groupe (obligatoire si plusieurs collègues)<input id="pc-name" maxlength="60" placeholder="Ex. Médecins, Secrétariat…"></label>`:""}
+    ${withName?`<label class="chk2 pcpat"><input type="checkbox" id="pc-pat"> <span><b>Concerne des patients</b><small>Les messages seront effacés après 90 jours. Sans cette case, ils sont gardés (organisation, fonctionnement, inventaire…).</small></span></label>`:""}
     <input id="pc-q" class="pcq" placeholder="Rechercher un collègue…" aria-label="Rechercher un collègue">
     <div class="pclist">${others.map(t=>`<label class="chk2 pcrow" data-n="${esc(staffName(t.id).toLowerCase())}"><input type="checkbox" value="${t.id}" ${(pre||[]).includes(t.id)?"checked":""}> ${esc(staffName(t.id))} <small>· ${ROLE_LABEL[t.role]}</small></label>`).join("")||`<p class="hint">Personne d'autre à ajouter.</p>`}</div>
     <div class="btnrow"><button class="btn" id="pc-ok">Valider</button><button class="btn ghost" id="pc-x">Annuler</button></div></div>`;
@@ -2271,7 +2242,7 @@ function pickColleagues(title, exclude, done, withName, pre){
   v.querySelector("#pc-ok").onclick=async()=>{ const ids=[...v.querySelectorAll(".pcrow input:checked")].map(i=>i.value), name=withName?v.querySelector("#pc-name").value.trim():"";
     if(!ids.length&&!pre) return toast("Choisissez au moins un collègue.");
     if(withName&&ids.length>1&&!name) return toast("Donnez un nom au groupe.");
-    if(await done(ids,name)) close(); };
+    if(await done(ids,name,!!v.querySelector("#pc-pat")?.checked)) close(); };
   v.querySelector("#pc-q").focus();
 }
 function pickRequest(done){
@@ -2286,9 +2257,14 @@ function pickRequest(done){
 }
 function bindTeam2(){
   $$("[data-thread]").forEach(b=>b.onclick=()=>{ S.tthread=+b.dataset.thread; const me=tMembers(S.tthread).find(m=>m.user_id===S.me.id); UNREAD["t"+S.tthread]=me?me.last_read_at:"9999"; delete UNREAD["s:tmsgs:"+S.tthread]; if(me) me.last_read_at=new Date().toISOString(); render(); sb.rpc("team_read",{p_thread:S.tthread}).then(()=>{}); });
-  $("#t-new").onclick=()=>pickColleagues("Nouvelle conversation",[],async(ids,name)=>{ const {data,error}=await sb.rpc("team_start",{p_members:ids,p_title:name||null}); if(error){ toast(frError(error)); return false; } await loadTeam(); S.tthread=data; render(); return true; },true);
+  $("#t-new").onclick=()=>pickColleagues("Nouvelle conversation",[],async(ids,name,pat)=>{ const {data,error}=await sb.rpc("team_start",{p_members:ids,p_title:name||null}); if(error){ toast(frError(error)); return false; }
+    if(pat) await sb.rpc("team_set_patient",{p_thread:data,p_on:true}); await loadTeam(); S.tthread=data; render(); return true; },true);
   const back=$("#t-back"); if(back) back.onclick=()=>{ S.tthread=null; render(); };
+  $$("[data-tf]").forEach(b=>b.onclick=()=>{ S.tfilter=S.tfilter===b.dataset.tf?"all":b.dataset.tf; render(); });
   const t=S.team2.threads.find(x=>x.id===S.tthread); if(!t) return;
+  $("#t-pin").onclick=async()=>{ const on=!tPinned(t); if(await run(()=>sb.rpc("team_pin",{p_thread:t.id,p_pin:on}),on?"Conversation épinglée":"Conversation désépinglée")){ const me=tMembers(t.id).find(m=>m.user_id===S.me.id); if(me) me.pinned_at=on?new Date().toISOString():null; render(); } };
+  $("#t-pat").onchange=async e=>{ const on=e.target.checked; if(await run(()=>sb.rpc("team_set_patient",{p_thread:t.id,p_on:on}),on?"Conversation marquée « patients » : effacée après 90 jours":"Conversation d'organisation : messages gardés")){ t.patient_related=on; render(); } else e.target.checked=!on; };
+  const ol=$("#t-older"); if(ol) ol.onclick=()=>{ ol.disabled=true; ol.textContent="Chargement…"; loadOlder(t); };
   hydrateTeam(); requestAnimationFrame(tScroll);
   const add=$("#t-addm"); if(add) add.onclick=()=>pickColleagues("Ajouter au groupe",tMembers(t.id).map(m=>m.user_id),async ids=>{ if(await run(()=>sb.rpc("team_add",{p_thread:t.id,p_members:ids}),"Ajouté au groupe")){ await loadTeam(); render(); return true; } return false; });
   const lv=$("#t-leave"); if(lv) lv.onclick=async()=>{ if(!confirmInline(lv,"Quitter ce groupe ?")) return; if(await run(()=>sb.rpc("team_leave",{p_thread:t.id}),"Vous avez quitté le groupe")){ S.tthread=null; await loadTeam(); render(); } };
@@ -2414,18 +2390,24 @@ function staffHelpHTML(){
    ["Écrire à un collègue","Onglet « Messages » : conversations à deux ou en groupe, et « Tout le centre ». Le bouton 📋 joint une demande de patient : votre collègue l'ouvre en un clic s'il y a accès. Les messages sont effacés après 90 jours."],
    ["Réponses types","Dans une demande, le bouton 💬 à côté de la zone de message insère un texte prêt (le prénom du patient est ajouté). Créez les vôtres dans Moi → Mes réponses types."],
    ["Le classeur du centre","Le centre → Classeur : numéros utiles, procédures et documents. Toute l'équipe peut ajouter et modifier les fiches."],
-   ["Le menu « Le centre »","Il regroupe ce qui concerne tout le centre : Actualités, Équipe, Classeur, Inventaire, Congés, Comptes à valider (selon votre rôle). Le chiffre rouge indique ce qui attend."],
+   ["Le menu","Sur ordinateur, le menu est à gauche, rangé en 4 rubriques : Patients (demandes, écrire, fiches, listes d'attente), Équipe (messages, tâches, congés), Secrétariat (accueil, horaires, caisse) et Le centre (actualités, classeur, inventaire). Sur téléphone : la barre du bas, et « Plus » pour tout le reste. Le chiffre rouge indique ce qui attend."],
+   ["Rechercher","La loupe (ou Ctrl K sur ordinateur) cherche partout : patients, demandes et leurs messages, messages de l'équipe, tâches, fiches, listes d'attente, inventaire, classeur, actualités, réponses types, caisse. Touchez un résultat pour l'ouvrir."],
+   ["Épingler et classer les conversations","Messages : touchez « Épingler » en haut d'une conversation pour la garder tout en haut de votre liste (vos épingles ne changent rien pour les collègues). Les filtres Non lues · Groupes · À deux · Patients trient la liste."],
+   ["Ce qui est gardé, ce qui est effacé","Gardé : messages de l'équipe sur l'organisation, inventaire, congés, tâches sans patient, classeur, horaires (5 ans), caisse (10 ans). Effacé : conversations avec les patients (15 jours après la clôture), conversations d'équipe marquées « Concerne des patients » et messages qui joignent une demande (90 jours), tâches liées à un patient (90 jours après)."],
+   ["Agenda Rosa","« Agenda Rosa » ouvre votre agenda Rosa dans l'app (téléphone) ou dans une fenêtre à côté (ordinateur). Connexion avec votre propre compte Rosa."],
+   ["Horaires de l'accueil","Secrétariat → Horaires : chaque accueillante touche une case pour encoder son arrivée, son départ et sa pause (ou un congé, une maladie…). Les heures de la semaine se calculent toutes seules. L'administration valide la semaine. Onglet « Mois » : le total par personne et le fichier Excel pour le secrétariat social."],
+   ["Caisse","Secrétariat → Caisse : encodez chaque paiement en espèces (montant, prestataire, prestation). Jamais de nom de patient. Une erreur ne s'efface pas : « Annuler » avec un motif. Le 1er du mois, le résumé du mois précédent part par e-mail à l'administration, avec le fichier Excel."],
    ["Trouver et trier les demandes","Onglet Demandes : « Les miennes / Secrétariat / Tout le centre » choisit les demandes affichées ; la recherche trouve un patient par son nom ; les pastilles colorées filtrent par type. Les demandes sont rangées par ce qu'il faut faire : urgent ou en retard, le patient a répondu, nouvelles. « En attente du patient » (vous avez répondu) est replié en bas. Les renouvellements simples peuvent être accordés à la suite dans « Prescriptions en série », après les avoir faits dans CareConnect."],
-   ["Un patient sans compte dans l'app","Le centre → Fiches patients : créez une fiche (nom, prénom, date de naissance, téléphone, e-mail). Vous pouvez ensuite lui lier une tâche, en parler à un collègue (« En parler ») ou l'inviter par e-mail à créer son compte. Jamais de note médicale dans une fiche. Quand le patient s'inscrit, l'administrateur relie son compte à la fiche dans Comptes à valider."],
+   ["Un patient sans compte dans l'app","Patients → Fiches patients : créez une fiche (nom, prénom, date de naissance, téléphone, e-mail). Vous pouvez ensuite lui lier une tâche, en parler à un collègue (« En parler ») ou l'inviter par e-mail à créer son compte. Jamais de note médicale dans une fiche. Quand le patient s'inscrit, l'administrateur relie son compte à la fiche dans Comptes à valider."],
    ["Photos de l'accueil des patients","Administrateur : Le centre → Actualités → « Photos de l'accueil des patients ». Ajoutez jusqu'à 8 photos du centre (en paysage, jamais de patient reconnaissable), une légende si vous voulez, et l'ordre avec ↑ ↓. Elles défilent en haut de l'accueil des patients."],
-   ["La liste de l'accueil","Le centre → Accueil : la liste commune du secrétariat (appels à passer, choses à ne pas oublier). Écrivez la tâche, choisissez le jour et, si besoin, l'heure (« vers 14h30 ») : à cette heure-là, le secrétariat reçoit une notification. Toute l'équipe peut y ajouter quelque chose ; le secrétariat coche quand c'est fait."],
-   ["Les listes d'attente","Le centre → Listes d'attente : un patient à rappeler en cas de désistement, pour un prestataire. Ajoutez-le (patient de l'app, fiche ou simplement nom + téléphone), avec un motif court et ses disponibilités. Quand une place se libère : « Pas de réponse » note l'appel, « RDV fixé » le retire de la liste. Jamais de détail médical."],
+   ["La liste de l'accueil","Secrétariat → Accueil : la liste commune du secrétariat (appels à passer, choses à ne pas oublier). Écrivez la tâche, choisissez le jour et, si besoin, l'heure (« vers 14h30 ») : à cette heure-là, le secrétariat reçoit une notification. Toute l'équipe peut y ajouter quelque chose ; le secrétariat coche quand c'est fait."],
+   ["Les listes d'attente","Patients → Listes d'attente : un patient à rappeler en cas de désistement, pour un prestataire. Ajoutez-le (patient de l'app, fiche ou simplement nom + téléphone), avec un motif court et ses disponibilités. Quand une place se libère : « Pas de réponse » note l'appel, « RDV fixé » le retire de la liste. Jamais de détail médical."],
    ["Rassurer le patient : « Vu »","Dans une demande, le bouton « ✓ Vu · prévenir le patient » lui affiche « Votre demande a été vue… Elle est en cours de traitement » et lui envoie une notification (sans e-mail). Au transfert, la case « Prévenir le patient » (cochée) lui indique à qui sa demande a été transmise."],
    ["Transférer avec un mot","Dans une demande, choisissez le collègue dans « Transférer à », écrivez un mot dans le champ en dessous, puis Transférer. Le collègue voit le mot en haut de la demande ; le patient ne le voit jamais."],
    ["Ne pas être dérangé(e)","Touchez la cloche en haut de l'écran (à côté de « Écrire à un patient »). « Pause des notifications » : 1 heure, jusqu'à demain 8 h ou jusqu'à ce que vous la retiriez ; les demandes arrivent toujours dans l'app et vous recevez un résumé à la fin de la pause. « Je suis absent(e) » : vos alertes vont au collègue choisi et les patients reçoivent un message automatique. Cloche barrée orange = en pause ; rouge = absent(e)."],
-   ["Rappel avant l'échéance d'une tâche","Le centre → Tâches : mettez une échéance, cochez « Recevoir un rappel par e-mail » et choisissez quand (le jour même, la veille, 48 h, 72 h ou 1 semaine avant). L'e-mail part à 8 h vers la personne qui doit faire la tâche. Vous pouvez changer le rappel d'une tâche existante avec la petite cloche 🔔. Les tâches sont classées de la plus urgente à la moins urgente."],
+   ["Rappel avant l'échéance d'une tâche","Équipe → Tâches : mettez une échéance, cochez « Recevoir un rappel par e-mail » et choisissez quand (le jour même, la veille, 48 h, 72 h ou 1 semaine avant). L'e-mail part à 8 h vers la personne qui doit faire la tâche. Vous pouvez changer le rappel d'une tâche existante avec la petite cloche 🔔. Les tâches sont classées de la plus urgente à la moins urgente."],
    ["Ordinateur de confiance (accueil)","Au moment du code de sécurité, cochez « Faire confiance à cet ordinateur » : pendant 90 jours, l'e-mail et le mot de passe suffisent sur cet ordinateur, avec déconnexion après 2 heures d'inactivité. Uniquement sur un ordinateur du centre. Pour le retirer : Mon profil et notifications → Ordinateurs de confiance."],
-   ["Valider les comptes des patients","Seul un administrateur valide les nouveaux comptes et les enfants ajoutés par un parent (Le centre → Comptes à valider). Un administrateur peut donner ces droits à n'importe quel membre de l'équipe (secrétariat compris) : Le centre → Équipe → case « Administrateur ». La personne garde son rôle."],
+   ["Valider les comptes des patients","Seul un administrateur valide les nouveaux comptes et les enfants ajoutés par un parent (Patients → Comptes à valider). Un administrateur peut donner ces droits à n'importe quel membre de l'équipe (secrétariat compris) : Équipe → Comptes de l'équipe → case « Administrateur ». La personne garde son rôle."],
    ["Face ID sur l'iPhone","Dans l'app iPhone : Mon profil et notifications → Face ID. Ensuite l'app se déverrouille avec votre visage, sans code."],
    ["Un problème avec l'app","Prévenez l'administrateur du centre en précisant l'écran concerné (une capture d'écran aide beaucoup)."]];
   return `<div class="chead"><div><h1>Aide</h1><p>Les réponses aux questions les plus fréquentes de l'équipe.</p></div></div>
@@ -2436,18 +2418,15 @@ function renderStaff(a){
   const sc=S.cscreen;
   const nav=staffNavHTML(sc);
   let body="";
-  if(sc==="compose") body=composeHTML(); else if(sc==="inventory") body=inventoryHTML(); else if(sc==="tasks") body=tasksHTML(); else if(sc==="accounts") body=accountsHTML(); else if(sc==="news") body=newsAdminHTML(); else if(sc==="team") body=teamHTML(); else if(sc==="settings") body=settingsHTML(); else if(sc==="help") body=staffHelpHTML(); else if(sc==="leaves") body=leavesHTML(); else if(sc==="patients") body=patientsHTML(); else if(sc==="messages") body=teamHTML2(); else if(sc==="templates") body=templatesHTML(); else if(sc==="binder") body=binderHTML(); else if(sc==="desk") body=deskHTML(); else if(sc==="waitlist") body=waitlistHTML(); else body=inboxHTML();
-  document.body.classList.add("hasbar"); document.body.classList.remove("ddopen");
+  if(sc==="compose") body=composeHTML(); else if(sc==="inventory") body=inventoryHTML(); else if(sc==="tasks") body=tasksHTML(); else if(sc==="accounts") body=accountsHTML(); else if(sc==="news") body=newsAdminHTML(); else if(sc==="team") body=teamHTML(); else if(sc==="settings") body=settingsHTML(); else if(sc==="help") body=staffHelpHTML(); else if(sc==="leaves") body=leavesHTML(); else if(sc==="patients") body=patientsHTML(); else if(sc==="messages") body=teamHTML2(); else if(sc==="templates") body=templatesHTML(); else if(sc==="binder") body=binderHTML(); else if(sc==="desk") body=deskHTML(); else if(sc==="waitlist") body=waitlistHTML(); else if(sc==="hours"&&canOffice()) body=hoursHTML(); else if(sc==="cash"&&canOffice()) body=cashHTML(); else body=inboxHTML();
+  document.body.classList.add("hasbar","sidenav"); document.body.classList.remove("ddopen");
   a.innerHTML=nav+body;
   $("#logout").onclick=()=>{ closeDD(); logout(); };
-  const c=$("#dd-centre-b"); if(c) c.onclick=e=>{ e.stopPropagation(); openDD("dd-centre"); };
-  $("#dd-me-b").onclick=e=>{ e.stopPropagation(); openDD("dd-me"); };
-  const ab=$("#avail-b"); if(ab) ab.onclick=e=>{ e.stopPropagation(); closeDD(); openAvail(); };
+  $$("[data-avail]").forEach(ab=>ab.onclick=e=>{ e.stopPropagation(); closeDD(); openAvail(); });
   $$("[data-dd]").forEach(b=>b.onclick=e=>{ e.stopPropagation(); openDD(b.dataset.dd); });
   const bk=$(".ddback"); if(bk) bk.onclick=closeDD;
-  $$(".ddrosa").forEach(l=>l.addEventListener("click",()=>closeDD()));
   $$("[data-cs]").forEach(b=>b.onclick=()=>{ closeDD(); if(CREC&&b.dataset.cs!=="compose") composeRecStop(false); S.cscreen=b.dataset.cs; render(); window.scrollTo(0,0); });
-  if(sc==="compose") bindCompose(); else if(sc==="inventory") bindInventory(); else if(sc==="tasks") bindTasks(); else if(sc==="accounts") bindAccounts(); else if(sc==="news") bindNewsAdmin(); else if(sc==="team") bindTeam(); else if(sc==="settings") bindSettings(); else if(sc==="help"||sc==="leaves") {} else if(sc==="patients") bindPatients(); else if(sc==="messages") bindTeam2(); else if(sc==="templates") bindTemplates(); else if(sc==="binder") bindBinder(); else if(sc==="desk") bindDesk(); else if(sc==="waitlist"){ if(S.waitlist) bindWaitlist(); } else bindInbox();
+  if(sc==="compose") bindCompose(); else if(sc==="inventory") bindInventory(); else if(sc==="tasks") bindTasks(); else if(sc==="accounts") bindAccounts(); else if(sc==="news") bindNewsAdmin(); else if(sc==="team") bindTeam(); else if(sc==="settings") bindSettings(); else if(sc==="help"||sc==="leaves") {} else if(sc==="patients") bindPatients(); else if(sc==="messages") bindTeam2(); else if(sc==="templates") bindTemplates(); else if(sc==="binder") bindBinder(); else if(sc==="desk") bindDesk(); else if(sc==="waitlist"){ if(S.waitlist) bindWaitlist(); } else if(sc==="hours"&&canOffice()) bindHours(); else if(sc==="cash"&&canOffice()) bindCash(); else bindInbox();
 }
 
 /* ----- durée estimée des rendez-vous de médecine générale (visible par l'équipe seulement) ----- */
@@ -2767,8 +2746,8 @@ function inventoryHTML(){
      ${phs(it.id).length?`<div class="invphotos">${phs(it.id).map(p=>`<button type="button" class="invph" data-invph="${p.id}" aria-label="Agrandir la photo"><img alt=""></button>`).join("")}</div>`:""}
      <small class="invmeta">Demandé par ${esc(teamName(it.created_by))} · ${fmt(it.created_at)}${it.status!=="a_commander"&&it.status_at?` · ${INV_ST[it.status]} ${fmt(it.status_at)}${it.status_by?` (${esc(teamName(it.status_by))})`:""}`:""}</small>
      <div class="btnrow">${it.status==="a_commander"?`<button class="btn" data-invst="commande" data-id="${it.id}">Marquer commandé</button>`:""}${it.status==="commande"?`<button class="btn" data-invst="recu" data-id="${it.id}">Marquer reçu</button>`:""}${it.status!=="a_commander"?`<button class="btn ghost" data-invst="a_commander" data-id="${it.id}">Remettre à commander</button>`:""}${it.created_by===S.me.id||isDesk()||isGestion()?`<button class="linkbtn" data-invdel="${it.id}">Supprimer</button>`:""}</div>
-    </div>`).join(""):`<div class="empty">${I.tab==="a_commander"?"Rien à commander pour l'instant.":I.tab==="commande"?"Aucune commande en cours.":"Rien de reçu ces 30 derniers jours."}</div>`}</div>
-   <p class="hint">Les éléments reçus disparaissent de la liste après 30 jours.</p>
+    </div>`).join(""):`<div class="empty">${I.tab==="a_commander"?"Rien à commander pour l'instant.":I.tab==="commande"?"Aucune commande en cours.":"Rien de reçu pour l'instant."}</div>`}</div>
+   <p class="hint">Les éléments reçus restent dans l'onglet « Reçu » (historique du centre).</p>
   </div>`;
 }
 function bindInventory(){
@@ -2921,7 +2900,7 @@ function tasksHTML(){
    <div class="seg" role="group" aria-label="Afficher" style="margin-bottom:10px"><button data-tv="todo" aria-pressed="${V==="todo"}">À faire (${todo.length})</button><button data-tv="given" aria-pressed="${V==="given"}">Confiées (${given.length})</button><button data-tv="done" aria-pressed="${V==="done"}">Terminées</button></div>
    <div class="ichips tkinds" role="group" aria-label="Type de tâche"><button class="ichip all" data-tk="all" aria-pressed="${K==="all"}">Toutes <i>${listAll.length}</i></button><button class="ichip t-question" data-tk="pat" aria-pressed="${K==="pat"}">👤 Patients <i>${nP}</i></button><button class="ichip t-rapport" data-tk="org" aria-pressed="${K==="org"}">🏥 Organisation <i>${nO}</i></button></div>
    <div class="list tasks">${list.length?taskListHTML(list,V!=="done")
-     :`<div class="empty">${V==="todo"?`<span class="yay" aria-hidden="true">✨</span>Rien à faire pour l'instant.`:V==="given"?"Aucune tâche confiée en cours.":"Aucune tâche terminée (elles sont effacées après 90 jours)."}</div>`}</div>
+     :`<div class="empty">${V==="todo"?`<span class="yay" aria-hidden="true">✨</span>Rien à faire pour l'instant.`:V==="given"?"Aucune tâche confiée en cours.":"Aucune tâche terminée. Celles qui concernent un patient sont effacées 90 jours après."}</div>`}</div>
   </section></div>`;
 }
 function bindTasks(){
@@ -3323,6 +3302,489 @@ function bindSettings(){
 
 /* ---------- temps réel : les nouveaux messages arrivent instantanément ---------- */
 let RT=null, rtTimer=null; const RTQ=new Set();
+/* =====================================================================
+   ORGANISATION (version 20261027a)
+   Navigation par rubriques · Recherche · Agenda Rosa dans l'app ·
+   Dessins de profil · Horaires des accueillantes · Caisse
+   ===================================================================== */
+const canOffice = () => !!S.me && (isDesk()||isGestion()||isAdmin());
+const canManageOffice = () => !!S.me && (isGestion()||isAdmin());
+SI.search='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>';
+SI.clock='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
+SI.euro='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.6"/><path d="M6 12h.01M18 12h.01"/></svg>';
+SI.more='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>';
+SI.pin='<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17v5"/><path d="M9 3h6l-1 6 4 3v2H6v-2l4-3z"/></svg>';
+
+/* ---------- navigation par rubriques ---------- */
+function navGroups(){
+  const nIn=S.reqs.filter(awaitingStaff).length;
+  const G=[
+   {h:"Patients",it:[
+     {cs:"inbox",ic:SI.inbox,t:"Demandes",n:nIn},
+     {cs:"compose",ic:SI.pen,t:"Écrire à un patient"},
+     {cs:"patients",ic:IC.user,t:"Fiches patients"},
+     {cs:"waitlist",ic:SI.hourglass,t:"Listes d'attente"},
+     ...(isAdmin()?[{cs:"accounts",ic:SI.ucheck,t:"Comptes à valider",n:S.pending.length+(S.pendingKids||[]).length}]:[])]},
+   {h:"Équipe",it:[
+     {cs:"messages",ic:SI.chat,t:"Messages",n:teamUnread()},
+     {cs:"tasks",ic:SI.tasks,t:"Tâches",n:myTasks().length},
+     {cs:"leaves",ic:SI.cal,t:"Congés"},
+     ...(isAdmin()||isGestion()?[{cs:"team",ic:SI.team,t:"Comptes de l'équipe"}]:[])]},
+   {h:"Secrétariat",it:[
+     {cs:"desk",ic:SI.phone,t:"Accueil",n:isDesk()?deskTodayCount():0},
+     ...(canOffice()?[{cs:"hours",ic:SI.clock,t:"Horaires"},{cs:"cash",ic:SI.euro,t:"Caisse"}]:[])]},
+   {h:"Le centre",it:[
+     ...(canPub()?[{cs:"news",ic:SI.news||IC.news,t:"Actualités"}]:[]),
+     {cs:"binder",ic:SI.book,t:"Classeur"},
+     {cs:"inventory",ic:SI.box,t:"Inventaire",n:invOpen()}]}];
+  return G;
+}
+const ME_SCREENS=["settings","help","templates"];
+function staffNavHTML(sc){
+  const G=navGroups();
+  const av=AV.get(S.me.id)?avatarHTML(AV.get(S.me.id),"",36):`<span class="avl">${esc((S.me.first_name||"?").slice(0,1).toUpperCase())}</span>`;
+  const who=`${esc([S.me.first_name,S.me.last_name].filter(Boolean).join(" ")||"")}`;
+  const item=x=>`<button class="sitem" data-cs="${x.cs}" aria-current="${sc===x.cs?"page":"false"}">${x.ic}<span>${x.t}</span>${badge(x.n)}</button>`;
+  const ddItem=x=>`<button role="menuitem" class="ddi" data-cs="${x.cs}" aria-current="${sc===x.cs?"page":"false"}">${x.ic}<span>${x.t}</span>${badge(x.n)}</button>`;
+  const rosaBtn=cls=>`<button type="button" class="${cls}" data-rosa>${SI.cal}<span>Agenda Rosa</span>${SI.ext}</button>`;
+  const meMenu=`<div class="dd ddme" id="dd-me" hidden role="menu" aria-label="Mon compte"><p class="ddwho"><b>${who}</b>${ROLE_LABEL[S.me.role]}${S.me.provider_id?` · ${esc(provName(S.me.provider_id))}`:""}</p>
+     <button role="menuitem" class="ddi" data-cs="settings">${IC.bell}<span>Mon profil et notifications</span></button>
+     <button role="menuitem" class="ddi" data-cs="templates">${SI.tpl}<span>Mes réponses types</span></button>
+     <button role="menuitem" class="ddi" data-cs="help">${IC.help}<span>Aide</span></button>
+     <hr><button role="menuitem" class="ddi" id="logout">${SI.out}<span>Se déconnecter</span></button></div>`;
+  // « Plus » sur téléphone : tout, rangé par rubriques
+  const more=`<div class="dd ddmore" id="dd-more" hidden role="menu" aria-label="Toutes les rubriques">${G.map(g=>`<p class="ddsec">${g.h}</p>${g.it.filter(x=>!["inbox","messages","compose"].includes(x.cs)).map(ddItem).join("")}`).join("")}
+     <hr>${rosaBtn("ddi ddrosa")}</div>`;
+  const inMore=G.some(g=>g.it.some(x=>x.cs===sc&&!["inbox","messages","compose","tasks"].includes(x.cs)));
+  const nMore=G.reduce((t,g)=>t+g.it.filter(x=>!["inbox","messages","compose","tasks"].includes(x.cs)).reduce((u,x)=>u+(x.n||0),0),0);
+  return `<aside class="sside" aria-label="Navigation de l'équipe">
+    <div class="sshead">${BRAND}</div>
+    <button type="button" class="ssearch" data-search>${SI.search}<span>Rechercher</span><kbd>${/Mac/.test(navigator.platform)?"⌘":"Ctrl"} K</kbd></button>
+    <nav class="sgroups">${G.map(g=>`<p class="sgh">${g.h}</p>${g.it.map(item).join("")}`).join("")}</nav>
+    <div class="sfoot">${rosaBtn("sitem srosa2")}${availBtnHTML()}
+     <button type="button" class="sme" data-dd="dd-me" aria-current="${ME_SCREENS.includes(sc)?"page":"false"}" aria-haspopup="true">${av}<span><b>${who}</b><small>${ROLE_LABEL[S.me.role]}</small></span></button></div>
+   </aside>
+   <header class="top stop">${BRAND}<div class="sact">
+     <button type="button" class="iconbtn" data-search aria-label="Rechercher">${SI.search}</button>
+     ${availBtnHTML()}
+     <button class="savbtn" data-dd="dd-me" aria-label="Mon compte : ${who}" aria-current="${ME_SCREENS.includes(sc)?"page":"false"}">${av}</button></div>
+   </header>
+   ${meMenu}${more}
+   <nav class="sbar" aria-label="Navigation de l'équipe">
+    <button data-cs="inbox" aria-current="${sc==="inbox"?"page":"false"}">${SI.inbox}<span>Demandes</span>${badge(S.reqs.filter(awaitingStaff).length)}</button>
+    <button data-cs="messages" aria-current="${sc==="messages"?"page":"false"}">${SI.chat}<span>Messages</span>${badge(teamUnread())}</button>
+    <button class="sfab" data-cs="compose" aria-current="${sc==="compose"?"page":"false"}"><i>${SI.pen}</i><span>Écrire</span></button>
+    <button data-cs="tasks" aria-current="${sc==="tasks"?"page":"false"}">${SI.tasks}<span>Tâches</span>${badge(myTasks().length)}</button>
+    <button data-dd="dd-more" aria-current="${inMore?"page":"false"}">${SI.more}<span>Plus</span>${badge(nMore)}</button>
+   </nav><div class="ddback" hidden></div>`;
+}
+
+/* ---------- Agenda Rosa : dans l'app (fenêtre intégrée) ou à côté (ordinateur) ---------- */
+let rosaWin=null;
+async function openRosa(){
+  closeDD();
+  if(IS_NATIVE){
+    const br=capPlugin("Browser",["open"]);
+    if(br){ try{ await br.open({url:ROSA_PRO_URL,presentationStyle:"popover",toolbarColor:"#702629"}); return; }catch(e){ /* module absent : on continue */ } }
+  }
+  if(!ON_PHONE&&!IS_NATIVE){
+    // une fenêtre posée à droite de l'écran, réutilisée à chaque clic (pas un nouvel onglet)
+    const w=Math.min(1100,Math.round(screen.availWidth*0.55)), h=screen.availHeight-40, l=screen.availWidth-w;
+    if(rosaWin&&!rosaWin.closed){ rosaWin.focus(); return; }
+    rosaWin=window.open(ROSA_PRO_URL,"cmpl-rosa",`popup=yes,width=${w},height=${h},left=${l},top=0`);
+    if(rosaWin) return;
+  }
+  window.open(ROSA_PRO_URL,"cmpl-rosa","noopener");
+}
+
+/* ---------- recherche ---------- */
+const SRCH={q:"",n:0};
+function snip(text,q){ const t=String(text||"").replace(/\s+/g," "), n=norm(t), i=n.indexOf(norm(q));
+  if(i<0) return esc(t.slice(0,90)); const a=Math.max(0,i-35), part=(a?"…":"")+t.slice(a,a+110)+(a+110<t.length?"…":""); return hlite(part,q); }
+function matchAll(text,words){ const n=norm(String(text||"")); return words.every(w=>n.includes(w)); }
+function staffSearch(q){
+  const words=norm(q).split(/\s+/).filter(Boolean), out=[]; if(!words.length) return out;
+  const add=(g,ic,title,sub,go)=>out.push({g,ic,title,sub,go});
+  for(const r of S.reqs){ const ms=msgsOf(r), base=`${reqName(r)} ${TYPES[r.type]?.label||""} ${Object.values(r.answers||{}).filter(v=>typeof v==="string").join(" ")}`;
+    const hit=matchAll(base,words)?null:ms.find(m=>matchAll(m.body,words)); if(!matchAll(base,words)&&!hit) continue;
+    add("Demandes",IEMO[r.type]||"📋",`${reqName(r)} · ${TYPES[r.type]?.label||""}`,hit?snip(hit.body,words[0]):esc(summaryLine(r.answers||{})).slice(0,120)+` · ${fmt(r.created_at)}`,
+      ()=>{ S.sel=r.id; S.scope="all"; S.iq=""; S.itype="all"; S.archive=r.status==="traite"; S.cscreen="inbox"; }); }
+  for(const t of S.team2.threads||[]){ const title=tTitle(t);
+    if(matchAll(title,words)) add("Messages de l'équipe","💬",title,"Conversation",()=>{ S.cscreen="messages"; S.tthread=t.id; });
+    for(const m of tMsgs(t.id)) if(matchAll(m.body,words)) add("Messages de l'équipe","💬",title,`${esc(staffName(m.author_id))} : ${snip(m.body,words[0])} · ${fmt(m.created_at)}`,()=>{ S.cscreen="messages"; S.tthread=t.id; }); }
+  for(const t of S.tasks||[]) if(matchAll(`${t.title} ${t.notes||""} ${taskForLabel?taskForLabel(t):""}`,words))
+    add("Tâches",t.done_at?"✅":"☑️",esc(t.title),t.notes?snip(t.notes,words[0]):(t.done_at?"Terminée":"À faire"),()=>{ S.cscreen="tasks"; S.tview=t.done_at?"done":"todo"; S.tkind="all"; });
+  for(const r of S.records||[]) if(matchAll(`${r.first_name} ${r.last_name} ${r.phone||""} ${r.email||""}`,words))
+    add("Fiches patients","👤",esc(`${r.first_name} ${r.last_name}`),`Né(e) le ${fmtDate(r.birth_date)} · Tél. ${esc(r.phone||"—")}`,()=>{ S.cscreen="patients"; S.recQ=q; });
+  for(const w of S.waitlist||[]) if(matchAll(`${wlWho(w)} ${w.reason||""} ${w.phone||""} ${provName(w.provider_id)}`,words))
+    add("Listes d'attente","⏳",esc(wlWho(w)),`${esc(provName(w.provider_id))}${w.reason?" · "+esc(w.reason):""}`,()=>{ S.cscreen="waitlist"; });
+  for(const i of S.inventory||[]) if(matchAll(`${i.title} ${i.quantity||""} ${i.notes||""}`,words))
+    add("Inventaire","📦",esc(i.title),`${INV_ST[i.status]} · ${fmt(i.created_at)}`,()=>{ S.cscreen="inventory"; (S.inv||(S.inv=newInv())).tab=i.status; });
+  for(const b of S.binder||[]) if(matchAll(`${b.title} ${b.body||""} ${b.phone||""} ${b.url||""}`,words))
+    add("Classeur",(BCAT[b.category]||["","📄"])[1],esc(b.title),b.phone?esc(b.phone):snip(b.body||"",words[0]),()=>{ S.cscreen="binder"; S.bq=q; S.bfilter="tout"; });
+  for(const n of S.allNews||[]) if(matchAll(`${n.title} ${n.body||""} ${n.category||""}`,words))
+    add("Actualités","📰",esc(n.title),`${esc(n.category||"")} · ${fmt(n.published_at)}`,()=>{ S.cscreen="news"; });
+  for(const t of S.tpls||[]) if(matchAll(`${t.title} ${t.body}`,words))
+    add("Réponses types","✍️",esc(t.title),snip(t.body,words[0]),()=>{ S.cscreen="templates"; });
+  for(const t of S.team||[]) if(t.status==="active"&&matchAll(staffName(t.id)+" "+(t.first_name||"")+" "+(t.last_name||""),words))
+    add("Équipe","🧑‍⚕️",esc(staffName(t.id)),ROLE_LABEL[t.role],()=>{ S.cscreen="messages"; S.tthread=null; });
+  for(const c of S.cash||[]) if(matchAll(`${eur(c.amount)} ${cashKind(c.kind)} ${c.note||""} ${provName(c.provider_id)}`,words))
+    add("Caisse","💶",`${eur(c.amount)} · ${cashKind(c.kind)}`,`${fmtDate(c.paid_on+"T12:00")}${c.note?" · "+esc(c.note):""}`,()=>{ S.cscreen="cash"; S.cashMonth=c.paid_on.slice(0,7); });
+  return out;
+}
+function patientSearch(q){
+  const words=norm(q).split(/\s+/).filter(Boolean), out=[]; if(!words.length) return out;
+  const add=(g,ic,title,sub,go)=>out.push({g,ic,title,sub,go});
+  for(const r of S.reqs){ if(r.purged_at) continue; const ms=msgsOf(r), base=`${reqWho(r)} ${TYPES[r.type]?.label||""} ${Object.values(r.answers||{}).filter(v=>typeof v==="string").join(" ")}`;
+    const hit=matchAll(base,words)?null:ms.find(m=>matchAll(m.body,words)); if(!matchAll(base,words)&&!hit) continue;
+    add("Mes demandes",IEMO[r.type]||"📋",`${esc(reqWho(r))} · ${TYPES[r.type]?.label||""}`,hit?snip(hit.body,words[0]):`${esc(summaryLine(r.answers||{}))} · ${fmt(r.created_at)}`,()=>{ openRequest(r.id); return true; }); }
+  for(const n of S.news||[]) if(matchAll(`${n.title} ${n.body||""} ${n.category||""}`,words))
+    add("Actualités","📰",esc(n.title),esc(n.category||""),()=>{ S.screen="news"; S.openNews=n.id; });
+  for(const [qq,a] of FAQ) if(matchAll(`${qq} ${a}`,words)) add("Aide","❓",esc(qq),snip(a,words[0]),()=>{ S.screen="help"; });
+  for(const p of S.providers||[]) if(matchAll(`${p.display_name} ${p.specialty} ${p.job||""}`,words))
+    add("Prestataires du centre","🩺",esc(p.display_name),esc(p.job||p.specialty),()=>{ S.screen="absences"; });
+  return out;
+}
+function openSearch(){
+  closeDD(); if($(".srch")) return;
+  const staff=S.me&&S.me.role!=="patient";
+  const v=document.createElement("div"); v.className="modal srch"; v.setAttribute("role","dialog"); v.setAttribute("aria-modal","true"); v.setAttribute("aria-label","Rechercher");
+  v.innerHTML=`<div class="mbox srchbox"><div class="srchin">${SI.search}<input id="sr-q" type="search" autocomplete="off" enterkeyhint="search" placeholder="${staff?"Patient, demande, message, tâche, inventaire…":"Rechercher dans mes demandes, les actualités, l'aide…"}" value="${esc(SRCH.q)}"><button type="button" class="cbtn" id="sr-x" aria-label="Fermer">✕</button></div>
+    <div id="sr-res" class="srchres" aria-live="polite"></div></div>`;
+  document.body.appendChild(v);
+  const inp=v.querySelector("#sr-q"), res=v.querySelector("#sr-res");
+  const close=()=>{ v.remove(); removeEventListener("keydown",key); };
+  const key=e=>{ if(e.key==="Escape") close(); }; addEventListener("keydown",key);
+  v.querySelector("#sr-x").onclick=close; v.onclick=e=>{ if(e.target===v) close(); };
+  let items=[], remoteT=null;
+  const draw_=()=>{ const q=inp.value.trim(); SRCH.q=q;
+    if(q.length<2){ res.innerHTML=`<p class="hint center">${staff?"Tapez au moins 2 lettres : nom d'un patient, mot d'un message, matériel, numéro…":"Tapez au moins 2 lettres."}</p>`; return; }
+    items=staff?staffSearch(q):patientSearch(q);
+    const groups=[...new Set(items.map(x=>x.g))];
+    res.innerHTML=items.length?groups.map(g=>{ const its=items.map((x,i)=>[x,i]).filter(([x])=>x.g===g); return `<p class="srg">${esc(g)} <span>${its.length}</span></p>${its.slice(0,8).map(([x,i])=>`<button type="button" class="srow" data-sr="${i}"><span class="sric" aria-hidden="true">${x.ic}</span><span><b>${x.title}</b><small>${x.sub||""}</small></span></button>`).join("")}${its.length>8?`<p class="hint small">… et ${its.length-8} autre${its.length-8>1?"s":""} : précisez la recherche.</p>`:""}`; }).join("")
+      :`<p class="hint center">Rien trouvé pour « ${esc(q)} ».</p>`;
+    if(staff) res.insertAdjacentHTML("beforeend",`<div id="sr-pat"></div>`);
+    res.querySelectorAll("[data-sr]").forEach(b=>b.onclick=()=>{ const it=items[+b.dataset.sr]; close(); const done=it.go(); if(done!==true){ render(); scrollTo(0,0); } });
+    if(staff){ clearTimeout(remoteT); remoteT=setTimeout(async()=>{ const words=norm(q).split(/\s+/).filter(Boolean); const ps=await searchPatients(words); const box=v.querySelector("#sr-pat"); if(!box||!ps||!ps.length||inp.value.trim()!==q) return;
+      box.innerHTML=`<p class="srg">Patients inscrits dans l'app <span>${ps.length}</span></p>`+ps.map((p,i)=>`<button type="button" class="srow" data-srp="${i}"><span class="sric" aria-hidden="true">${p.child?"🧒":"👤"}</span><span><b>${esc(`${p.first_name||""} ${p.last_name||""}`)}</b><small>Né(e) le ${fmtDate(p.birth_date)} · ${p.child?"enfant":"Tél. "+esc(p.phone||"—")} · lui écrire</small></span></button>`).join("");
+      box.querySelectorAll("[data-srp]").forEach(b=>b.onclick=()=>{ const p=ps[+b.dataset.srp]; close(); S.cscreen="compose"; S.compose=S.compose||{patient:null,subject:SUBJECTS[0],body:"",files:[],reply:true,q:""}; S.compose.patient=p; render(); scrollTo(0,0); }); },300); }
+  };
+  let t=null; inp.oninput=()=>{ clearTimeout(t); t=setTimeout(draw_,120); };
+  inp.onkeydown=e=>{ if(e.key==="Enter"){ const f=res.querySelector("[data-sr],[data-srp]"); if(f) f.click(); } };
+  draw_(); inp.focus(); inp.select();
+}
+document.addEventListener("keydown",e=>{ if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="k"&&S.me&&S.me.status==="active"){ e.preventDefault(); openSearch(); } });
+document.addEventListener("click",e=>{ if(e.target.closest("[data-cs-help]")){ S.screen="help"; render(); scrollTo(0,0); return; } const b=e.target.closest("[data-search]"); if(b){ e.preventDefault(); openSearch(); return; }
+  const r=e.target.closest("[data-rosa]"); if(r){ e.preventDefault(); openRosa(); } });
+
+/* ---------- dessins de profil ---------- */
+const AVD_TONES={clair:["#f3d5c0","#e5bba0"],mat:["#d9a67e","#c38d65"],fonce:["#8e5b3e","#774a31"]};
+const AVD_KINDS=[
+ ["femme","Femme","#efe2d6"],["homme","Homme","#dde5ec"],["voilee","Femme voilée","#e9dfe6"],["barbe","Homme barbu","#e3e6dc"],
+ ["dame","Dame","#efe6d4"],["monsieur","Monsieur","#e2e2e8"],["fille","Fille","#f3dfdd"],["garcon","Garçon","#dbe7e6"],
+ ["bebe","Bébé","#f2ead9"],["medf","Médecin (femme)","#dbe4ee"],["medh","Médecin (homme)","#dfe8e1"],["accueil","Accueil","#efe0e1"]];
+function avdSVG(kind,tone){
+  const [sk,sk2]=AVD_TONES[tone]||AVD_TONES.clair, bg=(AVD_KINDS.find(k=>k[0]===kind)||AVD_KINDS[0])[2];
+  const hair=tone==="clair"?"#4a3226":"#241a17", grey="#cfc9c3", ink="#3a2622";
+  const kid=["fille","garcon","bebe"].includes(kind), baby=kind==="bebe";
+  // proportions : les enfants ont une tête plus grande et des épaules plus étroites
+  const hy=baby?56:kid?52:49, hrx=baby?23:kid?21:19, hry=baby?23:kid?22.5:22.5;
+  const cloth={femme:"#702629",homme:"#2f3e52",voilee:"#5b4a63",barbe:"#4d5b45",dame:"#8a6d33",monsieur:"#4b4f5c",fille:"#c8706d",garcon:"#3f7a78",bebe:"#e9c98f",medf:"#ffffff",medh:"#ffffff",accueil:"#702629"}[kind];
+  let back="", front="", body="", extra="";
+  const shoulders=(c,w=46,top=84)=>`<path d="M${60-w} 122 C${60-w} ${top+10} ${60-w*0.55} ${top} 60 ${top} C${60+w*0.55} ${top} ${60+w} ${top+10} ${60+w} 122 Z" fill="${c}"/>`;
+  const neck=`<path d="M52 ${hy+14} h16 v${baby?10:16} a8 6 0 0 1 -16 0 Z" fill="${sk2}"/>`;
+  const ears=baby?"":`<ellipse cx="${60-hrx}" cy="${hy+2}" rx="3.2" ry="4.6" fill="${sk2}"/><ellipse cx="${60+hrx}" cy="${hy+2}" rx="3.2" ry="4.6" fill="${sk2}"/>`;
+  const head=`<ellipse cx="60" cy="${hy}" rx="${hrx}" ry="${hry}" fill="${sk}"/>`;
+  const ey=hy+3, face=`<g fill="${ink}"><ellipse cx="${60-7.5}" cy="${ey}" rx="1.7" ry="2.1"/><ellipse cx="${60+7.5}" cy="${ey}" rx="1.7" ry="2.1"/></g>
+    <path d="M55.5 ${ey+9} q4.5 3.4 9 0" stroke="${ink}" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+    <g fill="#e48f84" opacity=".28"><ellipse cx="${60-12}" cy="${ey+6}" rx="3.6" ry="2.4"/><ellipse cx="${60+12}" cy="${ey+6}" rx="3.6" ry="2.4"/></g>`;
+  const glasses=`<g stroke="${ink}" stroke-width="1.5" fill="none"><circle cx="52.5" cy="${ey}" r="5.2"/><circle cx="67.5" cy="${ey}" r="5.2"/><path d="M57.7 ${ey} h4.6"/></g>`;
+  const coat=`${shoulders("#ffffff")}<path d="M60 84 L49 122 H44 C44 104 48 92 60 84 Z M60 84 L71 122 H76 C76 104 72 92 60 84 Z" fill="#e8ecef"/>
+    <path d="M52 86 L60 100 L68 86" fill="#9fb7c9"/><path d="M47 90 c-3 9 2 14 8 14 M73 90 c3 9 -2 14 -8 14" stroke="#3b4b5a" stroke-width="2.2" fill="none" stroke-linecap="round"/><circle cx="55" cy="105" r="3.2" fill="#3b4b5a"/><circle cx="65" cy="105" r="3" fill="#ffffff" stroke="#3b4b5a" stroke-width="2"/>`;
+  switch(kind){
+    case "femme":
+      back=`<path d="M38 ${hy-2} C36 ${hy-30} 84 ${hy-30} 82 ${hy-2} C84 ${hy+22} 86 ${hy+40} 80 ${hy+46} H40 C34 ${hy+40} 36 ${hy+22} 38 ${hy-2} Z" fill="${hair}"/>`;
+      front=`<path d="M40 ${hy-4} C42 ${hy-26} 78 ${hy-28} 80 ${hy-6} C72 ${hy-14} 58 ${hy-16} 48 ${hy-8} C45 ${hy-6} 42 ${hy-4} 40 ${hy+4} Z" fill="${hair}"/>`;
+      body=shoulders(cloth); extra=`<path d="M50 85 Q60 96 70 85" fill="none" stroke="#f3e2c8" stroke-width="2"/>`; break;
+    case "homme":
+      front=`<path d="M40 ${hy-2} C38 ${hy-26} 82 ${hy-30} 80 ${hy-4} C80 ${hy-8} 76 ${hy-13} 70 ${hy-14} C62 ${hy-11} 52 ${hy-13} 44 ${hy-10} C42 ${hy-8} 41 ${hy-5} 40 ${hy-2} Z" fill="${hair}"/>`;
+      body=shoulders(cloth)+`<path d="M53 84 L60 94 L67 84 Z" fill="#f4f1ec"/>`; break;
+    case "barbe":
+      front=`<path d="M40 ${hy-2} C38 ${hy-27} 82 ${hy-30} 80 ${hy-4} C79 ${hy-10} 74 ${hy-14} 66 ${hy-13} C58 ${hy-15} 48 ${hy-12} 42 ${hy-6} Z" fill="${hair}"/>
+        <path d="M41 ${hy+2} C41 ${hy+22} 50 ${hy+26} 60 ${hy+26} C70 ${hy+26} 79 ${hy+22} 79 ${hy+2} C76 ${hy+12} 70 ${hy+14} 60 ${hy+11} C50 ${hy+14} 44 ${hy+12} 41 ${hy+2} Z" fill="${hair}"/>
+        <path d="M54 ${ey+9} q6 3 12 0" stroke="${sk}" stroke-width="2" fill="none" stroke-linecap="round"/>`;
+      body=shoulders(cloth); break;
+    case "voilee":
+      back=`<path d="M34 ${hy+2} C32 ${hy-34} 88 ${hy-34} 86 ${hy+2} C88 ${hy+22} 92 ${hy+30} 98 ${hy+40} C84 ${hy+36} 36 ${hy+36} 22 ${hy+40} C28 ${hy+30} 32 ${hy+22} 34 ${hy+2} Z" fill="${cloth}"/>`;
+      front=`<path d="M38 ${hy+4} C36 ${hy-28} 84 ${hy-28} 82 ${hy+4} C82 ${hy+20} 74 ${hy+30} 60 ${hy+30} C46 ${hy+30} 38 ${hy+20} 38 ${hy+4} Z M60 ${hy-20} C48 ${hy-20} 42 ${hy-10} 42 ${hy+2} C42 ${hy+16} 50 ${hy+24} 60 ${hy+24} C70 ${hy+24} 78 ${hy+16} 78 ${hy+2} C78 ${hy-10} 72 ${hy-20} 60 ${hy-20} Z" fill="${cloth}" fill-rule="evenodd"/>
+        <path d="M42 ${hy-2} C46 ${hy-16} 74 ${hy-16} 78 ${hy-2}" stroke="#ffffff" stroke-opacity=".18" stroke-width="2" fill="none"/>`;
+      body=shoulders(cloth,48,80); break;
+    case "dame":
+      back=`<circle cx="60" cy="${hy-24}" r="9" fill="${grey}"/>`;
+      front=`<path d="M40 ${hy+2} C37 ${hy-28} 83 ${hy-28} 80 ${hy+2} C78 ${hy-8} 72 ${hy-14} 60 ${hy-13} C48 ${hy-14} 42 ${hy-8} 40 ${hy+2} Z" fill="${grey}"/>`+glasses;
+      body=shoulders(cloth)+`<g fill="#f6efe2"><circle cx="52" cy="88" r="1.8"/><circle cx="56" cy="90.5" r="1.8"/><circle cx="60" cy="91.3" r="1.8"/><circle cx="64" cy="90.5" r="1.8"/><circle cx="68" cy="88" r="1.8"/></g>`; break;
+    case "monsieur":
+      front=`<path d="M40 ${hy+4} C38 ${hy-6} 40 ${hy-12} 44 ${hy-14} C44 ${hy-6} 43 ${hy} 43 ${hy+6} Z M80 ${hy+4} C82 ${hy-6} 80 ${hy-12} 76 ${hy-14} C76 ${hy-6} 77 ${hy} 77 ${hy+6} Z" fill="${grey}"/>
+        <path d="M51 ${ey+8} q9 -3 18 0 q-9 4 -18 0 Z" fill="${grey}"/>`+glasses;
+      body=shoulders(cloth)+`<path d="M53 84 L60 96 L67 84 Z" fill="#f4f1ec"/><path d="M58.5 88 h3 l1.5 12 -3 4 -3 -4 Z" fill="#702629"/>`; break;
+    case "fille":
+      back=`<circle cx="${60-hrx-6}" cy="${hy-6}" r="8" fill="${hair}"/><circle cx="${60+hrx+6}" cy="${hy-6}" r="8" fill="${hair}"/><circle cx="${60-hrx-1}" cy="${hy-11}" r="2.6" fill="#f2b8b2"/><circle cx="${60+hrx+1}" cy="${hy-11}" r="2.6" fill="#f2b8b2"/>`;
+      front=`<path d="M39 ${hy+2} C37 ${hy-30} 83 ${hy-30} 81 ${hy+2} C76 ${hy-10} 66 ${hy-12} 60 ${hy-18} C54 ${hy-12} 44 ${hy-10} 39 ${hy+2} Z" fill="${hair}"/>`;
+      body=shoulders(cloth,36,86)+`<path d="M52 86 Q60 92 68 86" fill="none" stroke="#ffffff" stroke-opacity=".6" stroke-width="2"/>`; break;
+    case "garcon":
+      front=`<path d="M39 ${hy} C36 ${hy-26} 84 ${hy-32} 81 ${hy-2} C80 ${hy-10} 76 ${hy-12} 72 ${hy-12} L70 ${hy-16} L66 ${hy-11} L60 ${hy-17} L56 ${hy-11} L50 ${hy-15} L48 ${hy-9} C44 ${hy-8} 41 ${hy-5} 39 ${hy} Z" fill="${hair}"/>`;
+      body=shoulders(cloth,36,86)+`<path d="M24 112 h72" stroke="#ffffff" stroke-opacity=".35" stroke-width="4"/>`; break;
+    case "bebe":
+      front=`<path d="M60 ${hy-23} c-6 -6 2 -12 6 -7 c2 3 -2 6 -4 3" stroke="${hair}" stroke-width="2.4" fill="none" stroke-linecap="round"/>`;
+      body=shoulders(cloth,32,90)+`<path d="M48 92 Q60 102 72 92" fill="#ffffff" fill-opacity=".7"/>`; break;
+    case "medf":
+      back=`<circle cx="60" cy="${hy-24}" r="8.5" fill="${hair}"/>`;
+      front=`<path d="M40 ${hy+2} C37 ${hy-28} 83 ${hy-28} 80 ${hy+2} C76 ${hy-10} 68 ${hy-14} 58 ${hy-12} C50 ${hy-11} 43 ${hy-6} 40 ${hy+2} Z" fill="${hair}"/>`;
+      body=coat; break;
+    case "medh":
+      front=`<path d="M40 ${hy-2} C38 ${hy-26} 82 ${hy-30} 80 ${hy-4} C80 ${hy-8} 76 ${hy-13} 70 ${hy-14} C62 ${hy-11} 52 ${hy-13} 44 ${hy-10} C42 ${hy-8} 41 ${hy-5} 40 ${hy-2} Z" fill="${hair}"/>`+glasses;
+      body=coat; break;
+    case "accueil":
+      back=`<path d="M38 ${hy-2} C36 ${hy-30} 84 ${hy-30} 82 ${hy-2} C83 ${hy+12} 84 ${hy+22} 80 ${hy+26} H40 C36 ${hy+22} 37 ${hy+12} 38 ${hy-2} Z" fill="${hair}"/>`;
+      front=`<path d="M40 ${hy-2} C42 ${hy-26} 78 ${hy-28} 80 ${hy-4} C70 ${hy-12} 54 ${hy-16} 46 ${hy-6} C44 ${hy-4} 42 ${hy-3} 40 ${hy+2} Z" fill="${hair}"/>
+        <path d="M37 ${hy+2} C35 ${hy-30} 85 ${hy-30} 83 ${hy+2}" stroke="${ink}" stroke-width="2.6" fill="none"/><rect x="33" y="${hy-4}" width="7" height="12" rx="3" fill="${ink}"/><rect x="80" y="${hy-4}" width="7" height="12" rx="3" fill="${ink}"/>
+        <path d="M37 ${hy+8} C38 ${hy+20} 46 ${hy+22} 52 ${hy+20}" stroke="${ink}" stroke-width="1.8" fill="none"/><circle cx="53" cy="${hy+20}" r="2.2" fill="${ink}"/>`;
+      body=shoulders(cloth)+`<path d="M50 85 Q60 96 70 85" fill="none" stroke="#d8bb80" stroke-width="2"/>`; break;
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120"><defs><clipPath id="avc"><circle cx="60" cy="60" r="60"/></clipPath></defs>
+   <g clip-path="url(#avc)"><rect width="120" height="120" fill="${bg}"/><g transform="translate(60 66) scale(1.1) translate(-60 -62)">${back}${neck}${body}${extra}${ears}${head}${face}${front}</g></g></svg>`;
+}
+// dessin → image PNG 256 px (envoyée comme une photo de profil)
+async function avdPng(kind,tone){
+  const url="data:image/svg+xml;charset=utf-8,"+encodeURIComponent(avdSVG(kind,tone));
+  const img=await new Promise((ok,ko)=>{ const i=new Image(); i.onload=()=>ok(i); i.onerror=ko; i.src=url; });
+  const c=document.createElement("canvas"); c.width=c.height=256; c.getContext("2d").drawImage(img,0,0,256,256);
+  return await new Promise(ok=>c.toBlob(ok,"image/png"));
+}
+function openAvatarPicker(){
+  const kids=S.me.role==="patient";
+  let tone=(()=>{ try{ return localStorage.getItem("cmpl_avtone")||"clair"; }catch(e){ return "clair"; } })(), pick=null;
+  const v=document.createElement("div"); v.className="modal"; v.setAttribute("role","dialog"); v.setAttribute("aria-modal","true"); v.setAttribute("aria-labelledby","avp-t");
+  const kinds=AVD_KINDS.filter(k=>kids?!["medf","medh","accueil"].includes(k[0]):true);
+  const drawGrid=()=>v.querySelector(".avgrid").innerHTML=kinds.map(([k,l])=>`<button type="button" class="avopt" data-avk="${k}" aria-pressed="${pick===k}" aria-label="${esc(l)}"><span>${avdSVG(k,tone).replace(/avc/g,"avc-"+k)}</span><small>${esc(l)}</small></button>`).join("");
+  v.innerHTML=`<div class="mbox avbox"><h2 id="avp-t">Choisir un dessin</h2><p class="hint">Si vous préférez ne pas mettre de photo. Vous pourrez le changer quand vous voulez.</p>
+    <div class="seg avtones" role="group" aria-label="Teinte de peau">${[["clair","Clair"],["mat","Mat"],["fonce","Foncé"]].map(([k,l])=>`<button type="button" data-tone="${k}" aria-pressed="${tone===k}"><i style="background:${AVD_TONES[k][0]}"></i>${l}</button>`).join("")}</div>
+    <div class="avgrid"></div>
+    <div class="btnrow"><button class="btn" id="avp-ok" disabled>Utiliser ce dessin</button><button class="btn ghost" id="avp-x">Annuler</button></div></div>`;
+  document.body.appendChild(v); drawGrid();
+  const close=()=>v.remove(); v.querySelector("#avp-x").onclick=close; v.onclick=e=>{ if(e.target===v) close(); };
+  v.querySelectorAll("[data-tone]").forEach(b=>b.onclick=()=>{ tone=b.dataset.tone; try{ localStorage.setItem("cmpl_avtone",tone); }catch(e){} v.querySelectorAll("[data-tone]").forEach(x=>x.setAttribute("aria-pressed",x===b)); drawGrid(); });
+  v.querySelector(".avgrid").onclick=e=>{ const b=e.target.closest("[data-avk]"); if(!b) return; pick=b.dataset.avk; v.querySelectorAll("[data-avk]").forEach(x=>x.setAttribute("aria-pressed",x===b)); v.querySelector("#avp-ok").disabled=false; };
+  v.querySelector("#avp-ok").onclick=async()=>{ if(!pick) return; const ok=v.querySelector("#avp-ok"); ok.disabled=true;
+    try{ const blob=await avdPng(pick,tone), data=await blobToB64(blob);
+      if(await run(()=>sb.rpc("set_my_avatar",{p_data:data}),"Dessin enregistré")){ const old=AV.get(S.me.id); if(old) URL.revokeObjectURL(old); AV.set(S.me.id,URL.createObjectURL(blob)); close(); render(); } else ok.disabled=false; }
+    catch(e){ ok.disabled=false; toast("Le dessin n'a pas pu être préparé. Réessayez."); } };
+}
+
+/* ---------- messagerie : épingles, classement, « concerne des patients » ---------- */
+const tPinned = t => !!tMembers(t.id).find(m=>m.user_id===S.me.id)?.pinned_at;
+const TFILTERS=[["all","Toutes"],["unread","Non lues"],["group","Groupes"],["direct","À deux"],["pat","Patients"]];
+function tFilterOk(t,f){ return f==="all"||(f==="unread"&&tUnread(t)>0)||(f==="group"&&t.kind!=="direct")||(f==="direct"&&t.kind==="direct")||(f==="pat"&&t.patient_related); }
+async function loadOlder(t){
+  const first=tMsgs(t.id)[0], before=first?first.created_at:new Date().toISOString();
+  const {data,error}=await sb.from("team_messages").select("id,thread_id,author_id,body,request_id,file_mime,file_name,file_size,created_at").eq("thread_id",t.id).lt("created_at",before).order("created_at",{ascending:false}).limit(100);
+  if(error){ toast(frError(error)); return; }
+  const have=new Set(S.team2.msgs.map(m=>m.id)), add=(data||[]).filter(m=>!have.has(m.id));
+  S.team2.msgs=[...add,...S.team2.msgs].sort((a,b)=>a.created_at.localeCompare(b.created_at));
+  (S.team2.older||(S.team2.older={}))[t.id]=(data||[]).length<100?"fin":"plus";
+  render();
+}
+
+/* ---------- horaires des accueillantes ---------- */
+const HK={travail:["Travail",""],conge:["Congé","CO"],maladie:["Maladie","MA"],ferie:["Férié","FE"],formation:["Formation","FO"],recup:["Récupération","RE"],autre:["Autre","AU"]};
+const DOWS=["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"];
+const isoD = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+function mondayOf(iso){ const d=new Date(iso+"T12:00"); d.setDate(d.getDate()-((d.getDay()+6)%7)); return isoD(d); }
+const hm2min = t => { if(!t) return 0; const [h,m]=t.split(":").map(Number); return h*60+m; };
+const minTxt = m => { const s=m<0?"-":""; m=Math.abs(Math.round(m)); return `${s}${Math.floor(m/60)} h ${String(m%60).padStart(2,"0")}`; };
+const hoursOf = r => r&&r.kind==="travail" ? Math.max(0,hm2min(r.end_t)-hm2min(r.start_t)-(r.break_min||0)) : 0;
+const t5 = t => (t||"").slice(0,5);
+function officePeople(from,to){
+  const ids=new Set((S.team||[]).filter(t=>t.status==="active"&&t.role==="secretariat").map(t=>t.id));
+  (S.hours2||[]).filter(h=>h.day>=from&&h.day<=to).forEach(h=>ids.add(h.user_id));
+  (S.hoursExtra||[]).forEach(id=>ids.add(id));
+  if(S.me.role==="secretariat") ids.add(S.me.id);
+  return [...ids].sort((a,b)=>(a===S.me.id?-1:b===S.me.id?1:staffName(a).localeCompare(staffName(b))));
+}
+async function loadHours(fromISO,toISO){
+  const [h,w]=await Promise.all([sb.from("staff_hours").select("*").gte("day",fromISO).lte("day",toISO).order("day"),
+    sb.from("staff_hours_weeks").select("*").gte("week_start",addDays(fromISO,-6)).lte("week_start",toISO)]);
+  if(h.error){ S.hours2=[]; S.hoursErr=frError(h.error); return; }
+  S.hoursErr=null;
+  const keep=(S.hours2||[]).filter(x=>x.day<fromISO||x.day>toISO); S.hours2=[...keep,...(h.data||[])];
+  const keepW=(S.hweeks||[]).filter(x=>!(w.data||[]).some(y=>y.user_id===x.user_id&&y.week_start===x.week_start)); S.hweeks=[...keepW,...(w.data||[])];
+}
+const hourRow = (uid,day) => (S.hours2||[]).find(h=>h.user_id===uid&&h.day===day);
+const weekOk = (uid,wk) => !!(S.hweeks||[]).find(w=>w.user_id===uid&&w.week_start===wk&&w.validated_at);
+function hoursHTML(){
+  const H=S.hv||(S.hv={week:mondayOf(todayISO()),mode:"week",month:todayISO().slice(0,7)});
+  const tabs=`<div class="seg" role="group" aria-label="Affichage"><button data-hmode="week" aria-pressed="${H.mode==="week"}">Semaine</button><button data-hmode="month" aria-pressed="${H.mode==="month"}">Mois (secrétariat social)</button></div>`;
+  const head=`<div class="chead"><div><h1>Horaires de l'accueil</h1><p>Chaque accueillante encode ses heures de la semaine${canManageOffice()?" ; l'administration vérifie puis valide":" ; l'administration les vérifie et les valide"}. Les totaux se calculent tout seuls.</p></div>${tabs}</div>`;
+  if(S.hoursLoaded!==`${H.mode}:${H.mode==="week"?H.week:H.month}`) return head+`<div class="empty">Chargement…</div>`;
+  if(S.hoursErr) return head+`<div class="empty">Les horaires ne sont pas encore disponibles (${esc(S.hoursErr)}). La mise à jour du serveur (migration 049) est-elle faite ?</div>`;
+  return head+(H.mode==="week"?hoursWeekHTML(H):hoursMonthHTML(H));
+}
+function hoursWeekHTML(H){
+  const days=[...Array(6)].map((_,i)=>addDays(H.week,i)), wkEnd=addDays(H.week,6), people=officePeople(H.week,wkEnd), mgr=canManageOffice();
+  const cell=(uid,day,tag)=>{ const r=hourRow(uid,day), can=mgr||(uid===S.me.id&&!weekOk(uid,H.week));
+    const inner=!r?`<span class="hz">—</span>`:r.kind==="travail"?`<b>${t5(r.start_t)}–${t5(r.end_t)}</b><small>${r.break_min?`pause ${r.break_min} min · `:""}${minTxt(hoursOf(r))}</small>`:`<b class="hk hk-${r.kind}">${HK[r.kind][0]}</b>${r.note?`<small>${esc(r.note)}</small>`:""}`;
+    const btn=can?`<button type="button" class="hcell" data-hc="${uid}|${day}" aria-label="${esc(staffName(uid))}, ${fmtDate(day+"T12:00")}">${inner}</button>`:`<div class="hcell ro">${inner}</div>`;
+    return tag==="li"?`<li class="${day===todayISO()?"today":""}"><span class="hday">${DOWS[(new Date(day+"T12:00").getDay()+6)%7]} ${day.slice(8)}/${day.slice(5,7)}</span>${btn}</li>`:`<td class="${day===todayISO()?"today":""}">${btn}</td>`; };
+  const tot=uid=>days.reduce((t,d)=>t+hoursOf(hourRow(uid,d)),0), abs=uid=>days.filter(d=>{ const r=hourRow(uid,d); return r&&r.kind!=="travail"; }).length;
+  return `<div class="hweek">
+   <div class="hnav"><button type="button" class="btn ghost" data-hw="-7" aria-label="Semaine précédente">‹</button><b>Semaine du ${H.week.slice(8)}/${H.week.slice(5,7)} au ${addDays(H.week,5).slice(8)}/${addDays(H.week,5).slice(5,7)}</b><button type="button" class="btn ghost" data-hw="7" aria-label="Semaine suivante">›</button>${H.week!==mondayOf(todayISO())?`<button type="button" class="linkbtn" data-hw="0">Cette semaine</button>`:""}</div>
+   <div class="htable-wrap"><table class="htable"><thead><tr><th>Accueillante</th>${days.map(d=>`<th class="${d===todayISO()?"today":""}">${DOWS[new Date(d+"T12:00").getDay()===0?6:new Date(d+"T12:00").getDay()-1]} ${d.slice(8)}/${d.slice(5,7)}</th>`).join("")}<th>Total</th></tr></thead>
+   <tbody>${people.length?people.map(uid=>{ const ok=weekOk(uid,H.week); return `<tr><th scope="row"><span class="hname">${esc(staffName(uid))}${uid===S.me.id?" <small>(moi)</small>":""}</span>${ok?`<span class="pill st-traite">Validée</span>`:""}</th>${days.map(d=>cell(uid,d)).join("")}
+     <td class="htot"><b>${minTxt(tot(uid))}</b>${abs(uid)?`<small>${abs(uid)} j. d'absence</small>`:""}${mgr?`<button type="button" class="mini ${ok?"ghostmini":""}" data-hval="${uid}" data-ok="${ok?0:1}">${ok?"Rouvrir":"Valider"}</button>`:""}</td></tr>`; }).join("")
+     :`<tr><td colspan="8"><div class="empty">Aucune accueillante. Les comptes avec le rôle « Secrétariat » apparaissent ici.</div></td></tr>`}</tbody></table></div>
+   <div class="hcards">${people.map(uid=>{ const ok=weekOk(uid,H.week); return `<section class="hcard"><header><b>${esc(staffName(uid))}${uid===S.me.id?" <small>(moi)</small>":""}</b>${ok?`<span class="pill st-traite">Validée</span>`:""}<span class="htot2">${minTxt(tot(uid))}</span></header><ul>${days.map(d=>cell(uid,d,"li")).join("")}</ul>${mgr?`<button type="button" class="mini ${ok?"ghostmini":""}" data-hval="${uid}" data-ok="${ok?0:1}">${ok?"Rouvrir la semaine":"Valider la semaine"}</button>`:""}</section>`; }).join("")}</div>
+   <div class="btnrow">${mgr?`<button type="button" class="btn ghost" id="h-addp">+ Ajouter une personne au tableau</button>`:""}<button type="button" class="btn ghost" id="h-copy">${mgr?"Copier la semaine précédente (cases vides)":"Copier ma semaine précédente"}</button></div>
+   <p class="hint">Touchez une case pour encoder l'heure d'arrivée, de départ et la pause. Une semaine validée ne peut plus être changée que par l'administration. Gardé 5 ans.</p></div>`;
+}
+function monthDays(ym){ const [y,m]=ym.split("-").map(Number), n=new Date(y,m,0).getDate(); return [...Array(n)].map((_,i)=>`${ym}-${String(i+1).padStart(2,"0")}`); }
+function hoursMonthHTML(H){
+  const days=monthDays(H.month), people=officePeople(days[0],days[days.length-1]);
+  const label=new Date(H.month+"-15").toLocaleDateString("fr-BE",{month:"long",year:"numeric"});
+  const row=uid=>{ const rs=days.map(d=>hourRow(uid,d)).filter(Boolean), work=rs.filter(r=>r.kind==="travail");
+    const cnt=k=>rs.filter(r=>r.kind===k).length, weeks=[...new Set(days.map(mondayOf))], nv=weeks.filter(w=>rs.some(r=>mondayOf(r.day)===w)&&!weekOk(uid,w)).length;
+    return `<tr><th scope="row">${esc(staffName(uid))}</th><td><b>${minTxt(work.reduce((t,r)=>t+hoursOf(r),0))}</b></td><td>${work.length}</td>${["conge","maladie","ferie","formation","recup","autre"].map(k=>`<td>${cnt(k)||""}</td>`).join("")}<td>${nv?`<span class="pill st-wait">${nv} à valider</span>`:rs.length?`<span class="pill st-traite">OK</span>`:""}</td></tr>`; };
+  return `<div class="hweek"><div class="hnav"><button type="button" class="btn ghost" data-hm="-1" aria-label="Mois précédent">‹</button><b class="cap">${label}</b><button type="button" class="btn ghost" data-hm="1" aria-label="Mois suivant">›</button></div>
+   <div class="htable-wrap hm"><table class="htable hmonth"><thead><tr><th>Accueillante</th><th>Heures prestées</th><th>Jours</th>${["conge","maladie","ferie","formation","recup","autre"].map(k=>`<th>${HK[k][0]}</th>`).join("")}<th>Semaines</th></tr></thead>
+   <tbody>${people.map(row).join("")||`<tr><td colspan="10"><div class="empty">Rien d'encodé ce mois-ci.</div></td></tr>`}</tbody></table></div>
+   <div class="btnrow"><button type="button" class="btn" id="h-csv">Télécharger pour Excel (détail jour par jour)</button></div>
+   <p class="hint">Le fichier s'ouvre avec Excel : une ligne par jour et par personne (arrivée, départ, pause, heures, type d'absence). Pratique pour l'encodage chez le secrétariat social.</p></div>`;
+}
+function csvDownload(name,rows){
+  const txt="﻿"+rows.map(r=>r.map(c=>{ const s=String(c??""); return /[;"\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s; }).join(";")).join("\r\n");
+  const blob=new Blob([txt],{type:"text/csv;charset=utf-8"});
+  saveFile(blob,name).catch(()=>toast("Le fichier n'a pas pu être enregistré."));
+}
+async function hoursEnsure(){ const H=S.hv; const k=`${H.mode}:${H.mode==="week"?H.week:H.month}`; if(S.hoursLoaded===k) return;
+  if(H.mode==="week") await loadHours(addDays(H.week,-7),addDays(H.week,6)); else { const d=monthDays(H.month); await loadHours(mondayOf(d[0]),d[d.length-1]); }
+  S.hoursLoaded=k; if(S.cscreen==="hours") render(); }
+function editHourCell(uid,day){
+  const r=hourRow(uid,day)||{kind:"travail",start_t:null,end_t:null,break_min:0,note:""};
+  const prev=(S.hours2||[]).filter(h=>h.user_id===uid&&h.kind==="travail"&&h.day<day).sort((a,b)=>b.day.localeCompare(a.day))[0];
+  const v=document.createElement("div"); v.className="modal"; v.setAttribute("role","dialog"); v.setAttribute("aria-modal","true"); v.setAttribute("aria-labelledby","hc-t");
+  v.innerHTML=`<div class="mbox"><h2 id="hc-t">${esc(staffName(uid))}</h2><p class="hint capp">${new Date(day+"T12:00").toLocaleDateString("fr-BE",{weekday:"long",day:"numeric",month:"long"})}</p>
+    <label class="fld">Type<select id="hc-k">${Object.entries(HK).map(([k,[l]])=>`<option value="${k}" ${r.kind===k?"selected":""}>${l}</option>`).join("")}</select></label>
+    <div id="hc-times" class="row3"><label class="fld">Arrivée<input id="hc-s" type="time" step="300" value="${t5(r.start_t)||t5(prev?.start_t)||"09:00"}"></label><label class="fld">Départ<input id="hc-e" type="time" step="300" value="${t5(r.end_t)||t5(prev?.end_t)||"17:00"}"></label><label class="fld">Pause (min)<input id="hc-b" type="number" min="0" max="600" step="5" inputmode="numeric" value="${r.kind==="travail"?(r.break_min||0):(prev?.break_min??30)}"></label></div>
+    <p class="hint" id="hc-tot"></p>
+    <label class="fld">Remarque (facultatif)<input id="hc-n" maxlength="80" value="${esc(r.note||"")}" placeholder="Ex. remplacement de Fatima"></label>
+    <div class="btnrow"><button class="btn" id="hc-ok">Enregistrer</button>${hourRow(uid,day)?`<button class="btn ghost" id="hc-del">Vider la case</button>`:""}<button class="btn ghost" id="hc-x">Annuler</button></div></div>`;
+  document.body.appendChild(v);
+  const k=v.querySelector("#hc-k"), s=v.querySelector("#hc-s"), e=v.querySelector("#hc-e"), b=v.querySelector("#hc-b");
+  const upd=()=>{ v.querySelector("#hc-times").hidden=k.value!=="travail"; const m=hm2min(e.value)-hm2min(s.value)-(+b.value||0);
+    v.querySelector("#hc-tot").textContent=k.value!=="travail"?"Pas d'heures comptées : le jour est noté comme absence.":m>0?`Heures prestées : ${minTxt(m)}`:"Vérifiez les heures (le départ doit être après l'arrivée)."; };
+  [k,s,e,b].forEach(x=>x.oninput=x.onchange=upd); upd();
+  const close=()=>v.remove(); v.querySelector("#hc-x").onclick=close; v.onclick=ev=>{ if(ev.target===v) close(); };
+  const save=async(kind)=>{ const args={p_user:uid,p_day:day,p_kind:kind,p_start:kind==="travail"?s.value:null,p_end:kind==="travail"?e.value:null,p_break:kind==="travail"?(+b.value||0):0,p_note:v.querySelector("#hc-n").value};
+    if(await run(()=>sb.rpc("set_hours",args),kind?"Enregistré":"Case vidée")){ S.hours2=(S.hours2||[]).filter(h=>!(h.user_id===uid&&h.day===day));
+      if(kind) S.hours2.push({user_id:uid,day,kind,start_t:args.p_start,end_t:args.p_end,break_min:args.p_break,note:args.p_note.trim()||null}); close(); render(); } };
+  v.querySelector("#hc-ok").onclick=()=>save(k.value);
+  const d=v.querySelector("#hc-del"); if(d) d.onclick=()=>save("");
+  k.focus();
+}
+function bindHours(){
+  const H=S.hv; hoursEnsure();
+  $$("[data-hmode]").forEach(b=>b.onclick=()=>{ H.mode=b.dataset.hmode; render(); });
+  $$("[data-hw]").forEach(b=>b.onclick=()=>{ const n=+b.dataset.hw; H.week=n?addDays(H.week,n):mondayOf(todayISO()); render(); });
+  $$("[data-hm]").forEach(b=>b.onclick=()=>{ const [y,m]=H.month.split("-").map(Number), d=new Date(y,m-1+(+b.dataset.hm),15); H.month=isoD(d).slice(0,7); render(); });
+  $$("[data-hc]").forEach(b=>b.onclick=()=>{ const [u,d]=b.dataset.hc.split("|"); editHourCell(u,d); });
+  $$("[data-hval]").forEach(b=>b.onclick=async()=>{ const ok=b.dataset.ok==="1";
+    if(await run(()=>sb.rpc("validate_hours_week",{p_user:b.dataset.hval,p_week:H.week,p_ok:ok}),ok?"Semaine validée":"Semaine rouverte")){
+      S.hweeks=(S.hweeks||[]).filter(w=>!(w.user_id===b.dataset.hval&&w.week_start===H.week)); S.hweeks.push({user_id:b.dataset.hval,week_start:H.week,validated_at:ok?new Date().toISOString():null}); render(); } });
+  const ap=$("#h-addp"); if(ap) ap.onclick=()=>pickColleagues("Ajouter au tableau",officePeople(H.week,addDays(H.week,6)),async ids=>{ S.hoursExtra=[...new Set([...(S.hoursExtra||[]),...ids])]; render(); return true; });
+  const cp=$("#h-copy"); if(cp) cp.onclick=async()=>{ const who=canManageOffice()?officePeople(H.week,addDays(H.week,6)):[S.me.id]; let n=0;
+    for(const uid of who){ if(!canManageOffice()&&weekOk(uid,H.week)) continue;
+      for(let i=0;i<6;i++){ const d=addDays(H.week,i), src=hourRow(uid,addDays(d,-7)); if(!src||hourRow(uid,d)) continue;
+        const {error}=await sb.rpc("set_hours",{p_user:uid,p_day:d,p_kind:src.kind,p_start:src.start_t,p_end:src.end_t,p_break:src.break_min,p_note:src.note});
+        if(error){ toast(frError(error)); break; } n++; } }
+    S.hoursLoaded=null; toast(n?`${n} case${n>1?"s":""} recopiée${n>1?"s":""}`:"Rien à recopier (cases déjà remplies, ou semaine précédente vide)"); render(); };
+  const csv=$("#h-csv"); if(csv) csv.onclick=()=>{ const days=monthDays(H.month), people=officePeople(days[0],days[days.length-1]), rows=[["Nom","Date","Jour","Type","Arrivée","Départ","Pause (min)","Heures","Heures (décimal)","Remarque","Semaine validée"]];
+    for(const uid of people) for(const d of days){ const r=hourRow(uid,d); if(!r) continue; const m=hoursOf(r);
+      rows.push([staffName(uid),`${d.slice(8)}/${d.slice(5,7)}/${d.slice(0,4)}`,DOWS[(new Date(d+"T12:00").getDay()+6)%7],HK[r.kind][0],t5(r.start_t),t5(r.end_t),r.kind==="travail"?r.break_min:"",r.kind==="travail"?minTxt(m):"",r.kind==="travail"?(m/60).toFixed(2).replace(".",","):"",r.note||"",weekOk(uid,mondayOf(d))?"oui":"non"]); }
+    if(rows.length<2) return toast("Rien d'encodé ce mois-ci.");
+    csvDownload(`horaires-accueil-${H.month}.csv`,rows); };
+}
+
+/* ---------- caisse (paiements en espèces) ---------- */
+const CASH_KINDS={consultation:"Consultation",visite:"Visite à domicile",attestation:"Attestation",certificat:"Certificat",vaccin:"Vaccin",autre:"Autre"};
+const cashKind = k => CASH_KINDS[k]||"Autre";
+const eur = v => (Number(v)||0).toLocaleString("fr-BE",{minimumFractionDigits:2,maximumFractionDigits:2})+" €";
+async function loadCash(ym){
+  const d=monthDays(ym);
+  const [c,r,to]=await Promise.all([sb.from("cash_payments").select("*").gte("paid_on",d[0]).lte("paid_on",d[d.length-1]).order("paid_on",{ascending:false}).order("id",{ascending:false}),
+    sb.from("cash_reports").select("*").order("month",{ascending:false}).limit(24), S.cashTo===undefined?sb.rpc("get_cash_report_to"):Promise.resolve({data:S.cashTo})]);
+  if(c.error){ S.cashErr=frError(c.error); S.cash=[]; } else { S.cashErr=null; S.cash=c.data||[]; }
+  S.cashReports=r.data||[]; if(!to.error) S.cashTo=to.data||"admin@cmpl.be"; S.cashLoaded=ym; if(S.cscreen==="cash") render();
+}
+function cashHTML(){
+  const ym=S.cashMonth||(S.cashMonth=todayISO().slice(0,7)), D=S.cashDraft||(S.cashDraft={day:todayISO(),amount:"",prov:S.me.provider_id||"",kind:"consultation",note:""});
+  const label=new Date(ym+"-15").toLocaleDateString("fr-BE",{month:"long",year:"numeric"});
+  const head=`<div class="chead"><div><h1>Caisse</h1><p>Les paiements en espèces, sans nom de patient. Rien ne s'efface : une erreur s'annule avec un motif. Le 1er de chaque mois, le résumé du mois précédent part par e-mail à <b>${esc(S.cashTo||"admin@cmpl.be")}</b>.</p></div></div>`;
+  if(S.cashLoaded!==ym) return head+`<div class="empty">Chargement…</div>`;
+  if(S.cashErr) return head+`<div class="empty">La caisse n'est pas encore disponible (${esc(S.cashErr)}). La mise à jour du serveur (migration 049) est-elle faite ?</div>`;
+  const ok=(S.cash||[]).filter(c=>!c.cancelled_at), total=ok.reduce((t,c)=>t+Number(c.amount),0), today=ok.filter(c=>c.paid_on===todayISO()).reduce((t,c)=>t+Number(c.amount),0);
+  const byProv={}; ok.forEach(c=>{ const k=c.provider_id||""; byProv[k]=(byProv[k]||0)+Number(c.amount); });
+  const sent=(S.cashReports||[]).find(r=>r.month===ym+"-01");
+  const days=[...new Set((S.cash||[]).map(c=>c.paid_on))];
+  const canCancel=c=>!c.cancelled_at&&(canManageOffice()||(c.created_by===S.me.id&&Date.now()-new Date(c.created_at)<864e5));
+  return head+`<div class="taskgrid cashgrid">
+   <section class="card taskform"><h3>Nouveau paiement</h3>
+    <div class="row2"><label class="fld">Montant (€)<input id="ca-amt" type="text" inputmode="decimal" autocomplete="off" placeholder="Ex. 25" value="${esc(D.amount)}"></label>
+     <label class="fld">Date<input id="ca-day" type="date" value="${esc(D.day)}" max="${todayISO()}"></label></div>
+    <div class="cachips" role="group" aria-label="Montant rapide">${[5,10,15,20,25,30,40,50].map(v=>`<button type="button" class="mini ghostmini" data-camt="${v}">${v} €</button>`).join("")}</div>
+    <div class="row2"><label class="fld">Prestataire<select id="ca-prov"><option value="">— (aucun)</option>${P.list().map(p=>`<option value="${p.id}" ${D.prov===p.id?"selected":""}>${esc(p.display_name)}</option>`).join("")}</select></label>
+     <label class="fld">Prestation<select id="ca-kind">${Object.entries(CASH_KINDS).map(([k,l])=>`<option value="${k}" ${D.kind===k?"selected":""}>${l}</option>`).join("")}</select></label></div>
+    <label class="fld">Remarque (facultatif, jamais de nom de patient)<input id="ca-note" maxlength="80" value="${esc(D.note)}" placeholder="Ex. 2 certificats"></label>
+    <div class="btnrow"><button class="btn" id="ca-add">Encoder le paiement</button></div>
+   </section>
+   <section>
+    <div class="hnav"><button type="button" class="btn ghost" data-cm="-1" aria-label="Mois précédent">‹</button><b class="cap">${label}</b><button type="button" class="btn ghost" data-cm="1" aria-label="Mois suivant" ${ym>=todayISO().slice(0,7)?"disabled":""}>›</button></div>
+    <div class="cashsum"><div><small>Total du mois</small><b>${eur(total)}</b><small>${ok.length} paiement${ok.length>1?"s":""}</small></div>${ym===todayISO().slice(0,7)?`<div><small>Aujourd'hui</small><b>${eur(today)}</b></div>`:""}
+     <div class="cashprov">${Object.entries(byProv).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<span>${esc(provName(k)||"Sans prestataire")} <b>${eur(v)}</b></span>`).join("")}</div></div>
+    <div class="list cashlist">${days.length?days.map(d=>{ const its=(S.cash||[]).filter(c=>c.paid_on===d), st=its.filter(c=>!c.cancelled_at).reduce((t,c)=>t+Number(c.amount),0);
+      return `<p class="cashday"><span class="cap">${new Date(d+"T12:00").toLocaleDateString("fr-BE",{weekday:"long",day:"numeric",month:"long"})}</span><b>${eur(st)}</b></p>`+its.map(c=>`<div class="cashrow ${c.cancelled_at?"off":""}"><b class="camt">${eur(c.amount)}</b><span><b>${cashKind(c.kind)}</b>${c.provider_id?` · ${esc(provName(c.provider_id))}`:""}${c.note?`<small>${esc(c.note)}</small>`:""}<small>Encodé par ${esc(teamName(c.created_by))} à ${new Date(c.created_at).toLocaleTimeString("fr-BE",{hour:"2-digit",minute:"2-digit"})}${c.cancelled_at?` · <b>annulé</b> par ${esc(teamName(c.cancelled_by))} : ${esc(c.cancel_reason||"")}`:""}</small></span>${canCancel(c)?`<button type="button" class="linkbtn" data-cacx="${c.id}">Annuler</button>`:""}</div>`).join(""); }).join("")
+      :`<div class="empty">Aucun paiement en espèces ce mois-ci.</div>`}</div>
+    <div class="btnrow"><button type="button" class="btn ghost" id="ca-csv" ${(S.cash||[]).length?"":"disabled"}>Télécharger pour Excel</button>${canManageOffice()?`<button type="button" class="btn ghost" id="ca-send">Envoyer le résumé de ce mois maintenant</button>`:""}${isAdmin()?`<button type="button" class="linkbtn" id="ca-to">Changer l'adresse du résumé</button>`:""}</div>
+    <p class="hint">${sent?`Résumé de ce mois envoyé le ${fmtDate(sent.sent_at)} à ${esc(sent.sent_to||"")}.`:"Résumé de ce mois : pas encore envoyé."} Gardé 10 ans (documents comptables).</p>
+   </section></div>`;
+}
+function bindCash(){
+  const ym=S.cashMonth, D=S.cashDraft; if(S.cashLoaded!==ym){ loadCash(ym); return; }
+  const f={amount:"#ca-amt",day:"#ca-day",prov:"#ca-prov",kind:"#ca-kind",note:"#ca-note"};
+  Object.entries(f).forEach(([k,s])=>{ const el=$(s); if(el) el.oninput=el.onchange=()=>{ D[k]=el.value; }; });
+  $$("[data-camt]").forEach(b=>b.onclick=()=>{ D.amount=b.dataset.camt; $("#ca-amt").value=D.amount; });
+  $$("[data-cm]").forEach(b=>b.onclick=()=>{ const [y,m]=ym.split("-").map(Number); S.cashMonth=isoD(new Date(y,m-1+(+b.dataset.cm),15)).slice(0,7); render(); });
+  $("#ca-add").onclick=async()=>{ const amt=parseFloat(String(D.amount).replace(",",".").replace(/[^\d.]/g,""));
+    if(!(amt>0)) return toast("Indiquez le montant.");
+    const btn=$("#ca-add"); btn.disabled=true;
+    if(await run(()=>sb.rpc("add_cash",{p_day:D.day||null,p_amount:amt,p_provider:D.prov||null,p_kind:D.kind,p_note:D.note}),`${eur(amt)} encodé`)){
+      S.cashDraft={...D,amount:"",note:""}; S.cashMonth=(D.day||todayISO()).slice(0,7); S.cashLoaded=null; render(); } else btn.disabled=false; };
+  $$("[data-cacx]").forEach(b=>b.onclick=()=>{
+    const v=document.createElement("div"); v.className="modal"; v.setAttribute("role","dialog"); v.setAttribute("aria-modal","true");
+    v.innerHTML=`<div class="mbox"><h2>Annuler ce paiement</h2><p class="hint">Il restera visible, barré, avec le motif. Il ne sera plus compté.</p><label class="fld">Motif<input id="cx-r" maxlength="120" placeholder="Ex. erreur de montant, encodé deux fois"></label>
+      <div class="btnrow"><button class="btn" id="cx-ok">Annuler le paiement</button><button class="btn ghost" id="cx-x">Retour</button></div></div>`;
+    document.body.appendChild(v); const close=()=>v.remove(); v.querySelector("#cx-x").onclick=close; v.onclick=e=>{ if(e.target===v) close(); };
+    v.querySelector("#cx-ok").onclick=async()=>{ if(await run(()=>sb.rpc("cancel_cash",{p_id:+b.dataset.cacx,p_reason:v.querySelector("#cx-r").value}),"Paiement annulé")){ close(); S.cashLoaded=null; render(); } };
+    v.querySelector("#cx-r").focus(); });
+  const csv=$("#ca-csv"); if(csv) csv.onclick=()=>{ const rows=[["Date","Montant","Prestataire","Prestation","Remarque","Encodé par","Annulé","Motif annulation"]];
+    (S.cash||[]).slice().reverse().forEach(c=>rows.push([`${c.paid_on.slice(8)}/${c.paid_on.slice(5,7)}/${c.paid_on.slice(0,4)}`,Number(c.amount).toFixed(2).replace(".",","),provName(c.provider_id),cashKind(c.kind),c.note||"",teamName(c.created_by),c.cancelled_at?"oui":"",c.cancel_reason||""]));
+    csvDownload(`caisse-${ym}.csv`,rows); };
+  const snd=$("#ca-send"); if(snd) snd.onclick=async()=>{ if(!confirmInline(snd,"Envoyer le résumé ?")) return; snd.disabled=true;
+    const {data,error}=await sb.rpc("send_cash_report",{p_month:ym+"-01"}); snd.disabled=false; if(error) return toast(frError(error)); toast(data||"Envoyé"); S.cashLoaded=null; render(); };
+  const to=$("#ca-to"); if(to) to.onclick=()=>{ const v=document.createElement("div"); v.className="modal"; v.setAttribute("role","dialog"); v.setAttribute("aria-modal","true");
+    v.innerHTML=`<div class="mbox"><h2>Adresse du résumé mensuel</h2><label class="fld">E-mail<input id="ct-e" type="email" value="${esc(S.cashTo||"admin@cmpl.be")}"></label><div class="btnrow"><button class="btn" id="ct-ok">Enregistrer</button><button class="btn ghost" id="ct-x">Annuler</button></div></div>`;
+    document.body.appendChild(v); const close=()=>v.remove(); v.querySelector("#ct-x").onclick=close;
+    v.querySelector("#ct-ok").onclick=async()=>{ const e=v.querySelector("#ct-e").value.trim(); if(await run(()=>sb.rpc("set_cash_report_to",{p_email:e}),"Adresse enregistrée")){ S.cashTo=e.toLowerCase(); close(); render(); } }; };
+}
+
 function startRealtime(){
   if(RT||!sb.channel||!S.session||!S.me||S.me.status!=="active") return;
   try{

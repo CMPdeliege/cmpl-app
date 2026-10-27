@@ -1,0 +1,22 @@
+{
+  "name": "cmpl-mobile",
+  "private": true,
+  "version": "1.0.0",
+  "description": "App iPhone et Android du Centre Médical Prince de Liège (coquille native autour de https://app.cmpl.be)",
+  "scripts": {
+    "sync": "cap sync",
+    "ios": "cap open ios",
+    "android": "cap open android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.0.0",
+    "@capacitor/app": "^8.0.0",
+    "@capacitor/browser": "^8.0.0",
+    "@capacitor/core": "^8.0.0",
+    "@capacitor/ios": "^8.0.0",
+    "@capacitor/push-notifications": "^8.0.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.0.0"
+  }
+}
