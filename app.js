@@ -371,7 +371,8 @@ function reqUnreadFrom(r, viewer, mine){
   return UNREAD[k];
 }
 function chatHTML(r, viewer){
-  const mine = m => viewer==="patient" ? m.from_patient : !m.from_patient;
+  // équipe : seuls MES messages sont à droite ; ceux des collègues et du patient sont à gauche, avec le nom
+  const mine = m => viewer==="patient" ? m.from_patient : (!m.from_patient && (m.author_id ? m.author_id===S.me.id : false));
   const dest = reqWho(r);
   let h=`<div class="chat" id="chat">`, day="", who="";
   const sep = d => { const l=dayLabel(d); if(l!==day){ day=l; who=""; h+=`<div class="day"><span>${esc(l)}</span></div>`; } };
@@ -389,10 +390,13 @@ function chatHTML(r, viewer){
     sep(m.created_at);
     if(!uDone&&nNew&&!mine(m)&&m.created_at>ufrom&&(viewer==="patient"||m!==allM[0])){ uDone=true; who=""; h+=unreadLine(nNew); }
     const me=mine(m), atts=m.attachments||[];
-    const name = viewer==="patient" ? (m.from_patient?"":m.author_label) : (m.from_patient?"":m.author_label);
+    const name = viewer==="patient" ? (m.from_patient?"":m.author_label)
+      : m.from_patient ? `${patientName(r.patient_id)} · ${r.child_id?"parent":"patient"}`
+      : (m.author_id&&(S.team||[]).some(t=>t.id===m.author_id) ? staffName(m.author_id) : (m.author_label||"Le centre"));
     const showName = !me && name && name!==who; who = me ? "" : name;
+    const col = viewer!=="patient" && !me && !m.from_patient;
     const showBody = !(atts.length && AUTO_BODY.test(m.body));
-    h+=`<div class="msg ${me?"me":"them"}">${showName?`<small class="who">${viewer==="patient"&&!m.from_patient&&AV.get(m.author_id)?avatarHTML(AV.get(m.author_id),name,22):""}${esc(name)}</small>`:""}<div class="bub ${me?"me":"bot"}${atts.length?" hasatt":""}">${atts.map(attHTML).join("")}${showBody?`<div class="txt" dir="auto" translate="${AUTO_BODY.test(m.body)?"yes":"no"}">${esc(m.body)}</div>`:""}<span class="t">${hm(m.created_at)}</span></div></div>`;
+    h+=`<div class="msg ${me?"me":"them"}">${showName?`<small class="who${col?" colwho":""}">${viewer==="patient"&&!m.from_patient&&AV.get(m.author_id)?avatarHTML(AV.get(m.author_id),name,22):""}${esc(name)}</small>`:""}<div class="bub ${me?"me":"bot"}${col?" col":""}${atts.length?" hasatt":""}">${atts.map(attHTML).join("")}${showBody?`<div class="txt" dir="auto" translate="${AUTO_BODY.test(m.body)?"yes":"no"}">${esc(m.body)}</div>`:""}<span class="t">${hm(m.created_at)}</span></div></div>`;
   }
   while(ui<upds.length) putUpd(upds[ui++]);
   if(r.purged_at) h+=`<div class="sys">Le contenu de cette conversation a été effacé le ${fmtDate(r.purged_at)} pour protéger les données${viewer==="patient"?" de santé":" du patient"}.</div>`;
@@ -2022,7 +2026,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261027c";
+const APP_VERSION="20261028a";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -2717,44 +2721,66 @@ function invPhoto(id){
   INVPH.set(id,p); p.catch(()=>INVPH.delete(id)); return p;
 }
 async function loadInventory(){
-  const [it,ph]=await Promise.all([sb.from("inventory_items").select("*").order("created_at",{ascending:false}).limit(300),
-    sb.from("inventory_photos").select("id,item_id").limit(900)]);
+  const [it,ph]=await Promise.all([sb.from("inventory_items").select("*").order("created_at",{ascending:false}).limit(1000),
+    sb.from("inventory_photos").select("id,item_id").limit(3000)]);
   if(!it.error) S.inventory=it.data||[]; if(!ph.error) S.invPhotos=ph.data||[];
 }
-const newInv = () => ({title:"",qty:"",notes:"",urgent:false,photos:[],tab:"a_commander"});
+const newInv = () => ({title:"",qty:"",notes:"",urgent:false,photos:[],tab:"a_commander",q:"",sel:[],open:null,more:false,all:false});
+// Inventaire compact : une ligne par article, ajout rapide en une ligne, actions groupées
+function invSimilar(t){ const w=norm(t||"").split(/\s+/).filter(x=>x.length>2); if(!w.length) return null;
+  return (S.inventory||[]).find(i=>i.status!=="recu"&&w.every(x=>norm(i.title).includes(x)))||null; }
 function inventoryHTML(){
-  const I=S.inv||(S.inv=newInv());
-  const all=S.inventory||[], n=st=>all.filter(i=>i.status===st).length;
-  const list=all.filter(i=>i.status===I.tab).sort((a,b)=>(b.urgent-a.urgent)||new Date(b.created_at)-new Date(a.created_at));
-  const phs=id=>(S.invPhotos||[]).filter(p=>p.item_id===id);
-  return `<div class="chead"><div><h1>Inventaire</h1><p>Le matériel et les consommables qui manquent au centre. Toute l'équipe voit cette liste ; le secrétariat passe commande et met à jour le statut.</p></div></div>
+  const I=S.inv||(S.inv=newInv()); I.sel=I.sel||[];
+  const all=S.inventory||[], n=st=>all.filter(i=>i.status===st).length, since=Date.now()-60*864e5;
+  const q=norm(I.q||"").split(/\s+/).filter(Boolean);
+  let list=all.filter(i=>i.status===I.tab).filter(i=>!q.length||q.every(x=>norm(`${i.title} ${i.quantity||""} ${i.notes||""}`).includes(x)));
+  const hidden=I.tab==="recu"&&!I.all?list.filter(i=>new Date(i.status_at||i.created_at)<since).length:0;
+  if(I.tab==="recu"&&!I.all) list=list.filter(i=>new Date(i.status_at||i.created_at)>=since);
+  list.sort((a,b)=>I.tab==="recu"?new Date(b.status_at||b.created_at)-new Date(a.status_at||a.created_at):(b.urgent-a.urgent)||new Date(b.created_at)-new Date(a.created_at));
+  const phs=id=>(S.invPhotos||[]).filter(p=>p.item_id===id), dup=invSimilar(I.title);
+  const next={a_commander:["commande","Commandé"],commande:["recu","Reçu"]}[I.tab];
+  const canDel=it=>it.created_by===S.me.id||isDesk()||isGestion();
+  const row=it=>{ const ph=phs(it.id), op=I.open===it.id, urg=it.urgent&&it.status!=="recu";
+    return `<div class="invrow${urg?" isurg":""}${op?" open":""}">
+     ${next?`<label class="invchk"><input type="checkbox" data-invsel="${it.id}" ${I.sel.includes(it.id)?"checked":""} aria-label="Sélectionner ${esc(it.title)}"></label>`:""}
+     <button type="button" class="invmain" data-invopen="${it.id}" aria-expanded="${op}"><b>${esc(it.title)}</b>${it.quantity?`<span class="invqty">${esc(it.quantity)}</span>`:""}${urg?`<span class="invtag">Urgent</span>`:""}${ph.length?`<span class="invcam" aria-label="${ph.length} photo${ph.length>1?"s":""}">📷${ph.length>1?ph.length:""}</span>`:""}
+      ${it.notes&&!op?`<small class="invnote1">${esc(it.notes)}</small>`:""}</button>
+     <small class="invwho">${esc(teamName(it.created_by))} · ${fmt(it.created_at)}${it.status!=="a_commander"&&it.status_at?`<br>${INV_ST[it.status]} ${fmt(it.status_at)}`:""}</small>
+     <div class="invacts">${next?`<button type="button" class="mini" data-invst="${next[0]}" data-id="${it.id}">✓ ${next[1]}</button>`:""}</div>
+     ${op?`<div class="invdet">${it.notes?`<p class="invnotes">${esc(it.notes)}</p>`:""}
+       ${ph.length?`<div class="invphotos">${ph.map(p=>`<button type="button" class="invph" data-invph="${p.id}" aria-label="Agrandir la photo"><img alt=""></button>`).join("")}</div>`:""}
+       <small class="invmeta">Demandé par ${esc(teamName(it.created_by))} ${fmt(it.created_at)}${it.status!=="a_commander"&&it.status_at?` · ${INV_ST[it.status]} ${fmt(it.status_at)}${it.status_by?` (${esc(teamName(it.status_by))})`:""}`:""}</small>
+       <div class="btnrow">${it.status!=="a_commander"?`<button class="btn ghost" data-invst="a_commander" data-id="${it.id}">Remettre à commander</button>`:""}${canDel(it)?`<button class="linkbtn" data-invdel="${it.id}">Supprimer</button>`:""}</div></div>`:""}
+    </div>`; };
+  return `<div class="chead"><div><h1>Inventaire</h1><p>Ce qui manque au centre. Toute l'équipe ajoute ; le secrétariat coche ce qui est commandé puis reçu.</p></div></div>
   <div class="inv">
-   <section class="card invform"><h3>Signaler un besoin</h3>
-    <label class="fld" for="inv-title">Ce qu'il faut<input id="inv-title" maxlength="200" autocomplete="off" placeholder="Ex. gel d'échographie" value="${esc(I.title)}"></label>
-    <div class="row2"><label class="fld" for="inv-qty">Quantité (facultatif)<input id="inv-qty" maxlength="60" autocomplete="off" placeholder="Ex. 2 flacons de 250 ml" value="${esc(I.qty)}"></label>
-     <label class="chk2 invurg"><input type="checkbox" id="inv-urg" ${I.urgent?"checked":""}> Urgent</label></div>
-    <label class="fld" for="inv-notes">Précisions (facultatif)<textarea id="inv-notes" rows="2" maxlength="1000" placeholder="Marque, référence, fournisseur, taille…">${esc(I.notes)}</textarea></label>
-    <div class="invphotos">${I.photos.map((p,i)=>`<div class="invph"><img src="${p.url}" alt="Photo ${i+1}"><button type="button" class="invrm" data-invrm="${i}" aria-label="Retirer la photo">✕</button></div>`).join("")}
-     ${I.photos.length<3?`<button type="button" class="btn ghost" id="inv-pick">${IC.scan} Ajouter une photo</button>`:""}</div>
+   <section class="card invquick">
+    <div class="invline"><input id="inv-title" maxlength="200" autocomplete="off" placeholder="Ce qu'il faut (ex. gel d'échographie)" value="${esc(I.title)}" aria-label="Ce qu'il faut">
+     <input id="inv-qty" class="invq" maxlength="60" autocomplete="off" placeholder="Quantité" value="${esc(I.qty)}" aria-label="Quantité (facultatif)">
+     <label class="invurgchip"><input type="checkbox" id="inv-urg" ${I.urgent?"checked":""}> Urgent</label>
+     <button type="button" class="cbtn" id="inv-pick" title="Ajouter une photo" aria-label="Ajouter une photo" ${I.photos.length>=3?"disabled":""}>${IC.scan}</button>
+     <button class="btn" id="inv-add" ${I.title.trim()?"":"disabled"}>Ajouter</button></div>
+    ${dup?`<p class="invdup">Déjà dans la liste : <b>${esc(dup.title)}</b>${dup.quantity?` (${esc(dup.quantity)})`:""} · ${INV_ST[dup.status].toLowerCase()}, demandé par ${esc(teamName(dup.created_by))}. Ajoutez seulement si c'est autre chose.</p>`:""}
+    ${I.more?`<textarea id="inv-notes" rows="2" maxlength="1000" placeholder="Marque, référence, fournisseur, taille…" aria-label="Précisions">${esc(I.notes)}</textarea>`:`<button type="button" class="linkbtn invmore" id="inv-more">+ Précisions (marque, référence…)</button>`}
+    ${I.photos.length?`<div class="invphotos">${I.photos.map((p,i)=>`<div class="invph"><img src="${p.url}" alt="Photo ${i+1}"><button type="button" class="invrm" data-invrm="${i}" aria-label="Retirer la photo">✕</button></div>`).join("")}</div>`:""}
     <input type="file" id="inv-file" accept="image/*" hidden>
-    <div class="btnrow"><button class="btn" id="inv-add" ${I.title.trim()?"":"disabled"}>Ajouter à la liste</button></div>
    </section>
-   <div class="tabs">${Object.entries(INV_ST).map(([k,l])=>`<button class="tab" data-invtab="${k}" aria-pressed="${I.tab===k}">${l}${n(k)?`<span class="n">${n(k)}</span>`:""}</button>`).join("")}</div>
-   <div class="list invlist">${list.length?list.map(it=>`<div class="invitem${it.urgent&&it.status!=="recu"?" isurg":""}">
-     <div class="invtop"><b>${esc(it.title)}</b>${it.urgent&&it.status!=="recu"?`<span class="invtag">Urgent</span>`:""}${it.quantity?`<span class="invqty">${esc(it.quantity)}</span>`:""}</div>
-     ${it.notes?`<p class="invnotes">${esc(it.notes)}</p>`:""}
-     ${phs(it.id).length?`<div class="invphotos">${phs(it.id).map(p=>`<button type="button" class="invph" data-invph="${p.id}" aria-label="Agrandir la photo"><img alt=""></button>`).join("")}</div>`:""}
-     <small class="invmeta">Demandé par ${esc(teamName(it.created_by))} · ${fmt(it.created_at)}${it.status!=="a_commander"&&it.status_at?` · ${INV_ST[it.status]} ${fmt(it.status_at)}${it.status_by?` (${esc(teamName(it.status_by))})`:""}`:""}</small>
-     <div class="btnrow">${it.status==="a_commander"?`<button class="btn" data-invst="commande" data-id="${it.id}">Marquer commandé</button>`:""}${it.status==="commande"?`<button class="btn" data-invst="recu" data-id="${it.id}">Marquer reçu</button>`:""}${it.status!=="a_commander"?`<button class="btn ghost" data-invst="a_commander" data-id="${it.id}">Remettre à commander</button>`:""}${it.created_by===S.me.id||isDesk()||isGestion()?`<button class="linkbtn" data-invdel="${it.id}">Supprimer</button>`:""}</div>
-    </div>`).join(""):`<div class="empty">${I.tab==="a_commander"?"Rien à commander pour l'instant.":I.tab==="commande"?"Aucune commande en cours.":"Rien de reçu pour l'instant."}</div>`}</div>
-   <p class="hint">Les éléments reçus restent dans l'onglet « Reçu » (historique du centre).</p>
+   <div class="invbar"><div class="tabs">${Object.entries(INV_ST).map(([k,l])=>`<button class="tab" data-invtab="${k}" aria-pressed="${I.tab===k}">${l}${k!=="recu"&&n(k)?`<span class="n">${n(k)}</span>`:""}</button>`).join("")}</div>
+    <input id="inv-q" type="search" class="pcq" placeholder="Rechercher…" value="${esc(I.q||"")}" aria-label="Rechercher dans l'inventaire"></div>
+   ${I.sel.length&&next?`<div class="invbulk"><b>${I.sel.length} sélectionné${I.sel.length>1?"s":""}</b><button type="button" class="btn" id="inv-bulk">Marquer ${next[1].toLowerCase()}${I.sel.length>1?"s":""}</button><button type="button" class="linkbtn" id="inv-unsel">Annuler</button></div>`:""}
+   <div class="list invtable">${list.length?`${next&&list.length>1?`<label class="invall"><input type="checkbox" id="inv-selall" ${list.every(i=>I.sel.includes(i.id))?"checked":""}> Tout sélectionner</label>`:""}${list.map(row).join("")}`
+     :`<div class="empty">${q.length?"Rien ne correspond.":I.tab==="a_commander"?"Rien à commander pour l'instant.":I.tab==="commande"?"Aucune commande en cours.":"Rien de reçu ces 60 derniers jours."}</div>`}</div>
+   ${hidden?`<button type="button" class="linkbtn" id="inv-all">Afficher l'historique complet (${hidden} plus ancien${hidden>1?"s":""})</button>`:""}
   </div>`;
 }
 function bindInventory(){
   const I=S.inv, t=$("#inv-title"), add=$("#inv-add");
-  t.oninput=()=>{ I.title=t.value; add.disabled=!I.title.trim(); };
+  let dupT=null; t.oninput=()=>{ I.title=t.value; add.disabled=!I.title.trim(); clearTimeout(dupT); dupT=setTimeout(()=>{ const had=!!$(".invdup"), has=!!invSimilar(I.title); if(had!==has){ render(); const n=$("#inv-title"); n.focus(); n.setSelectionRange(n.value.length,n.value.length); } },400); };
+  t.onkeydown=e=>{ if(e.key==="Enter"&&!add.disabled) add.click(); };
   $("#inv-qty").oninput=e=>{ I.qty=e.target.value; };
-  $("#inv-notes").oninput=e=>{ I.notes=e.target.value; };
+  $("#inv-qty").onkeydown=e=>{ if(e.key==="Enter"&&!add.disabled) add.click(); };
+  const nt=$("#inv-notes"); if(nt) nt.oninput=e=>{ I.notes=e.target.value; };
+  const mo=$("#inv-more"); if(mo) mo.onclick=()=>{ I.more=true; render(); $("#inv-notes")?.focus(); };
   $("#inv-urg").onchange=e=>{ I.urgent=e.target.checked; };
   const f=$("#inv-file"), pk=$("#inv-pick"); if(pk) pk.onclick=()=>f.click();
   f.onchange=async()=>{ const x=f.files[0]; f.value=""; if(!x) return;
@@ -2763,17 +2789,26 @@ function bindInventory(){
   $$("[data-invrm]").forEach(b=>b.onclick=()=>{ const ph=I.photos.splice(+b.dataset.invrm,1)[0]; if(ph) URL.revokeObjectURL(ph.url); render(); });
   add.onclick=async()=>{ add.disabled=true; add.textContent="Ajout…";
     const r=await run(()=>sb.rpc("add_inventory_item",{p_title:I.title,p_quantity:I.qty||null,p_notes:I.notes||null,p_urgent:I.urgent}));
-    if(!r){ add.disabled=false; add.textContent="Ajouter à la liste"; return; }
+    if(!r){ add.disabled=false; add.textContent="Ajouter"; return; }
     let okAll=true;
     for(const ph of I.photos){ const d=await blobToB64(ph.blob); if(!await run(()=>sb.rpc("add_inventory_photo",{p_item:r.data,p_mime:"image/jpeg",p_data:d}))){ okAll=false; break; } }
-    I.photos.forEach(ph=>URL.revokeObjectURL(ph.url)); S.inv=newInv();
-    toast(okAll?"Ajouté à l'inventaire":"Ajouté, mais une photo n'a pas pu être envoyée."); await loadInventory(); render(); };
-  $$("[data-invtab]").forEach(b=>b.onclick=()=>{ I.tab=b.dataset.invtab; render(); });
+    I.photos.forEach(ph=>URL.revokeObjectURL(ph.url)); Object.assign(I,{title:"",qty:"",notes:"",urgent:false,photos:[],more:false,tab:"a_commander"});
+    toast(okAll?"Ajouté à l'inventaire":"Ajouté, mais une photo n'a pas pu être envoyée."); await loadInventory(); render(); $("#inv-title")?.focus(); };
+  $$("[data-invtab]").forEach(b=>b.onclick=()=>{ I.tab=b.dataset.invtab; I.sel=[]; I.open=null; render(); });
+  const qi=$("#inv-q"); let qt; qi.oninput=()=>{ clearTimeout(qt); qt=setTimeout(()=>{ I.q=qi.value; render(); const n=$("#inv-q"); n.focus(); n.setSelectionRange(n.value.length,n.value.length); },250); };
+  $$("[data-invopen]").forEach(b=>b.onclick=()=>{ const id=+b.dataset.invopen; I.open=I.open===id?null:id; render(); });
+  $$("[data-invsel]").forEach(c=>c.onchange=()=>{ const id=+c.dataset.invsel; I.sel=c.checked?[...new Set([...I.sel,id])]:I.sel.filter(x=>x!==id); render(); });
+  const sa=$("#inv-selall"); if(sa) sa.onchange=()=>{ const ids=[...document.querySelectorAll("[data-invsel]")].map(c=>+c.dataset.invsel); I.sel=sa.checked?ids:[]; render(); };
+  const un=$("#inv-unsel"); if(un) un.onclick=()=>{ I.sel=[]; render(); };
+  const bk=$("#inv-bulk"); if(bk) bk.onclick=async()=>{ const st=I.tab==="a_commander"?"commande":"recu"; bk.disabled=true; let n=0;
+    for(const id of I.sel){ const {error}=await sb.rpc("set_inventory_status",{p_id:id,p_status:st}); if(error){ toast(frError(error)); break; } n++; }
+    I.sel=[]; if(n) toast(`${n} article${n>1?"s":""} mis à jour`); await loadInventory(); render(); };
+  const al=$("#inv-all"); if(al) al.onclick=()=>{ I.all=true; render(); };
   $$("[data-invst]").forEach(b=>b.onclick=async()=>{ b.disabled=true;
-    if(await run(()=>sb.rpc("set_inventory_status",{p_id:+b.dataset.id,p_status:b.dataset.invst}),"Statut mis à jour")){ await loadInventory(); render(); } else b.disabled=false; });
+    if(await run(()=>sb.rpc("set_inventory_status",{p_id:+b.dataset.id,p_status:b.dataset.invst}),b.dataset.invst==="commande"?"Marqué commandé":b.dataset.invst==="recu"?"Marqué reçu":"Remis à commander")){ I.sel=I.sel.filter(x=>x!==+b.dataset.id); await loadInventory(); render(); } else b.disabled=false; });
   $$("[data-invdel]").forEach(b=>b.onclick=async()=>{
     if(b.dataset.sure!=="1"){ b.dataset.sure="1"; b.textContent="Confirmer la suppression"; return; }
-    b.disabled=true; if(await run(()=>sb.rpc("delete_inventory_item",{p_id:+b.dataset.invdel}),"Supprimé")){ await loadInventory(); render(); } else b.disabled=false; });
+    b.disabled=true; if(await run(()=>sb.rpc("delete_inventory_item",{p_id:+b.dataset.invdel}),"Supprimé")){ I.open=null; await loadInventory(); render(); } else b.disabled=false; });
   $$("[data-invph]").forEach(async b=>{ try{ const u=await invPhoto(+b.dataset.invph); b.querySelector("img").src=u; b.onclick=()=>openViewer(u); }catch(e){ b.classList.add("failed"); } });
 }
 
@@ -3619,6 +3654,7 @@ async function loadHours(fromISO,toISO){
     sb.from("staff_hours_weeks").select("*").gte("week_start",addDays(fromISO,-6)).lte("week_start",toISO)]);
   if(h.error){ S.hours2=[]; S.hoursErr=frError(h.error); return; }
   S.hoursErr=null;
+  if(S.hcolorsOk!==false){ const hc=await sb.from("staff_hours_colors").select("user_id,color"); if(hc.error) S.hcolorsOk=false; else { S.hcolorsOk=true; S.hcolors=hc.data||[]; } }
   const keep=(S.hours2||[]).filter(x=>x.day<fromISO||x.day>toISO); S.hours2=[...keep,...(h.data||[])];
   if(S.hnotesOk!==false){ const nt=await sb.from("staff_hours_notes").select("*").gte("week_start",addDays(fromISO,-6)).lte("week_start",toISO);
     if(nt.error) S.hnotesOk=false; else { S.hnotesOk=true; const ks=new Set((nt.data||[]).map(x=>x.week_start)); S.hnotes=[...(S.hnotes||[]).filter(x=>!ks.has(x.week_start)),...(nt.data||[])]; } }
@@ -3643,6 +3679,7 @@ function hoursNoteHTML(wk){
     <textarea id="hn-body" rows="4" maxlength="4000" placeholder="Ex. Leïla : pas disponible jeudi après-midi. Fatima : souhaite finir à 17 h mercredi.">${esc(d)}</textarea></label>
     <div class="btnrow"><button type="button" class="btn" id="hn-save" ${S.hnoteDraft&&S.hnoteDraft.wk===wk?"":"disabled"}>Enregistrer</button><small class="hint">${n?`Modifié par ${esc(teamName(n.updated_by))} ${fmt(n.updated_at)}`:"Visible par le secrétariat et l'administration."}</small></div></section>`;
 }
+const hDot = uid => `<button type="button" class="hdot" data-hcolor="${uid}" style="background:${hoursColor(uid)}" title="Changer la couleur" aria-label="Couleur de ${esc(staffName(uid))}"></button>`;
 function bindHoursNote(wk){
   const t=$("#hn-body"), b=$("#hn-save"); if(!t) return;
   t.oninput=()=>{ S.hnoteDraft={wk,body:t.value}; b.disabled=false; };
@@ -3653,17 +3690,18 @@ function hoursWeekHTML(H){
   const days=[...Array(6)].map((_,i)=>addDays(H.week,i)), wkEnd=addDays(H.week,6), people=officePeople(H.week,wkEnd), mgr=canManageOffice();
   const cell=(uid,day,tag)=>{ const r=hourRow(uid,day), can=mgr||(canEditHours(uid)&&!weekOk(uid,H.week));
     const inner=!r?`<span class="hz">—</span>`:r.kind==="travail"?`<b>${t5(r.start_t)}–${t5(r.end_t)}</b><small>${r.break_min?`pause ${r.break_min} min · `:""}${minTxt(hoursOf(r))}</small>`:`<b class="hk hk-${r.kind}">${HK[r.kind][0]}</b>${r.note?`<small>${esc(r.note)}</small>`:""}`;
-    const btn=can?`<button type="button" class="hcell" data-hc="${uid}|${day}" aria-label="${esc(staffName(uid))}, ${fmtDate(day+"T12:00")}">${inner}</button>`:`<div class="hcell ro">${inner}</div>`;
+    const tint=r&&r.kind==="travail"?` hasc" style="--hc:${hoursColor(uid)}`:"";
+    const btn=can?`<button type="button" class="hcell${tint}" data-hc="${uid}|${day}" aria-label="${esc(staffName(uid))}, ${fmtDate(day+"T12:00")}">${inner}</button>`:`<div class="hcell ro${tint}">${inner}</div>`;
     return tag==="li"?`<li class="${day===todayISO()?"today":""}"><span class="hday">${DOWS[(new Date(day+"T12:00").getDay()+6)%7]} ${day.slice(8)}/${day.slice(5,7)}</span>${btn}</li>`:`<td class="${day===todayISO()?"today":""}">${btn}</td>`; };
   const tot=uid=>days.reduce((t,d)=>t+hoursOf(hourRow(uid,d)),0), abs=uid=>days.filter(d=>{ const r=hourRow(uid,d); return r&&r.kind!=="travail"; }).length;
   return `<div class="hweek">
    <div class="hnav"><button type="button" class="btn ghost" data-hw="-7" aria-label="Semaine précédente">‹</button><b>Semaine du ${H.week.slice(8)}/${H.week.slice(5,7)} au ${addDays(H.week,5).slice(8)}/${addDays(H.week,5).slice(5,7)}</b><button type="button" class="btn ghost" data-hw="7" aria-label="Semaine suivante">›</button>${H.week!==mondayOf(todayISO())?`<button type="button" class="linkbtn" data-hw="0">Cette semaine</button>`:""}</div>
    <div class="htable-wrap"><table class="htable"><thead><tr><th>Accueillante</th>${days.map(d=>`<th class="${d===todayISO()?"today":""}">${DOWS[new Date(d+"T12:00").getDay()===0?6:new Date(d+"T12:00").getDay()-1]} ${d.slice(8)}/${d.slice(5,7)}</th>`).join("")}<th>Total</th></tr></thead>
-   <tbody>${people.length?people.map(uid=>{ const ok=weekOk(uid,H.week); return `<tr><th scope="row"><span class="hname">${esc(staffName(uid))}${uid===S.me.id?" <small>(moi)</small>":""}</span>${ok?`<span class="pill st-traite">Validée</span>`:""}</th>${days.map(d=>cell(uid,d)).join("")}
+   <tbody>${people.length?people.map(uid=>{ const ok=weekOk(uid,H.week); return `<tr><th scope="row"><span class="hname">${hDot(uid)}${esc(staffName(uid))}${uid===S.me.id?" <small>(moi)</small>":""}</span>${ok?`<span class="pill st-traite">Validée</span>`:""}</th>${days.map(d=>cell(uid,d)).join("")}
      <td class="htot"><b>${minTxt(tot(uid))}</b>${abs(uid)?`<small>${abs(uid)} j. d'absence</small>`:""}${mgr?`<button type="button" class="mini ${ok?"ghostmini":""}" data-hval="${uid}" data-ok="${ok?0:1}">${ok?"Rouvrir":"Valider"}</button>`:""}</td></tr>`; }).join("")
      :`<tr><td colspan="8"><div class="empty">Aucune accueillante. Les comptes avec le rôle « Secrétariat » apparaissent ici.</div></td></tr>`}</tbody></table></div>
-   <div class="hcards">${people.map(uid=>{ const ok=weekOk(uid,H.week); return `<section class="hcard"><header><b>${esc(staffName(uid))}${uid===S.me.id?" <small>(moi)</small>":""}</b>${ok?`<span class="pill st-traite">Validée</span>`:""}<span class="htot2">${minTxt(tot(uid))}</span></header><ul>${days.map(d=>cell(uid,d,"li")).join("")}</ul>${mgr?`<button type="button" class="mini ${ok?"ghostmini":""}" data-hval="${uid}" data-ok="${ok?0:1}">${ok?"Rouvrir la semaine":"Valider la semaine"}</button>`:""}</section>`; }).join("")}</div>
-   <div class="btnrow">${mgr?`<button type="button" class="btn ghost" id="h-addp">+ Ajouter une personne au tableau</button>`:""}<button type="button" class="btn ghost" id="h-copy">Copier la semaine précédente (cases vides)</button></div>
+   <div class="hcards">${people.map(uid=>{ const ok=weekOk(uid,H.week); return `<section class="hcard"><header>${hDot(uid)}<b>${esc(staffName(uid))}${uid===S.me.id?" <small>(moi)</small>":""}</b>${ok?`<span class="pill st-traite">Validée</span>`:""}<span class="htot2">${minTxt(tot(uid))}</span></header><ul>${days.map(d=>cell(uid,d,"li")).join("")}</ul>${mgr?`<button type="button" class="mini ${ok?"ghostmini":""}" data-hval="${uid}" data-ok="${ok?0:1}">${ok?"Rouvrir la semaine":"Valider la semaine"}</button>`:""}</section>`; }).join("")}</div>
+   <div class="btnrow">${mgr?`<button type="button" class="btn ghost" id="h-addp">+ Ajouter une personne au tableau</button>`:""}<button type="button" class="btn ghost" id="h-copy">Copier la semaine précédente (cases vides)</button><button type="button" class="btn ghost" data-hxlsx="${H.week.slice(0,7)}">Planning Excel du mois</button></div>
    <p class="hint">Touchez une case pour encoder l'heure d'arrivée, de départ et la pause. Une semaine validée ne peut plus être changée que par l'administration. Gardé 5 ans.</p>
    ${hoursNoteHTML(H.week)}</div>`;
 }
@@ -3677,8 +3715,8 @@ function hoursMonthHTML(H){
   return `<div class="hweek"><div class="hnav"><button type="button" class="btn ghost" data-hm="-1" aria-label="Mois précédent">‹</button><b class="cap">${label}</b><button type="button" class="btn ghost" data-hm="1" aria-label="Mois suivant">›</button></div>
    <div class="htable-wrap hm"><table class="htable hmonth"><thead><tr><th>Accueillante</th><th>Heures prestées</th><th>Jours</th>${["conge","maladie","ferie","formation","recup","autre"].map(k=>`<th>${HK[k][0]}</th>`).join("")}<th>Semaines</th></tr></thead>
    <tbody>${people.map(row).join("")||`<tr><td colspan="10"><div class="empty">Rien d'encodé ce mois-ci.</div></td></tr>`}</tbody></table></div>
-   <div class="btnrow"><button type="button" class="btn" id="h-csv">Télécharger pour Excel (détail jour par jour)</button></div>
-   <p class="hint">Le fichier s'ouvre avec Excel : une ligne par jour et par personne (arrivée, départ, pause, heures, type d'absence). Pratique pour l'encodage chez le secrétariat social.</p></div>`;
+   <div class="btnrow"><button type="button" class="btn" data-hxlsx="${H.month}">Télécharger le planning Excel</button><button type="button" class="linkbtn" id="h-csv">Détail jour par jour (CSV)</button></div>
+   <p class="hint">Le planning Excel reprend le tableau du secrétariat : les heures de la journée, une couleur par accueillante, les désidératas de chaque semaine et le total du mois (pour le secrétariat social). Le détail CSV donne une ligne par jour et par personne.</p></div>`;
 }
 function csvDownload(name,rows){
   const txt="﻿"+rows.map(r=>r.map(c=>{ const s=String(c??""); return /[;"\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s; }).join(";")).join("\r\n");
@@ -3722,6 +3760,11 @@ function bindHours(){
       S.hweeks=(S.hweeks||[]).filter(w=>!(w.user_id===b.dataset.hval&&w.week_start===H.week)); S.hweeks.push({user_id:b.dataset.hval,week_start:H.week,validated_at:ok?new Date().toISOString():null}); render(); } });
   const ap=$("#h-addp"); if(ap) ap.onclick=()=>pickColleagues("Ajouter au tableau",officePeople(H.week,addDays(H.week,6)),async ids=>{ S.hoursExtra=[...new Set([...(S.hoursExtra||[]),...ids])]; render(); return true; });
   bindHoursNote(H.week);
+  $$("[data-hcolor]").forEach(b=>b.onclick=e=>{ e.stopPropagation(); pickHoursColor(b.dataset.hcolor); });
+  $$("[data-hxlsx]").forEach(b=>b.onclick=async()=>{ const ym=b.dataset.hxlsx, d=monthDays(ym); b.disabled=true;
+    try{ await loadHours(mondayOf(d[0]),d[d.length-1]); if(!(S.hours2||[]).some(h=>h.day>=d[0]&&h.day<=d[d.length-1])){ toast("Rien d'encodé ce mois-là."); return; }
+      await saveFile(hoursPlanningXlsx(ym),`horaires-accueil-${ym}.xlsx`); }
+    catch(e){ console.error(e); toast("Le fichier n'a pas pu être préparé."); } finally{ b.disabled=false; } });
   const cp=$("#h-copy"); if(cp) cp.onclick=async()=>{ const who=officePeople(H.week,addDays(H.week,6)).filter(canEditHours); let n=0;
     for(const uid of who){ if(!canManageOffice()&&weekOk(uid,H.week)) continue;
       for(let i=0;i<6;i++){ const d=addDays(H.week,i), src=hourRow(uid,addDays(d,-7)); if(!src||hourRow(uid,d)) continue;
@@ -3805,6 +3848,120 @@ function bindCash(){
     v.innerHTML=`<div class="mbox"><h2>Adresse du résumé mensuel</h2><label class="fld">E-mail<input id="ct-e" type="email" value="${esc(S.cashTo||"admin@cmpl.be")}"></label><div class="btnrow"><button class="btn" id="ct-ok">Enregistrer</button><button class="btn ghost" id="ct-x">Annuler</button></div></div>`;
     document.body.appendChild(v); const close=()=>v.remove(); v.querySelector("#ct-x").onclick=close;
     v.querySelector("#ct-ok").onclick=async()=>{ const e=v.querySelector("#ct-e").value.trim(); if(await run(()=>sb.rpc("set_cash_report_to",{p_email:e}),"Adresse enregistrée")){ S.cashTo=e.toLowerCase(); close(); render(); } }; };
+}
+
+/* ---------- couleurs des accueillantes + fichier Excel « planning » (20261028a) ---------- */
+const HCOLORS=[["#e9dc6e","Jaune"],["#8eb4e3","Bleu"],["#e0453f","Rouge"],["#e5b3e8","Rose"],["#9bd38b","Vert"],["#f2a65a","Orange"],["#7fd1c9","Turquoise"],["#c9c9c9","Gris"]];
+function hoursColor(uid){
+  const c=(S.hcolors||[]).find(x=>x.user_id===uid); if(c) return c.color;
+  const ids=[...new Set([...(S.team||[]).filter(t=>t.role==="secretariat").map(t=>t.id),...(S.hours2||[]).map(h=>h.user_id)])].sort((a,b)=>staffName(a).localeCompare(staffName(b)));
+  const used=new Set((S.hcolors||[]).map(x=>x.color)), free=HCOLORS.map(x=>x[0]).filter(x=>!used.has(x));
+  const i=ids.filter(id=>!(S.hcolors||[]).some(x=>x.user_id===id)).indexOf(uid);
+  return (free.length?free:HCOLORS.map(x=>x[0]))[Math.max(0,i)%(free.length||HCOLORS.length)];
+}
+function pickHoursColor(uid){
+  const v=document.createElement("div"); v.className="modal"; v.setAttribute("role","dialog"); v.setAttribute("aria-modal","true");
+  const cur=hoursColor(uid);
+  v.innerHTML=`<div class="mbox"><h2>Couleur de ${esc(staffName(uid))}</h2><p class="hint">La même couleur dans le tableau et dans le fichier Excel.</p>
+    <div class="hcpick">${HCOLORS.map(([c,l])=>`<button type="button" data-hcol="${c}" aria-pressed="${c===cur}" aria-label="${l}"><i style="background:${c}"></i>${l}</button>`).join("")}</div>
+    <div class="btnrow"><button class="btn ghost" id="hcp-x">Fermer</button></div></div>`;
+  document.body.appendChild(v); const close=()=>v.remove(); v.querySelector("#hcp-x").onclick=close; v.onclick=e=>{ if(e.target===v) close(); };
+  v.querySelectorAll("[data-hcol]").forEach(b=>b.onclick=async()=>{ const c=b.dataset.hcol;
+    if(await run(()=>sb.rpc("set_hours_color",{p_user:uid,p_color:c}),"Couleur enregistrée")){ S.hcolors=[...(S.hcolors||[]).filter(x=>x.user_id!==uid),{user_id:uid,color:c}]; close(); render(); } });
+}
+// --- petit écrivain de fichiers .xlsx (sans bibliothèque externe) ---
+const CRC_T=(()=>{ const t=new Uint32Array(256); for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c=c&1?0xEDB88320^(c>>>1):c>>>1; t[n]=c>>>0; } return t; })();
+function crc32(u8){ let c=0xFFFFFFFF; for(let i=0;i<u8.length;i++) c=CRC_T[(c^u8[i])&255]^(c>>>8); return (c^0xFFFFFFFF)>>>0; }
+function zipStore(files){ // files: [[name, string]]
+  const enc=new TextEncoder(), parts=[], central=[]; let off=0;
+  const u16=n=>[n&255,(n>>>8)&255], u32=n=>[n&255,(n>>>8)&255,(n>>>16)&255,(n>>>24)&255];
+  for(const [name,str] of files){ const nm=enc.encode(name), data=enc.encode(str), crc=crc32(data);
+    const head=[...u32(0x04034b50),...u16(20),...u16(0x0800),...u16(0),...u16(0),...u16(0x21),...u32(crc),...u32(data.length),...u32(data.length),...u16(nm.length),...u16(0)];
+    parts.push(new Uint8Array(head),nm,data);
+    central.push([...u32(0x02014b50),...u16(20),...u16(20),...u16(0x0800),...u16(0),...u16(0),...u16(0x21),...u32(crc),...u32(data.length),...u32(data.length),...u16(nm.length),...u16(0),...u16(0),...u16(0),...u16(0),...u32(0),...u32(off)],nm);
+    off+=head.length+nm.length+data.length; }
+  let csize=0; const cparts=[]; for(let i=0;i<central.length;i+=2){ const h=new Uint8Array(central[i]); cparts.push(h,central[i+1]); csize+=h.length+central[i+1].length; }
+  const end=new Uint8Array([...u32(0x06054b50),...u16(0),...u16(0),...u16(files.length),...u16(files.length),...u32(csize),...u32(off),...u16(0)]);
+  return new Blob([...parts,...cparts,end],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+}
+const xesc = s => String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g,"");
+const colName = n => { let s=""; n++; while(n>0){ const m=(n-1)%26; s=String.fromCharCode(65+m)+s; n=Math.floor((n-1)/26); } return s; };
+// feuille : cells = Map("r,c" -> {v, fill, bold, border, align, wrap, italic, size}), merges=[[r1,c1,r2,c2]], widths=[...], heights={r:h}
+function buildXlsx(sheetName, sh){
+  const fills=["none","gray125"], xfs=[], xfKey=new Map(), fontsL=[`<font><sz val="11"/><name val="Calibri"/></font>`];
+  const fontIdx=(b,i,sz)=>{ const k=`<font>${b?"<b/>":""}${i?"<i/>":""}<sz val="${sz||11}"/><name val="Calibri"/></font>`; let ix=fontsL.indexOf(k); if(ix<0){ fontsL.push(k); ix=fontsL.length-1; } return ix; };
+  const fillIdx=c=>{ if(!c) return 0; const k=c.replace("#","").toUpperCase(); let ix=fills.indexOf(k); if(ix<0){ fills.push(k); ix=fills.length-1; } return ix; };
+  const style=c=>{ const f=fontIdx(c.bold,c.italic,c.size), fi=fillIdx(c.fill), b=c.border?1:0, al=c.align||"", w=c.wrap?1:0;
+    const k=`${f}|${fi}|${b}|${al}|${w}`; if(!xfKey.has(k)){ xfs.push({f,fi,b,al,w}); xfKey.set(k,xfs.length); } return xfKey.get(k); };
+  const rows=new Map(); for(const [key,c] of sh.cells){ const [r,cc]=key.split(",").map(Number); if(!rows.has(r)) rows.set(r,[]); rows.get(r).push([cc,c]); }
+  let sd=""; [...rows.keys()].sort((a,b)=>a-b).forEach(r=>{ const cs=rows.get(r).sort((a,b)=>a[0]-b[0]);
+    sd+=`<row r="${r+1}"${sh.heights&&sh.heights[r]?` ht="${sh.heights[r]}" customHeight="1"`:""}>`+cs.map(([cc,c])=>{ const ref=colName(cc)+(r+1), s=style(c);
+      return c.v===undefined||c.v===""?`<c r="${ref}" s="${s}"/>`:typeof c.v==="number"?`<c r="${ref}" s="${s}"><v>${c.v}</v></c>`:`<c r="${ref}" s="${s}" t="inlineStr"><is><t xml:space="preserve">${xesc(c.v)}</t></is></c>`; }).join("")+`</row>`; });
+  const cols=(sh.widths||[]).map((w,i)=>w?`<col min="${i+1}" max="${i+1}" width="${w}" customWidth="1"/>`:"").join("");
+  const sheet=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><sheetViews><sheetView workbookViewId="0" showGridLines="1"/></sheetViews><sheetFormatPr defaultRowHeight="18"/>${cols?`<cols>${cols}</cols>`:""}<sheetData>${sd}</sheetData>${sh.merges&&sh.merges.length?`<mergeCells count="${sh.merges.length}">${sh.merges.map(([r1,c1,r2,c2])=>`<mergeCell ref="${colName(c1)}${r1+1}:${colName(c2)}${r2+1}"/>`).join("")}</mergeCells>`:""}<pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/><pageSetup orientation="landscape" fitToWidth="1" fitToHeight="0"/></worksheet>`;
+  const thin=`<left style="thin"><color rgb="FF000000"/></left><right style="thin"><color rgb="FF000000"/></right><top style="thin"><color rgb="FF000000"/></top><bottom style="thin"><color rgb="FF000000"/></bottom><diagonal/>`;
+  const styles=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="${fontsL.length}">${fontsL.join("")}</fonts><fills count="${fills.length}"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>${fills.slice(2).map(c=>`<fill><patternFill patternType="solid"><fgColor rgb="FF${c}"/><bgColor indexed="64"/></patternFill></fill>`).join("")}</fills><borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border>${thin}</border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="${xfs.length+1}"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>${xfs.map(x=>`<xf numFmtId="0" fontId="${x.f}" fillId="${x.fi}" borderId="${x.b}" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"${x.al?` horizontal="${x.al}"`:""}${x.w?` wrapText="1"`:""}/></xf>`).join("")}</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
+  const nm=xesc(sheetName).slice(0,31);
+  return zipStore([
+    ["[Content_Types].xml",`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`],
+    ["_rels/.rels",`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`],
+    ["xl/workbook.xml",`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="${nm}" sheetId="1" r:id="rId1"/></sheets></workbook>`],
+    ["xl/_rels/workbook.xml.rels",`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`],
+    ["xl/styles.xml",styles],["xl/worksheets/sheet1.xml",sheet]]);
+}
+// --- le planning du mois, au format du tableau du secrétariat ---
+const hTxt = t => { if(!t) return ""; const [h,m]=t.split(":").map(Number); return m?`${h}h${String(m).padStart(2,"0")}`:`${h}h`; };
+const SLOTS=[9,10,11,12,13,14,15,16,17,18];
+function hoursPlanningXlsx(ym){
+  const days=monthDays(ym), label=new Date(ym+"-15").toLocaleDateString("fr-BE",{month:"long",year:"numeric"});
+  const people=officePeople(days[0],days[days.length-1]);
+  const hasSat=days.some(d=>new Date(d+"T12:00").getDay()===6&&(S.hours2||[]).some(h=>h.day===d));
+  const work=days.filter(d=>{ const g=new Date(d+"T12:00").getDay(); return g>=1&&g<=5||(g===6&&hasSat); });
+  const weeks=[]; work.forEach(d=>{ const w=mondayOf(d); let x=weeks.find(y=>y.w===w); if(!x){ x={w,days:[]}; weeks.push(x); } x.days.push(d); });
+  const cells=new Map(), merges=[], widths=[11], heights={}; const set=(r,c,o)=>cells.set(`${r},${c}`,o);
+  const slotOf=t=>{ const [h,m]=t.split(":").map(Number); return Math.min(9,Math.max(0,h-9)); };
+  const endSlot=t=>{ const [h,m]=t.split(":").map(Number); const x=h*60+m-1; return Math.min(9,Math.max(0,Math.floor(x/60)-9)); };
+  let r=0;
+  set(r,0,{v:`Horaires de l'accueil – ${label}`,bold:true,size:14}); heights[r]=24; r+=2;
+  for(const wk of weeks){
+    // colonnes : une ou plusieurs « voies » par jour (horaires qui se chevauchent)
+    let c=1; const top=r;
+    set(r,0,{v:"Heure",bold:true,border:true,align:"center",fill:"#e7e6e6"});
+    for(const d of wk.days){
+      const shifts=people.map(u=>hourRow(u,d)).filter(x=>x&&x.kind==="travail").sort((a,b)=>a.start_t.localeCompare(b.start_t));
+      const lanes=[]; shifts.forEach(s=>{ let i=lanes.findIndex(l=>l[l.length-1].end_t<=s.start_t); if(i<0){ lanes.push([s]); } else lanes[i].push(s); });
+      const n=Math.max(2,lanes.length);
+      set(r,c,{v:new Date(d+"T12:00").toLocaleDateString("fr-BE",{weekday:"long",day:"numeric",month:"long",year:"numeric"}),bold:true,border:true,align:"center",fill:"#e7e6e6"});
+      for(let k=1;k<n;k++) set(r,c+k,{border:true,fill:"#e7e6e6"});
+      merges.push([r,c,r,c+n-1]);
+      SLOTS.forEach((h,si)=>{ for(let k=0;k<n;k++) set(r+1+si,c+k,{border:true,align:"center"}); });
+      lanes.forEach((ln,k)=>ln.forEach(s=>{ const a=slotOf(s.start_t), b=endSlot(s.end_t), col=hoursColor(s.user_id);
+        for(let si=a;si<=b;si++) set(r+1+si,c+k,{border:true,align:"center",fill:col,v:si===a&&si===b?`${hTxt(s.start_t)}–${hTxt(s.end_t)}`:si===a?hTxt(s.start_t):si===b?hTxt(s.end_t):""}); }));
+      for(let k=0;k<n;k++) widths[c+k]=n>2?9:12;
+      c+=n;
+    }
+    SLOTS.forEach((h,si)=>set(r+1+si,0,{v:`${h}-${h+1}h`,border:true,align:"center"}));
+    r+=1+SLOTS.length+1;
+    // sous le tableau : heures de la semaine, absences, désidératas
+    const tot=people.map(u=>[u,wk.days.reduce((t,d)=>t+hoursOf(hourRow(u,d)),0)]).filter(x=>x[1]>0);
+    if(tot.length){ set(r,0,{v:"Heures de la semaine : "+tot.map(([u,m])=>`${staffName(u)} ${minTxt(m)}`).join(" · "),italic:true}); r++; }
+    const abs=[]; wk.days.forEach(d=>people.forEach(u=>{ const x=hourRow(u,d); if(x&&x.kind!=="travail") abs.push(`${staffName(u)} : ${HK[x.kind][0].toLowerCase()} le ${new Date(d+"T12:00").toLocaleDateString("fr-BE",{weekday:"long",day:"numeric"})}${x.note?` (${x.note})`:""}`); }));
+    if(abs.length){ set(r,0,{v:"Absences : "+abs.join(" · "),italic:true}); r++; }
+    const note=(S.hnotes||[]).find(x=>x.week_start===wk.w);
+    if(note&&note.body.trim()){ const lines=note.body.split("\n").length; set(r,0,{v:"Désidératas et indisponibilités :",bold:true}); r++;
+      set(r,0,{v:note.body,wrap:true,border:true,fill:"#fff8e1"}); merges.push([r,0,r,Math.max(6,c-1)]); heights[r]=Math.min(400,18*Math.max(2,lines+Math.ceil(note.body.length/140))); r++; }
+    r+=2;
+  }
+  // légende des couleurs + total du mois (pour le secrétariat social)
+  set(r,0,{v:"Légende",bold:true}); r++;
+  people.forEach(u=>{ set(r,0,{v:staffName(u),fill:hoursColor(u),border:true}); merges.push([r,0,r,1]); set(r,1,{border:true,fill:hoursColor(u)}); r++; });
+  r++; const kinds=["conge","maladie","ferie","formation","recup","autre"];
+  ["Accueillante","Heures prestées","Heures (décimal)","Jours travaillés",...kinds.map(k=>HK[k][0])].forEach((h,i)=>set(r,i,{v:h,bold:true,border:true,fill:"#e7e6e6",align:"center",wrap:true})); heights[r]=30; r++;
+  people.forEach(u=>{ const rs=days.map(d=>hourRow(u,d)).filter(Boolean), wm=rs.filter(x=>x.kind==="travail").reduce((t,x)=>t+hoursOf(x),0);
+    set(r,0,{v:staffName(u),border:true,fill:hoursColor(u)}); set(r,1,{v:minTxt(wm),border:true,align:"center"}); set(r,2,{v:Math.round(wm/60*100)/100,border:true,align:"center"});
+    set(r,3,{v:rs.filter(x=>x.kind==="travail").length,border:true,align:"center"}); kinds.forEach((k,i)=>{ const n=rs.filter(x=>x.kind===k).length; set(r,4+i,{v:n||"",border:true,align:"center"}); }); r++; });
+  for(let i=0;i<10;i++) widths[i]=Math.max(widths[i]||0,i===0?18:12);
+  return buildXlsx(label.replace(/^./,x=>x.toUpperCase()),{cells,merges,widths,heights});
 }
 
 function startRealtime(){

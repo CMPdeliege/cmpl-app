@@ -1322,3 +1322,57 @@ button.hcell .hz{color:var(--muted);opacity:.45}
 .hmonth thead th:last-child{position:static;box-shadow:none}
 .hnote textarea{width:100%;resize:vertical;margin-top:6px}
 .hnote .btnrow{align-items:center;gap:12px}
+
+/* inventaire compact (20261028a) */
+.invquick{display:flex;flex-direction:column;gap:8px;padding:12px}
+.invline{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.invline #inv-title{flex:1 1 220px;min-width:0}
+.invline .invq{flex:0 1 140px;min-width:0}
+.invline input{border:1px solid var(--line);border-radius:10px;padding:9px 11px;background:var(--surface)}
+.invurgchip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:6px 11px;font-weight:700;font-size:13.5px;cursor:pointer;white-space:nowrap}
+.invurgchip:has(input:checked){background:var(--danger-soft);border-color:var(--danger);color:var(--danger)}
+.invline .btn{padding:9px 16px;min-height:0}
+.invmore{align-self:flex-start;font-size:13.5px}
+.invquick textarea{width:100%;border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--surface)}
+.invdup{margin:0;font-size:13px;background:var(--gold-soft);border-radius:10px;padding:7px 10px}
+.invbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin:14px 0 8px}
+.invbar .tabs{margin:0}.invbar .pcq{max-width:260px;margin:0}
+.invbulk{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--accent-soft);border-radius:12px;padding:8px 12px;margin-bottom:8px}
+.invbulk .btn{padding:7px 14px;min-height:0}
+.invtable{padding:0;overflow:hidden}
+.invall{display:flex;align-items:center;gap:8px;padding:8px 14px;font-size:13px;color:var(--muted);border-bottom:1px solid var(--line)}
+.invrow{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;align-items:center;gap:4px 12px;padding:8px 14px;border-bottom:1px solid var(--line)}
+.invrow:last-child{border-bottom:0}
+.invrow.isurg{box-shadow:inset 3px 0 0 var(--danger)}
+.invrow.open{background:var(--surface-2)}
+.invchk input{width:18px;height:18px;accent-color:var(--accent)}
+.invmain{border:0;background:transparent;text-align:left;padding:2px 0;color:var(--ink);display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;min-width:0}
+.invmain b{font-size:15px}
+.invmain .invqty{font-size:12.5px;color:var(--muted);background:var(--surface-2);border-radius:999px;padding:1px 8px}
+.invmain .invtag{font-size:11px;font-weight:800;color:var(--danger);background:var(--danger-soft);border-radius:999px;padding:1px 7px}
+.invcam{font-size:12.5px}
+.invnote1{flex-basis:100%;color:var(--muted);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.invwho{color:var(--muted);font-size:12px;text-align:right;line-height:1.35}
+.invacts .mini{white-space:nowrap}
+.invrow:not(:has(.invchk)){grid-template-columns:minmax(0,1fr) auto auto}
+.invdet{grid-column:1/-1;display:flex;flex-direction:column;gap:6px;padding:4px 0 6px}
+.invdet .btnrow{margin:0}
+@media (max-width:640px){
+  .invrow{grid-template-columns:auto minmax(0,1fr) auto}
+  .invrow:not(:has(.invchk)){grid-template-columns:minmax(0,1fr) auto}
+  .invwho{grid-column:2/-1;text-align:left;grid-row:2}
+  .invrow:not(:has(.invchk)) .invwho{grid-column:1/-1}
+  .invbar .pcq{max-width:none;flex:1 1 100%}
+}
+/* conversation patient vue par l'équipe : messages des collègues (20261028a) */
+.chat .bub.col{background:var(--gold-soft);border:1px solid color-mix(in srgb,var(--gold) 45%,transparent)}
+.chat .who.colwho{color:var(--gold)}
+.chat .msg.them .who:not(.colwho){color:var(--accent)}
+.hdot{width:14px;height:14px;border-radius:50%;border:1px solid rgb(0 0 0/.2);padding:0;margin-right:7px;vertical-align:-2px;flex:none;cursor:pointer}
+.hcard header .hdot{margin-right:0}
+.hcpick{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px}
+.hcpick button{display:flex;align-items:center;gap:8px;border:2px solid var(--line);background:var(--surface);border-radius:12px;padding:8px 10px;font-weight:700;color:var(--ink)}
+.hcpick button[aria-pressed="true"]{border-color:var(--accent)}
+.hcpick i{width:20px;height:20px;border-radius:50%;border:1px solid rgb(0 0 0/.15)}
+.hcell.hasc{background:color-mix(in srgb,var(--hc) 38%,transparent)}
+button.hcell.hasc:hover{background:color-mix(in srgb,var(--hc) 55%,transparent)}
