@@ -1376,3 +1376,11 @@ button.hcell .hz{color:var(--muted);opacity:.45}
 .hcpick i{width:20px;height:20px;border-radius:50%;border:1px solid rgb(0 0 0/.15)}
 .hcell.hasc{background:color-mix(in srgb,var(--hc) 38%,transparent)}
 button.hcell.hasc:hover{background:color-mix(in srgb,var(--hc) 55%,transparent)}
+/* liste des demandes rangée par jour (20261028b) */
+.iday{display:flex;justify-content:space-between;align-items:center;width:100%;border:0;border-top:1px solid var(--line);background:var(--surface-2);padding:9px 14px;font-weight:700;font-size:13.5px;color:var(--ink);text-align:left}
+.iday:hover{background:var(--accent-soft)}
+.iday b{background:var(--surface);border-radius:99px;padding:1px 8px;font-size:12px;margin-right:4px}
+.iday[aria-expanded="true"]{background:var(--surface);color:var(--accent)}
+.pmonth{display:flex;justify-content:space-between;align-items:center;width:100%;border:1px solid var(--line);background:var(--surface);border-radius:14px;padding:12px 14px;margin-bottom:8px;font-weight:700;font-size:15px;color:var(--ink);text-align:left}
+.pmonth b{background:var(--surface-2);border-radius:99px;padding:1px 8px;font-size:12.5px;margin-right:4px}
+.pmonth[aria-expanded="true"]{color:var(--accent);border-color:var(--accent)}

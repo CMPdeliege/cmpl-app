@@ -1551,6 +1551,13 @@ function reqRowsHTML(mine){ const forTag = x => x.child_id ? ` · pour ${esc(chi
   return mine.length?mine.map(r=>{const ms=msgsOf(r),last=ms[ms.length-1],unread=S.notifs.some(n=>n.request_id===r.id&&!n.read_at&&n.title!=="Demande bien reçue");
     const prev=r.purged_at?"Contenu effacé":last?(last.from_patient?"Vous : ":"")+msgPreview(last):summaryLine(r.answers);
     return `<button class="row chatrow ${unread?"unread":""}" data-req="${r.id}"><div class="ic t-${r.type}">${IC[r.type]}</div><div><b>${esc(reqWho(r))} · ${TYPES[r.type].label}${forTag(r)}</b><small>${esc(prev)}</small></div><div class="rside"><small>${fmt(last?last.created_at:r.created_at)}</small>${unread?`<span class="dot" aria-label="Nouveau message"></span>`:`<span class="pill st-${stClassP(r)}">${stLabelP(r)}</span>`}</div></button>`}).join(""):`<div class="empty">Aucune demande pour l'instant.<br><small>Touchez ＋ en bas de l'écran pour en faire une.</small></div>`; }
+// demandes classées du patient : rangées par mois (le plus récent ouvert)
+function pMonthsHTML(done){
+  const when=r=>r.closed_at||r.created_at, keys=[...new Set(done.map(r=>String(when(r)).slice(0,7)))].sort().reverse();
+  return keys.map((k,i)=>{ const its=done.filter(r=>String(when(r)).slice(0,7)===k), open=(S.pMonth||{})[k]??(i===0);
+    const l=new Date(k+"-15").toLocaleDateString(LOC,{month:"long",year:"numeric"});
+    return `<button type="button" class="pmonth" data-pmonth="${k}" aria-expanded="${open}"><span>${esc(l.charAt(0).toUpperCase()+l.slice(1))}</span><span><b>${its.length}</b> ${open?"▾":"▸"}</span></button>${open?`<div class="list" style="margin-bottom:10px">${reqRowsHTML(its)}</div>`:""}`; }).join("");
+}
 function patientReqs(a){
   const fk=famKids(), who=S.who&&(S.who==="me"||fk.some(c=>c.id===S.who))?S.who:"all";
   const forWho = x => who==="all" || (who==="me" ? !x.child_id : x.child_id===who);
@@ -1560,8 +1567,9 @@ function patientReqs(a){
   a.innerHTML=`<div class="convhead"><div><h2>Mes demandes</h2><small>Vos conversations avec le centre</small></div></div>
   ${chips}
   <div class="list" style="margin-bottom:22px">${reqRowsHTML(open)}</div>
-  ${done.length?`<div class="sechead"><h2>Classées</h2></div><div class="list">${reqRowsHTML(done)}</div>`:""}`;
+  ${done.length?`<div class="sechead"><h2>Classées</h2></div>${done.length>6?pMonthsHTML(done):`<div class="list">${reqRowsHTML(done)}</div>`}`:""}`;
   $$("[data-who]").forEach(b=>b.onclick=()=>{ S.who=b.dataset.who; render(); });
+  $$("[data-pmonth]").forEach(b=>b.onclick=()=>{ (S.pMonth||(S.pMonth={}))[b.dataset.pmonth]=b.getAttribute("aria-expanded")!=="true"; render(); });
   $$("[data-req]").forEach(b=>b.onclick=()=>openRequest(+b.dataset.req));
 }
 function bindHomeRest(){
@@ -2026,7 +2034,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261028a";
+const APP_VERSION="20261028b";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -2486,6 +2494,17 @@ function irowHTML(r){ const ms=msgsOf(r), last=ms[ms.length-1];
   return `<button class="row irow" data-sel="${r.id}" aria-current="${r.id===S.sel}"><div class="ic t-${r.type}" aria-hidden="true">${IEMO[r.type]||IC[r.type]}</div>
    <div class="itx"><b>${esc(reqName(r))}</b>${r.child_id?` <span class="ipill no">enfant</span>`:""}<small>${TYPES[r.type].label}${prev?" · "+esc(prev):""}</small>${durHTML(r)}${S.scope==="all"?`<small class="iwho">${esc(reqWho(r))}</small>`:""}</div>
    <div class="iside">${dueTagI(r)}<small>${r.status==="traite"?fmt(r.closed_at):ms.length?fmt(last.created_at):"reçue "+fmt(r.created_at)}</small></div></button>`; }
+// regroupement par jour (liste longue) : on touche le jour pour voir ses demandes
+const dKey = d => { const x=new Date(d); return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,"0")}-${String(x.getDate()).padStart(2,"0")}`; };
+function dLabel(k){ const t=todayISO(), y=dKey(Date.now()-864e5); if(k===t) return "Aujourd'hui"; if(k===y) return "Hier";
+  const d=new Date(k+"T12:00"), o={weekday:"long",day:"numeric",month:"long"}; if(d.getFullYear()!==new Date().getFullYear()) o.year="numeric";
+  const s=d.toLocaleDateString(LOC,o); return s.charAt(0).toUpperCase()+s.slice(1); }
+S.dayOpen=S.dayOpen||{};
+function dayGroupsHTML(L, when, ns){
+  const keys=[...new Set(L.map(r=>dKey(when(r))))].sort().reverse();
+  return keys.map((k,i)=>{ const its=L.filter(r=>dKey(when(r))===k), id=ns+":"+k, open=S.dayOpen[id]??(i===0||its.some(r=>r.id===S.sel));
+    return `<button type="button" class="iday" data-day="${id}" aria-expanded="${open}"><span>${esc(dLabel(k))}</span><span><b>${its.length}</b> ${open?"▾":"▸"}</span></button>${open?its.map(irowHTML).join(""):""}`; }).join("");
+}
 const IGROUPS=[["g0","🔴 Urgent ou en retard"],["g1","💬 Le patient a répondu"],["g2","🆕 Nouvelles"],["g3","⏳ En attente du patient"]];
 // Prescriptions simples (traitement habituel, sans remarque) : à accorder en série
 const isSimpleRx = r => r.type==="prescription"&&r.status!=="traite"&&awaitingStaff(r)&&(r.request_items||[]).length>0&&(r.request_items||[]).every(i=>!i.decision)
@@ -2509,7 +2528,14 @@ function inboxHTML(){
   const cnt=k=>base.filter(r=>r.type===k).length;
   let body="";
   if(!list.length) body=`<div class="empty">${S.iq?"Aucune demande ne correspond à la recherche.":S.archive?"Aucune conversation classée.":`<span class="yay" aria-hidden="true">🎉</span><b>Tout est traité !</b><br>Rien à traiter pour l'instant.`}</div>`;
-  else if(S.archive) body=list.map(irowHTML).join("");
+  else if(S.archive) body=list.length>8?dayGroupsHTML(list,r=>r.closed_at||r.created_at,"a"):list.map(irowHTML).join("");
+  else if(list.filter(r=>reqGroup(r)!==3).length>10){
+    // beaucoup de demandes : les prioritaires épinglées en haut, le reste rangé par jour
+    const U=list.filter(r=>reqGroup(r)===0), R=list.filter(r=>reqGroup(r)===1||reqGroup(r)===2), W=list.filter(r=>reqGroup(r)===3);
+    if(U.length) body+=`<div class="igroup g0">📌 ${IGROUPS[0][1].replace("🔴 ","")} <b>${U.length}</b></div>${U.map(irowHTML).join("")}`;
+    if(R.length) body+=`<div class="igroup g2">À traiter, par jour <b>${R.length}</b></div>${dayGroupsHTML(R.sort((a,b)=>reqGroup(a)-reqGroup(b)||lastAt(b)-lastAt(a)),lastAt,"o")}`;
+    if(W.length) body+=`<button type="button" class="igroup g3 itoggle" id="i-wait" aria-expanded="${!!S.showWait}"><span>${IGROUPS[3][1]} <b>${W.length}</b></span><span>${S.showWait?"masquer ‹":"afficher ›"}</span></button>${S.showWait?W.map(irowHTML).join(""):""}`;
+  }
   else { for(let g=0;g<4;g++){ const L=list.filter(r=>reqGroup(r)===g); if(!L.length) continue;
       if(g===3){ body+=`<button type="button" class="igroup g3 itoggle" id="i-wait" aria-expanded="${!!S.showWait}"><span>${IGROUPS[3][1]} <b>${L.length}</b></span><span>${S.showWait?"masquer ‹":"afficher ›"}</span></button>${S.showWait?L.map(irowHTML).join(""):""}`; }
       else body+=`<div class="igroup g${g}">${IGROUPS[g][1]} <b>${L.length}</b></div>${L.map(irowHTML).join("")}`; } }
@@ -2571,6 +2597,7 @@ function bindInbox(){
   $("#f-arch").onclick=()=>{ S.archive=true; S.sel=null; render(); };
   const fs=$("#f-short"); if(fs) fs.onclick=()=>{ S.short=!S.short; S.sel=null; render(); };
   const w=$("#i-wait"); if(w) w.onclick=()=>{ S.showWait=!S.showWait; render(); };
+  $$("[data-day]").forEach(b=>b.onclick=()=>{ S.dayOpen[b.dataset.day]=b.getAttribute("aria-expanded")!=="true"; render(); });
   const q=$("#i-q"); let tm; q.oninput=()=>{ clearTimeout(tm); tm=setTimeout(()=>{ S.iq=q.value; S.sel=null; render(); const n=$("#i-q"); if(n){ n.focus(); n.setSelectionRange(n.value.length,n.value.length); } },250); };
   $$("[data-sel]").forEach(b=>b.onclick=()=>{ clearPend(); S.sel=+b.dataset.sel; render(); if(innerWidth<760) $("#detail").scrollIntoView({behavior:"smooth"}); });
   $$("[data-rxok]").forEach(b=>b.onclick=async()=>{ if(b.dataset.sure!=="1"){ b.dataset.sure="1"; b.textContent="Confirmer ?"; return; }
