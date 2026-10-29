@@ -1384,3 +1384,13 @@ button.hcell.hasc:hover{background:color-mix(in srgb,var(--hc) 55%,transparent)}
 .pmonth{display:flex;justify-content:space-between;align-items:center;width:100%;border:1px solid var(--line);background:var(--surface);border-radius:14px;padding:12px 14px;margin-bottom:8px;font-weight:700;font-size:15px;color:var(--ink);text-align:left}
 .pmonth b{background:var(--surface-2);border-radius:99px;padding:1px 8px;font-size:12.5px;margin-right:4px}
 .pmonth[aria-expanded="true"]{color:var(--accent);border-color:var(--accent)}
+/* haute priorité bien visible (20261029a) */
+.urgban{display:flex;align-items:center;gap:12px;width:100%;border:0;border-radius:16px;background:var(--danger-soft);color:var(--danger);padding:11px 16px;margin:0 0 14px;text-align:left;box-shadow:inset 4px 0 0 var(--danger)}
+.urgban span:nth-child(2){flex:1;min-width:0}.urgban b{display:block;font-size:15px}.urgban small{display:block;font-size:13px;color:var(--ink);opacity:.8}
+.urgban .ubgo{font-weight:800;white-space:nowrap}
+.urgban:hover{filter:brightness(.97)}
+.ubdot{width:12px;height:12px;border-radius:50%;background:var(--danger);flex:none;animation:ubpulse 1.6s ease-out infinite}
+@keyframes ubpulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--danger) 60%,transparent)}100%{box-shadow:0 0 0 10px transparent}}
+@media (prefers-reduced-motion:reduce){.ubdot{animation:none}}
+.sn.hot{background:var(--danger)!important;color:#fff!important}
+.irow.ihot{box-shadow:inset 4px 0 0 var(--danger)}

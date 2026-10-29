@@ -1200,7 +1200,9 @@ const BASE_TITLE=document.title;
 const badgeCount = () => !S.me||S.me.status!=="active" ? 0
   : S.me.role==="patient" ? S.notifs.filter(n=>!n.read_at).length
   : S.reqs.filter(awaitingStaff).length + (S.team2&&S.team2.threads?teamUnread():0);
-let lastBadge=-1, favImg=null;
+let lastBadge=-1, lastHot=-1, favImg=null;
+document.addEventListener("visibilitychange",()=>{ if(!document.hidden&&S.me) updateBadges(); });
+addEventListener("focus",()=>{ if(S.me) updateBadges(); });
 function setFavicon(n){
   const link=document.querySelector('link[rel="icon"]'); if(!link) return;
   if(!link.dataset.base) link.dataset.base=link.href;
@@ -1212,9 +1214,11 @@ function setFavicon(n){
   if(favImg&&favImg.complete) draw(); else { favImg=new Image(); favImg.onload=draw; favImg.src=link.dataset.base; }
 }
 function updateBadges(n=badgeCount()){
-  if(n===lastBadge) return; lastBadge=n;
-  document.title = n ? `(${n}) ${BASE_TITLE}` : BASE_TITLE;
-  setFavicon(n);
+  // le chiffre sur l'icône peut avoir été posé par une notification reçue : on le remet toujours d'aplomb
+  const hot=S.me&&S.me.role!=="patient"?myUrgent().length:0;
+  if(n!==lastBadge||hot!==lastHot){ lastBadge=n; lastHot=hot;
+    document.title = (hot?"🔴 ":"")+(n ? `(${n}) ${BASE_TITLE}` : BASE_TITLE);
+    setFavicon(n); }
   try{ if(navigator.setAppBadge){ (n?navigator.setAppBadge(n):navigator.clearAppBadge()).catch(()=>{}); } }catch(e){}
   try{ const sec=CAP().CMPLSecure; if(IS_NATIVE&&sec) sec.setBadge({count:n}).catch(()=>{}); }catch(e){}
 }
@@ -2034,7 +2038,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261028b";
+const APP_VERSION="20261029a";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -2432,8 +2436,11 @@ function renderStaff(a){
   let body="";
   if(sc==="compose") body=composeHTML(); else if(sc==="inventory") body=inventoryHTML(); else if(sc==="tasks") body=tasksHTML(); else if(sc==="accounts") body=accountsHTML(); else if(sc==="news") body=newsAdminHTML(); else if(sc==="team") body=teamHTML(); else if(sc==="settings") body=settingsHTML(); else if(sc==="help") body=staffHelpHTML(); else if(sc==="leaves") body=leavesHTML(); else if(sc==="patients") body=patientsHTML(); else if(sc==="messages") body=teamHTML2(); else if(sc==="templates") body=templatesHTML(); else if(sc==="binder") body=binderHTML(); else if(sc==="desk") body=deskHTML(); else if(sc==="waitlist") body=waitlistHTML(); else if(sc==="hours"&&canOffice()) body=hoursHTML(); else if(sc==="cash"&&canOffice()) body=cashHTML(); else body=inboxHTML();
   document.body.classList.add("hasbar","sidenav"); document.body.classList.remove("ddopen");
-  a.innerHTML=nav+body;
+  a.innerHTML=nav+urgBannerHTML()+body;
   $("#logout").onclick=()=>{ closeDD(); logout(); };
+  $$("[data-urgopen]").forEach(b=>b.onclick=()=>{ const r=S.reqs.find(x=>x.id===+b.dataset.urgopen); if(!r) return;
+    S.cscreen="inbox"; S.archive=false; S.itype="all"; S.iq=""; S.short=false; S.sel=r.id;
+    S.scope=r.queue==="prestataires"?(r.provider_id===S.me.provider_id?"mine":"prestataires"):r.queue; render(); scrollTo(0,0); });
   $$("[data-avail]").forEach(ab=>ab.onclick=e=>{ e.stopPropagation(); closeDD(); openAvail(); });
   $$("[data-dd]").forEach(b=>b.onclick=e=>{ e.stopPropagation(); openDD(b.dataset.dd); });
   const bk=$(".ddback"); if(bk) bk.onclick=closeDD;
@@ -2491,7 +2498,7 @@ function dueTagI(r){
 function irowHTML(r){ const ms=msgsOf(r), last=ms[ms.length-1];
   const rx=r.type==="prescription"&&(r.request_items||[]).length?(r.request_items||[]).map(i=>i.label+(i.quantity>1?` ×${i.quantity}`:"")).join(", "):"";
   const prev=newPatientMsg(r)&&last?`« ${msgPreview(last)} »`:rx||summaryLine(r.answers);
-  return `<button class="row irow" data-sel="${r.id}" aria-current="${r.id===S.sel}"><div class="ic t-${r.type}" aria-hidden="true">${IEMO[r.type]||IC[r.type]}</div>
+  return `<button class="row irow${r.status!=="traite"&&awaitingStaff(r)&&(r.priority==="haute"||isLate(r))?" ihot":""}" data-sel="${r.id}" aria-current="${r.id===S.sel}"><div class="ic t-${r.type}" aria-hidden="true">${IEMO[r.type]||IC[r.type]}</div>
    <div class="itx"><b>${esc(reqName(r))}</b>${r.child_id?` <span class="ipill no">enfant</span>`:""}<small>${TYPES[r.type].label}${prev?" · "+esc(prev):""}</small>${durHTML(r)}${S.scope==="all"?`<small class="iwho">${esc(reqWho(r))}</small>`:""}</div>
    <div class="iside">${dueTagI(r)}<small>${r.status==="traite"?fmt(r.closed_at):ms.length?fmt(last.created_at):"reçue "+fmt(r.created_at)}</small></div></button>`; }
 // regroupement par jour (liste longue) : on touche le jour pour voir ses demandes
@@ -2504,6 +2511,17 @@ function dayGroupsHTML(L, when, ns){
   const keys=[...new Set(L.map(r=>dKey(when(r))))].sort().reverse();
   return keys.map((k,i)=>{ const its=L.filter(r=>dKey(when(r))===k), id=ns+":"+k, open=S.dayOpen[id]??(i===0||its.some(r=>r.id===S.sel));
     return `<button type="button" class="iday" data-day="${id}" aria-expanded="${open}"><span>${esc(dLabel(k))}</span><span><b>${its.length}</b> ${open?"▾":"▸"}</span></button>${open?its.map(irowHTML).join(""):""}`; }).join("");
+}
+// demandes prioritaires qui me concernent directement (ma file de travail)
+const myQueue = r => r.queue==="prestataires" ? !!S.me.provider_id&&r.provider_id===S.me.provider_id
+  : r.queue==="secretariat" ? S.me.role==="secretariat" : r.queue==="administration" ? S.me.role==="gestion" : false;
+const myUrgent = () => (S.reqs||[]).filter(r=>r.status!=="traite"&&awaitingStaff(r)&&(r.priority==="haute"||isLate(r))&&myQueue(r))
+  .sort((a,b)=>new Date(a.due_at||8.64e15)-new Date(b.due_at||8.64e15));
+function urgBannerHTML(){
+  const U=myUrgent(); if(!U.length) return "";
+  const r=U[0], late=isLate(r), nm=reqName(r).split(/\s+/), who=nm[0]+(nm[1]?" "+nm[1][0]+".":"");
+  return `<button type="button" class="urgban" data-urgopen="${r.id}"><span class="ubdot" aria-hidden="true"></span><span><b>${U.length===1?"1 demande prioritaire attend une réponse":U.length+" demandes prioritaires attendent une réponse"}</b>
+    <small>${late?"En retard":"À traiter avant "+fmtWhen(r.due_at)} · ${esc(who)} · ${TYPES[r.type]?.label||""}</small></span><span class="ubgo">Voir ›</span></button>`;
 }
 const IGROUPS=[["g0","🔴 Urgent ou en retard"],["g1","💬 Le patient a répondu"],["g2","🆕 Nouvelles"],["g3","⏳ En attente du patient"]];
 // Prescriptions simples (traitement habituel, sans remarque) : à accorder en série
@@ -3382,7 +3400,7 @@ function navGroups(){
   const nIn=S.reqs.filter(awaitingStaff).length;
   const G=[
    {h:"Patients",it:[
-     {cs:"inbox",ic:SI.inbox,t:"Demandes",n:nIn},
+     {cs:"inbox",ic:SI.inbox,t:"Demandes",n:nIn,hot:myUrgent().length},
      {cs:"compose",ic:SI.pen,t:"Écrire à un patient"},
      {cs:"patients",ic:IC.user,t:"Fiches patients"},
      {cs:"waitlist",ic:SI.hourglass,t:"Listes d'attente"},
@@ -3406,7 +3424,7 @@ function staffNavHTML(sc){
   const G=navGroups();
   const av=AV.get(S.me.id)?avatarHTML(AV.get(S.me.id),"",36):`<span class="avl">${esc((S.me.first_name||"?").slice(0,1).toUpperCase())}</span>`;
   const who=`${esc([S.me.first_name,S.me.last_name].filter(Boolean).join(" ")||"")}`;
-  const item=x=>`<button class="sitem" data-cs="${x.cs}" aria-current="${sc===x.cs?"page":"false"}">${x.ic}<span>${x.t}</span>${badge(x.n)}</button>`;
+  const item=x=>`<button class="sitem" data-cs="${x.cs}" aria-current="${sc===x.cs?"page":"false"}">${x.ic}<span>${x.t}</span>${x.hot?`<span class="sn hot" title="${x.hot} prioritaire${x.hot>1?"s":""}">🔴 ${x.n}</span>`:badge(x.n)}</button>`;
   const ddItem=x=>`<button role="menuitem" class="ddi" data-cs="${x.cs}" aria-current="${sc===x.cs?"page":"false"}">${x.ic}<span>${x.t}</span>${badge(x.n)}</button>`;
   const rosaBtn=cls=>`<button type="button" class="${cls}" data-rosa>${SI.cal}<span>Agenda Rosa</span>${SI.ext}</button>`;
   const meMenu=`<div class="dd ddme" id="dd-me" hidden role="menu" aria-label="Mon compte"><p class="ddwho"><b>${who}</b>${ROLE_LABEL[S.me.role]}${S.me.provider_id?` · ${esc(provName(S.me.provider_id))}`:""}</p>
@@ -3433,7 +3451,7 @@ function staffNavHTML(sc){
    </header>
    ${meMenu}${more}
    <nav class="sbar" aria-label="Navigation de l'équipe">
-    <button data-cs="inbox" aria-current="${sc==="inbox"?"page":"false"}">${SI.inbox}<span>Demandes</span>${badge(S.reqs.filter(awaitingStaff).length)}</button>
+    <button data-cs="inbox" aria-current="${sc==="inbox"?"page":"false"}">${SI.inbox}<span>Demandes</span>${myUrgent().length?`<span class="sn hot">${S.reqs.filter(awaitingStaff).length}</span>`:badge(S.reqs.filter(awaitingStaff).length)}</button>
     <button data-cs="messages" aria-current="${sc==="messages"?"page":"false"}">${SI.chat}<span>Messages</span>${badge(teamUnread())}</button>
     <button class="sfab" data-cs="compose" aria-current="${sc==="compose"?"page":"false"}"><i>${SI.pen}</i><span>Écrire</span></button>
     <button data-cs="tasks" aria-current="${sc==="tasks"?"page":"false"}">${SI.tasks}<span>Tâches</span>${badge(myTasks().length)}</button>

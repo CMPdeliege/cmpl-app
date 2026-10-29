@@ -13,6 +13,8 @@ self.addEventListener("push", e => {
     icon: "icon-192.png",
     tag: d.tag || "cmpl",
     renotify: true,
+    // demande prioritaire : la notification reste à l'écran jusqu'à ce qu'on la touche (ordinateur)
+    requireInteraction: /^cmpl-urgent/.test(d.tag || ""),
     data: { url: d.url || "./" }
   })];
   // chiffre sur l'icône de l'app (iPhone écran d'accueil, ordinateur avec app installée)
