@@ -535,7 +535,7 @@ function composerHTML(key){
     <button type="button" class="cbtn" id="c-att" aria-label="Joindre une photo ou un PDF" title="Photo ou PDF">${IC.clip}</button>
     <button type="button" class="cbtn" id="c-scan" aria-label="Scanner un document" title="Scanner un document">${IC.scan}</button>
     <button type="button" class="cbtn emob" id="c-emo" aria-label="Emojis" title="Emojis" aria-haspopup="true">🙂</button>
-    ${tpl?`<button type="button" class="cbtn tplb" id="c-tpl" aria-label="Réponses types" title="Réponses types" aria-haspopup="true">${SI.tpl}</button>`:""}
+    ${tpl?`<button type="button" class="cbtn tplb" id="c-tpl" aria-label="Réponses types" title="Réponses types" aria-haspopup="true">${SI.tpl}</button><button type="button" class="cbtn" id="c-fiche" aria-label="Joindre une fiche conseil" title="Fiche conseil (PDF)">📋</button>`:""}
     <input type="file" id="c-file" accept="image/*,application/pdf" hidden>
     <textarea id="c-text" rows="1" maxlength="4000" placeholder="${pf?"Ajouter un message (facultatif)":"Écrire un message"}" aria-label="Message">${esc(draft)}</textarea>
     <button type="button" class="cbtn go" id="c-go"></button>
@@ -570,6 +570,7 @@ function bindComposer(key, send, onInput){
   file.onchange=async()=>{ const f=file.files[0]; file.value=""; if(!f) return;
     try{ clearPend(); S.pend=await prepFile(f,key); render(); $("#c-text")?.focus({preventScroll:true}); }catch(e){ toast(e.message); } };
   const un=$("#c-unatt"); if(un) un.onclick=()=>{ clearPend(); render(); };
+  const fi=$("#c-fiche"); if(fi) fi.onclick=()=>pickFiche(async p=>{ clearPend(); S.pend={...p,key}; render(); $("#c-text")?.focus({preventScroll:true}); });
   go.onclick=async()=>{
     if(go.dataset.mode==="mic") return startRec(key, send);
     go.disabled=true; const pend=S.pend&&S.pend.key===key?S.pend:null;
@@ -2055,7 +2056,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261029b";
+const APP_VERSION="20261029d";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -2316,6 +2317,34 @@ function bindTeam2(){
 // petite confirmation en deux temps (pas de fenêtre système)
 function confirmInline(btn,label){ if(btn.dataset.sure) return true; btn.dataset.sure="1"; const old=btn.textContent; btn.textContent=label+" Touchez à nouveau"; setTimeout(()=>{ if(document.body.contains(btn)){ btn.textContent=old; delete btn.dataset.sure; } },4000); return false; }
 
+/* ----- fiches conseils (PDF du centre, à envoyer aux patients) ----- */
+const FICHES_LIB=[
+ ["Prévention","fiche-coeur-prevention.pdf","Protéger son cœur et ses artères","Alimentation et activité physique pour l'adulte"],
+ ["Vaccination","fiche-vaccination-enfants.pdf","Calendrier de vaccination de l'enfant","Programme ONE, nouveau calendrier du 1er novembre 2026"],
+ ["Alimentation","fiche-diabete-alimentation.pdf","Bien manger avec un diabète","Assiette, aliments à privilégier, hypoglycémie"],
+ ["Alimentation","fiche-cholesterol-triglycerides.pdf","Cholestérol et triglycérides","À éviter, à privilégier"],
+ ["Alimentation","fiche-calculs-vesicule.pdf","Calculs de la vésicule biliaire","Limiter les crises, signes d'alerte"],
+ ["Alimentation","fiche-diverticulite.pdf","Diverticules et diverticulite","Pendant la poussée, puis prévention"],
+ ["Alimentation","fiche-vitamines-b12-b9.pdf","Vitamines B12 et B9 (folates)","Sources alimentaires, quand compléter"]];
+async function ficheBlob(file){ const r=await fetch("fiches/"+file+"?v="+APP_VERSION,{cache:"no-cache"}); if(!r.ok) throw new Error("Fiche introuvable."); const b=await r.blob(); return new Blob([b],{type:"application/pdf"}); }
+function pickFiche(done){
+  const v=document.createElement("div"); v.className="modal"; v.setAttribute("role","dialog"); v.setAttribute("aria-modal","true"); v.setAttribute("aria-labelledby","pf-t");
+  const cats=[...new Set(FICHES_LIB.map(x=>x[0]))];
+  v.innerHTML=`<div class="mbox ficbox"><h2 id="pf-t">Joindre une fiche conseil</h2><p class="hint">Le PDF est joint au message : vous pouvez ajouter un mot avant d'envoyer.</p>
+    <div class="ficlist">${cats.map(c=>`<p class="srg">${esc(c)}</p>${FICHES_LIB.filter(x=>x[0]===c).map(x=>`<div class="ficrow"><button type="button" class="ficpick" data-fic="${x[1]}"><span class="sric">📋</span><span><b>${esc(x[2])}</b><small>${esc(x[3])}</small></span></button><a class="linkbtn" href="fiches/${x[1]}?v=${APP_VERSION}" target="_blank" rel="noopener">Voir</a></div>`).join("")}`).join("")}</div>
+    <div class="btnrow"><button class="btn ghost" id="pf-x">Annuler</button></div></div>`;
+  document.body.appendChild(v); const close=()=>v.remove(); v.querySelector("#pf-x").onclick=close; v.onclick=e=>{ if(e.target===v) close(); };
+  v.querySelectorAll("[data-fic]").forEach(b=>b.onclick=async()=>{ const x=FICHES_LIB.find(y=>y[1]===b.dataset.fic); b.disabled=true;
+    try{ const blob=await ficheBlob(x[1]); close(); await done({kind:"pdf",mime:"application/pdf",name:x[2].slice(0,70)+".pdf",blob}); }
+    catch(e){ b.disabled=false; toast("La fiche n'a pas pu être chargée. Réessayez."); } });
+}
+function fichesHTML(){
+  const cats=[...new Set(FICHES_LIB.map(x=>x[0]))];
+  return `<div class="chead"><div><h1>Fiches conseils</h1><p>Des fiches PDF du centre à envoyer aux patients : dans une conversation, touchez 📋 à côté du champ de message (ou « Fiche conseil » dans Écrire à un patient).</p></div></div>
+  <div class="settings">${cats.map(c=>`<section class="card"><h3>${esc(c)}</h3><div class="list">${FICHES_LIB.filter(x=>x[0]===c).map(x=>`<div class="medrow"><div class="ic">📋</div><div><b>${esc(x[2])}</b><small>${esc(x[3])}</small></div><div class="acts"><a class="mini ghostmini" href="fiches/${x[1]}?v=${APP_VERSION}" target="_blank" rel="noopener">Ouvrir</a></div></div>`).join("")}</div></section>`).join("")}
+  <p class="hint">Conseils généraux, relus par le centre. Pour proposer une nouvelle fiche ou une correction, parlez-en à l'administrateur.</p></div>`;
+}
+
 /* ----- réponses types ----- */
 const canCentreTpl = () => S.me.role==="secretariat"||S.me.role==="admin";
 function tplFill(body,r){ const first=r?(r.child_id?(S.children?.[r.child_id]?.first_name||""):(S.profiles[r.patient_id]?.first_name||"")):"";
@@ -2451,7 +2480,7 @@ function renderStaff(a){
   const sc=S.cscreen;
   const nav=staffNavHTML(sc);
   let body="";
-  if(sc==="compose") body=composeHTML(); else if(sc==="inventory") body=inventoryHTML(); else if(sc==="tasks") body=tasksHTML(); else if(sc==="accounts") body=accountsHTML(); else if(sc==="news") body=newsAdminHTML(); else if(sc==="team") body=teamHTML(); else if(sc==="settings") body=settingsHTML(); else if(sc==="help") body=staffHelpHTML(); else if(sc==="leaves") body=leavesHTML(); else if(sc==="patients") body=patientsHTML(); else if(sc==="messages") body=teamHTML2(); else if(sc==="templates") body=templatesHTML(); else if(sc==="binder") body=binderHTML(); else if(sc==="desk") body=deskHTML(); else if(sc==="waitlist") body=waitlistHTML(); else if(sc==="hours"&&canOffice()) body=hoursHTML(); else if(sc==="cash"&&canOffice()) body=cashHTML(); else body=inboxHTML();
+  if(sc==="compose") body=composeHTML(); else if(sc==="inventory") body=inventoryHTML(); else if(sc==="tasks") body=tasksHTML(); else if(sc==="accounts") body=accountsHTML(); else if(sc==="news") body=newsAdminHTML(); else if(sc==="team") body=teamHTML(); else if(sc==="settings") body=settingsHTML(); else if(sc==="help") body=staffHelpHTML(); else if(sc==="leaves") body=leavesHTML(); else if(sc==="patients") body=patientsHTML(); else if(sc==="messages") body=teamHTML2(); else if(sc==="templates") body=templatesHTML(); else if(sc==="binder") body=binderHTML(); else if(sc==="desk") body=deskHTML(); else if(sc==="waitlist") body=waitlistHTML(); else if(sc==="fiches") body=fichesHTML(); else if(sc==="hours"&&canOffice()) body=hoursHTML(); else if(sc==="cash"&&canOffice()) body=cashHTML(); else body=inboxHTML();
   document.body.classList.add("hasbar","sidenav"); document.body.classList.remove("ddopen");
   a.innerHTML=nav+urgBannerHTML()+body;
   $("#logout").onclick=()=>{ closeDD(); logout(); };
@@ -2462,7 +2491,7 @@ function renderStaff(a){
   $$("[data-dd]").forEach(b=>b.onclick=e=>{ e.stopPropagation(); openDD(b.dataset.dd); });
   const bk=$(".ddback"); if(bk) bk.onclick=closeDD;
   $$("[data-cs]").forEach(b=>b.onclick=()=>{ closeDD(); if(CREC&&b.dataset.cs!=="compose") composeRecStop(false); S.cscreen=b.dataset.cs; render(); window.scrollTo(0,0); });
-  if(sc==="compose") bindCompose(); else if(sc==="inventory") bindInventory(); else if(sc==="tasks") bindTasks(); else if(sc==="accounts") bindAccounts(); else if(sc==="news") bindNewsAdmin(); else if(sc==="team") bindTeam(); else if(sc==="settings") bindSettings(); else if(sc==="help"||sc==="leaves") {} else if(sc==="patients") bindPatients(); else if(sc==="messages") bindTeam2(); else if(sc==="templates") bindTemplates(); else if(sc==="binder") bindBinder(); else if(sc==="desk") bindDesk(); else if(sc==="waitlist"){ if(S.waitlist) bindWaitlist(); } else if(sc==="hours"&&canOffice()) bindHours(); else if(sc==="cash"&&canOffice()) bindCash(); else bindInbox();
+  if(sc==="compose") bindCompose(); else if(sc==="inventory") bindInventory(); else if(sc==="tasks") bindTasks(); else if(sc==="accounts") bindAccounts(); else if(sc==="news") bindNewsAdmin(); else if(sc==="team") bindTeam(); else if(sc==="settings") bindSettings(); else if(sc==="help"||sc==="leaves") {} else if(sc==="patients") bindPatients(); else if(sc==="messages") bindTeam2(); else if(sc==="templates") bindTemplates(); else if(sc==="binder") bindBinder(); else if(sc==="desk") bindDesk(); else if(sc==="waitlist"){ if(S.waitlist) bindWaitlist(); } else if(sc==="fiches"){} else if(sc==="hours"&&canOffice()) bindHours(); else if(sc==="cash"&&canOffice()) bindCash(); else bindInbox();
 }
 
 /* ----- durée estimée des rendez-vous de médecine générale (visible par l'équipe seulement) ----- */
@@ -2700,7 +2729,7 @@ function composeHTML(){
    <div class="filelist">${C.files.map((f,i)=>`<div class="fileitem">${f.kind==="image"?`<img src="${f.url}" alt="">`:f.kind==="audio"?IC.mic:IC.doc}<span><b>${esc(f.name)}</b><small>${f.kind==="audio"?dur(f.duration)+" · ":""}${f.pages?f.pages+" page"+(f.pages>1?"s":"")+" · ":""}${kb(f.blob.size)}</small>${f.kind==="audio"?`<audio controls preload="metadata" src="${f.url}"></audio>`:""}</span><button type="button" class="linkbtn" data-cprm="${i}">Retirer</button></div>`).join("")}</div>
    ${CREC?`<div class="cprec" role="status"><span class="recdot" aria-hidden="true"></span><span id="cp-rtime" class="rtime">${dur(Math.floor((Date.now()-CREC.t0)/1000))}</span><span>Enregistrement en cours… (3 min max.)</span><button type="button" class="btn" id="cp-rstop">Terminer</button><button type="button" class="linkbtn" id="cp-rcancel">Annuler</button></div>`:""}
    <input type="file" id="cp-file" accept="image/*,application/pdf" multiple hidden>
-   ${C.files.length<5&&!CREC?`<div class="btnrow"><button type="button" class="btn ghost" id="cp-pick">${IC.clip} Joindre un PDF ou une photo</button><button type="button" class="btn ghost" id="cp-scan">${IC.scan} Scanner</button>${canRecord()&&!C.files.some(f=>f.kind==="audio")?`<button type="button" class="btn ghost" id="cp-mic">${IC.mic} Message vocal</button>`:""}</div>`:""}
+   ${C.files.length<5&&!CREC?`<div class="btnrow"><button type="button" class="btn ghost" id="cp-pick">${IC.clip} Joindre un PDF ou une photo</button><button type="button" class="btn ghost" id="cp-scan">${IC.scan} Scanner</button><button type="button" class="btn ghost" id="cp-fiche">📋 Fiche conseil</button>${canRecord()&&!C.files.some(f=>f.kind==="audio")?`<button type="button" class="btn ghost" id="cp-mic">${IC.mic} Message vocal</button>`:""}</div>`:""}
    <p class="hint" style="margin:0">Le texte est facultatif si vous joignez un message vocal ou un document.</p>
    <h3>3. Réponse</h3>
    <label class="chk2"><input type="radio" name="cp-r" value="1" ${C.reply?"checked":""}> Le patient peut répondre</label>
@@ -2726,6 +2755,7 @@ function bindCompose(){
       out.querySelectorAll("[data-pick]").forEach(b=>b.onclick=async()=>{ C.patient=rows.find(p=>p.id===b.dataset.pick); if(!C.patient.child) await loadAvatars([C.patient.id]); render(); $("#cp-body")?.focus(); }); };
     q.oninput=()=>{ clearTimeout(t); t=setTimeout(search,300); }; if(C.q) search(); q.focus({preventScroll:true}); }
   const inp=$("#cp-file"), pk=$("#cp-pick"); if(pk) pk.onclick=()=>inp.click();
+  const cf=$("#cp-fiche"); if(cf) cf.onclick=()=>pickFiche(p=>{ C.files.push({...p,key:"compose"}); render(); });
   inp.onchange=async()=>{ for(const f of [...inp.files].slice(0,5-C.files.length)){ try{ C.files.push(await prepFile(f,"compose")); }catch(e){ toast(e.message); } } inp.value=""; render(); };
   const sc=$("#cp-scan"); if(sc) sc.onclick=()=>openScanner(pend=>{ C.files.push(pend); render(); });
   $$("[data-cprm]").forEach(b=>b.onclick=()=>{ const f=C.files.splice(+b.dataset.cprm,1)[0]; if(f&&f.url) URL.revokeObjectURL(f.url); render(); });
@@ -3433,6 +3463,7 @@ function navGroups(){
    {h:"Le centre",it:[
      ...(canPub()?[{cs:"news",ic:SI.news||IC.news,t:"Actualités"}]:[]),
      {cs:"binder",ic:SI.book,t:"Classeur"},
+     {cs:"fiches",ic:IC.doc,t:"Fiches conseils"},
      {cs:"inventory",ic:SI.box,t:"Inventaire",n:invOpen()}]}];
   return G;
 }
