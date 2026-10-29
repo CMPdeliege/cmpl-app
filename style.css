@@ -1402,3 +1402,64 @@ button.hcell.hasc:hover{background:color-mix(in srgb,var(--hc) 55%,transparent)}
 .ficpick:hover{background:var(--accent-soft)}
 .ficpick b{display:block;font-size:14.5px}.ficpick small{display:block;color:var(--muted);font-size:12.5px}
 .medrow.fichid{opacity:.55}
+
+/* ---------- répondre / réagir (comme WhatsApp) ---------- */
+.bubw{display:flex;align-items:center;gap:4px;max-width:100%;min-width:0}
+.msg.me .bubw,.tmw.me .bubw{flex-direction:row-reverse}
+.bubw>.bub,.bubw>.tm{max-width:100%;min-width:0}
+.tmw{display:flex;flex-direction:column;align-items:flex-start;align-self:flex-start;max-width:78%}
+.tmw.me{align-self:flex-end;align-items:flex-end}
+.mact{flex:none;width:30px;height:30px;border-radius:50%;border:0;background:var(--surface);color:var(--muted);display:grid;place-items:center;box-shadow:0 1px 3px rgb(0 0 0 / .15);opacity:0;transition:opacity .12s;cursor:pointer}
+.mact:focus-visible{opacity:1}
+@media (hover:hover) and (pointer:fine){ [data-mk]:hover .mact{opacity:1} }
+@media (pointer:coarse){ .mact{display:none} [data-mk] .bub,[data-mk] .tm{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none} }
+[data-mk].mhl .bub,[data-mk].mhl .tm{box-shadow:0 0 0 3px color-mix(in srgb,var(--gold-bright) 55%,transparent)}
+[data-mk].flash .bub,[data-mk].flash .tm{animation:mflash 1.4s ease}
+@keyframes mflash{0%,40%{box-shadow:0 0 0 4px var(--gold-bright)}100%{box-shadow:0 0 0 0 transparent}}
+.quote{display:flex;flex-direction:column;gap:1px;width:100%;text-align:left;border:0;border-left:4px solid var(--gold-bright);background:rgb(0 0 0 / .06);color:inherit;border-radius:8px;padding:5px 9px;margin:0 0 6px;font-size:13px;line-height:1.3;cursor:pointer;min-width:0}
+.quote b{font-size:12.5px;color:var(--gold)}
+.quote span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;white-space:normal;opacity:.9}
+.bub.me .quote,.tm.me .quote{background:rgb(255 255 255 / .16);border-left-color:#f1dcae}
+.bub.me .quote b,.tm.me .quote b{color:#f6e6c4}
+.quote.off{cursor:default;font-style:italic;opacity:.75}
+.reacts{display:flex;flex-wrap:wrap;gap:4px;margin-top:-6px;padding-inline:8px;position:relative;z-index:1}
+.rchip{display:inline-flex;align-items:center;gap:3px;border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:1px 7px;font-size:15px;line-height:1.5;box-shadow:0 1px 2px rgb(0 0 0 / .08);cursor:pointer;color:var(--ink)}
+.rchip i{font-style:normal;font-size:12px;font-weight:700;color:var(--muted)}
+.rchip.mine{border-color:var(--gold-bright);background:var(--gold-soft)}
+.mactpop{position:fixed;z-index:950;background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:0 8px 28px rgb(0 0 0 / .22);padding:6px;display:flex;flex-direction:column;gap:4px;min-width:220px;max-width:calc(100vw - 16px)}
+.mactpop .rrow{display:flex;gap:2px;justify-content:space-between}
+.mactpop .rrow button{border:0;background:transparent;font-size:24px;width:40px;height:42px;border-radius:50%;cursor:pointer;transition:transform .1s}
+.mactpop .rrow button:hover,.mactpop .rrow button:focus-visible{background:var(--surface-2);transform:scale(1.15)}
+.mactpop .rrow button.on{background:var(--gold-soft)}
+.mactpop .racts{display:flex;flex-direction:column}
+.mactpop .racts:not(:empty){border-top:1px solid var(--line);padding-top:4px}
+.mactpop .racts button{display:flex;align-items:center;gap:10px;border:0;background:transparent;text-align:left;padding:9px 10px;border-radius:10px;font-size:15px;color:var(--ink);cursor:pointer}
+.mactpop .racts button:hover{background:var(--surface-2)}
+.replybar{display:flex;align-items:center;gap:8px;background:var(--surface-2);border-radius:12px;padding:6px 6px 6px 10px}
+.replybar .rbic{color:var(--gold);display:grid;place-items:center}
+.replybar .quote{margin:0;flex:1;cursor:default;background:var(--surface)}
+
+/* ---------- suggestions / problèmes ---------- */
+.fbseg{display:flex;gap:6px;margin:4px 0 12px;flex-wrap:wrap}
+.fbseg button{flex:1;min-width:140px;border:1.5px solid var(--line);background:var(--surface);border-radius:999px;padding:9px 12px;font-weight:700;font-size:14.5px;color:var(--ink);cursor:pointer}
+.fbseg button[aria-checked="true"]{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+.fbbox textarea{width:100%}
+.fbfil{margin:0 0 12px}
+.fbcard .fbhd{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.fbcard .fbhd small{margin-left:auto;color:var(--muted)}
+.fbcard .fbk{font-weight:700}
+.fbcard.probleme{border-left:4px solid var(--danger)}
+.fbcard.suggestion{border-left:4px solid var(--gold-bright)}
+.fbwho{margin:8px 0 2px;font-size:14px}
+.fbbody{white-space:pre-wrap;overflow-wrap:anywhere;margin:0 0 6px;font-size:15px;line-height:1.45}
+
+/* ---------- fiches conseils : recherche et envoi ---------- */
+.ficsearch{margin:0 0 12px}
+.ficsearch input{width:100%;font-size:16px}
+.ficrow2 .acts{display:flex;flex-direction:row;gap:6px;flex-wrap:wrap;align-items:center;justify-content:flex-end}
+.ficrow2 .acts .mini{display:inline-flex;align-items:center;gap:5px}
+.ficrow2 .acts .mini svg{width:15px;height:15px}
+@media (max-width:560px){ .ficrow2{grid-template-columns:auto minmax(0,1fr)} .ficrow2 .acts{grid-column:1/-1;justify-content:flex-start;padding-left:44px} }
+.ficrow2[hidden],.ficcat[hidden],#fic-none[hidden]{display:none!important}
+.fbcard .fld input,.fbbox textarea{font:inherit;color:var(--ink);background:var(--surface);border:1.5px solid var(--line);border-radius:10px;padding:9px 11px;width:100%;box-sizing:border-box}
+.fbcard .fld input:focus,.fbbox textarea:focus{border-color:var(--accent);outline:none}

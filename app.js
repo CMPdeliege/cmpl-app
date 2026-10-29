@@ -370,6 +370,10 @@ function reqUnreadFrom(r, viewer, mine){
   if(ms.length) seenSet(k,ms[ms.length-1].created_at);
   return UNREAD[k];
 }
+function chatName(m, r, viewer){
+  return viewer==="patient" ? (m.from_patient?"":m.author_label)
+    : m.from_patient ? `${patientName(r.patient_id)} · ${r.child_id?"parent":"patient"}`
+    : (m.author_id&&(S.team||[]).some(t=>t.id===m.author_id) ? staffName(m.author_id) : (m.author_label||"Le centre")); }
 function chatHTML(r, viewer){
   // équipe : seuls MES messages sont à droite ; ceux des collègues et du patient sont à gauche, avec le nom
   const mine = m => viewer==="patient" ? m.from_patient : (!m.from_patient && (m.author_id ? m.author_id===S.me.id : false));
@@ -390,13 +394,12 @@ function chatHTML(r, viewer){
     sep(m.created_at);
     if(!uDone&&nNew&&!mine(m)&&m.created_at>ufrom&&(viewer==="patient"||m!==allM[0])){ uDone=true; who=""; h+=unreadLine(nNew); }
     const me=mine(m), atts=m.attachments||[];
-    const name = viewer==="patient" ? (m.from_patient?"":m.author_label)
-      : m.from_patient ? `${patientName(r.patient_id)} · ${r.child_id?"parent":"patient"}`
-      : (m.author_id&&(S.team||[]).some(t=>t.id===m.author_id) ? staffName(m.author_id) : (m.author_label||"Le centre"));
+    const name = chatName(m, r, viewer);
     const showName = !me && name && name!==who; who = me ? "" : name;
     const col = viewer!=="patient" && !me && !m.from_patient;
     const showBody = !(atts.length && AUTO_BODY.test(m.body));
-    h+=`<div class="msg ${me?"me":"them"}">${showName?`<small class="who${col?" colwho":""}">${viewer==="patient"&&!m.from_patient&&AV.get(m.author_id)?avatarHTML(AV.get(m.author_id),name,22):""}${esc(name)}</small>`:""}<div class="bub ${me?"me":"bot"}${col?" col":""}${atts.length?" hasatt":""}">${atts.map(attHTML).join("")}${showBody?`<div class="txt" dir="auto" translate="${AUTO_BODY.test(m.body)?"yes":"no"}">${esc(m.body)}</div>`:""}<span class="t">${hm(m.created_at)}</span></div></div>`;
+    const q = m.reply_to ? allM.find(x=>x.id===m.reply_to) : null;
+    h+=`<div class="msg ${me?"me":"them"}" data-mk="r:${m.id}">${showName?`<small class="who${col?" colwho":""}">${viewer==="patient"&&!m.from_patient&&AV.get(m.author_id)?avatarHTML(AV.get(m.author_id),name,22):""}${esc(name)}</small>`:""}<div class="bubw"><div class="bub ${me?"me":"bot"}${col?" col":""}${atts.length?" hasatt":""}">${m.reply_to?quoteHTML("r",q,q?(mine(q)?"Vous":chatName(q,r,viewer)||"Le centre"):""):""}${atts.map(attHTML).join("")}${showBody?`<div class="txt" dir="auto" translate="${AUTO_BODY.test(m.body)?"yes":"no"}">${esc(m.body)}</div>`:""}<span class="t">${hm(m.created_at)}</span></div>${RX_OK?`<button type="button" class="mact" data-mact="r:${m.id}" aria-label="Répondre ou réagir" title="Répondre ou réagir">${SI.react}</button>`:""}</div>${reactsHTML("r",m.id,m.message_reactions,r)}</div>`;
   }
   while(ui<upds.length) putUpd(upds[ui++]);
   if(r.purged_at) h+=`<div class="sys">Le contenu de cette conversation a été effacé le ${fmtDate(r.purged_at)} pour protéger les données${viewer==="patient"?" de santé":" du patient"}.</div>`;
@@ -529,7 +532,7 @@ function scrollChat(){
 /* ----- barre d'écriture : texte, pièce jointe, message vocal ----- */
 function composerHTML(key){
   const draft=S.drafts[key]||"", pf=S.pend&&S.pend.key===key?S.pend:null, tpl=/^s\d/.test(key);
-  return `<div class="chatbar" id="chatbar">
+  return `<div class="chatbar" id="chatbar">${replyBarHTML(key)}
    ${pf?`<div class="attprev">${pf.kind==="image"?`<img src="${pf.url}" alt="">`:IC.doc}<span><b>${esc(pf.name)}</b><small>${kb(pf.blob.size)} · prêt à envoyer</small></span><button type="button" class="cbtn sm" id="c-unatt" aria-label="Retirer la pièce jointe">✕</button></div>`:""}
    <div class="cbrow" id="cbrow">
     <button type="button" class="cbtn" id="c-att" aria-label="Joindre une photo ou un PDF" title="Photo ou PDF">${IC.clip}</button>
@@ -550,7 +553,7 @@ function composerHTML(key){
 const canRecord = () => !!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia&&window.MediaRecorder);
 const EMOJIS=["😊","🙂","😀","😄","😉","😅","😂","🙃","🤔","😮","😢","😴","😷","🤒","🤧","🙏","👍","👌","👏","👋","🤝","💪","❤️","💙","🌞","☀️","🌧️","❄️","🎉","🎂","💐","🍀","✅","❌","⚠️","❗","❓","📅","⏰","📞","📄","📎","💊","🩺","🏥","🚗","👶","👨‍⚕️","👩‍⚕️"];
 function bindComposer(key, send, onInput){
-  const ta=$("#c-text"), go=$("#c-go"), file=$("#c-file"); if(!ta) return;
+  const ta=$("#c-text"), go=$("#c-go"), file=$("#c-file"); if(!ta) return; bindReplyBar();
   const upd=()=>{ const has=!!(ta.value.trim()||(S.pend&&S.pend.key===key)), mic=!has&&canRecord();
     go.innerHTML=mic?IC.mic:IC.send; go.dataset.mode=mic?"mic":"send"; go.disabled=!has&&!mic;
     go.setAttribute("aria-label",mic?"Enregistrer un message vocal":"Envoyer"); go.title=mic?"Message vocal":"Envoyer"; };
@@ -574,7 +577,8 @@ function bindComposer(key, send, onInput){
   go.onclick=async()=>{
     if(go.dataset.mode==="mic") return startRec(key, send);
     go.disabled=true; const pend=S.pend&&S.pend.key===key?S.pend:null;
-    const ok=await send(ta.value.trim(), pend); if(!ok&&document.body.contains(go)) go.disabled=false; };
+    const ok=await send(ta.value.trim(), pend); if(!ok&&document.body.contains(go)) go.disabled=false;
+    else if(ok&&S.replyTo&&S.replyTo.key===key){ S.replyTo=null; $("#replybar")?.remove(); } };
   ta.onkeydown=e=>{ if(e.key==="Enter"&&!e.shiftKey&&matchMedia("(pointer:fine)").matches){ e.preventDefault(); if(go.dataset.mode==="send"&&!go.disabled) go.click(); } };
 }
 function clearPend(){ if(S.pend&&S.pend.url) URL.revokeObjectURL(S.pend.url); S.pend=null; }
@@ -864,11 +868,16 @@ async function loadMe(){
   const { data } = await sb.from("profiles").select("*").eq("id", S.session.user.id).maybeSingle();
   S.me = data;
 }
-const REQ_BASE = "*, messages(id,from_patient,author_id,author_label,body,created_at,attachments(id,kind,mime,name,size,duration_s)), request_items(id,label,decision,quantity)";
-let REQ_SELECT = REQ_BASE+", request_updates(id,kind,label,created_at)";
-// (si la migration 044 n'est pas encore passée, on charge sans le suivi « vue / transmise »)
+const REQ_ATT = "attachments(id,kind,mime,name,size,duration_s)";
+const REQ_BASE = "*, messages(id,from_patient,author_id,author_label,body,created_at,"+REQ_ATT+"), request_items(id,label,decision,quantity)";
+// réponses citées et réactions emoji (migration 055)
+const REQ_RX = "*, messages(id,from_patient,author_id,author_label,body,created_at,reply_to,"+REQ_ATT+",message_reactions(user_id,emoji)), request_items(id,label,decision,quantity)";
+const REQ_UPD = ", request_updates(id,kind,label,created_at)";
+let REQ_SELECT = REQ_RX+REQ_UPD, RX_OK = true;
+// (si une migration n'est pas encore passée, on charge sans la partie manquante)
 async function reqQuery(build){ let r=await build(REQ_SELECT);
-  if(r.error&&REQ_SELECT!==REQ_BASE&&/request_updates/i.test(JSON.stringify(r.error))){ REQ_SELECT=REQ_BASE; r=await build(REQ_SELECT); } return r; }
+  if(r.error&&RX_OK&&/reply_to|message_reactions/i.test(JSON.stringify(r.error))){ RX_OK=false; REQ_SELECT=REQ_SELECT.replace(REQ_RX,REQ_BASE); r=await build(REQ_SELECT); }
+  if(r.error&&REQ_SELECT.includes(REQ_UPD)&&/request_updates/i.test(JSON.stringify(r.error))){ REQ_SELECT=REQ_SELECT.replace(REQ_UPD,""); r=await build(REQ_SELECT); } return r; }
 async function loadPatient(){
   const uid=S.session.user.id;
   const [rq, md, nt] = await Promise.all([
@@ -1517,7 +1526,9 @@ function patientAbsences(a){
   a.innerHTML=`<div class="convhead"><button class="back" id="back" aria-label="Retour">${IC.back}</button><div><h2>Absences des prestataires</h2><small>Cliquez sur un prestataire pour voir ses dates d'absence.</small></div></div>
   <p class="hint absnote">Certains congés peuvent être prévus mais pas encore encodés dans l'application.</p>
   ${specs.map(sp=>`<h3 class="abspec">${esc(sp)}</h3><div class="faqlist">${list.filter(p=>p.specialty===sp).map(item).join("")}</div>`).join("")}
-  <section class="card helpcontact"><p>Pour une demande qui ne peut pas attendre, le secrétariat peut vous aider : 02 781 18 75.</p><p class="hint">Urgence vitale : appelez le 112.</p></section>`;
+  <section class="card helpcontact"><p>Pour une demande qui ne peut pas attendre, le secrétariat peut vous aider : 02 781 18 75.</p><p class="hint">Urgence vitale : appelez le 112.</p></section>
+  <section class="card helpcontact"><h3>Une idée ou un problème avec l'app ?</h3><p>Dites-nous ce qui pourrait être amélioré, ou ce qui ne marche pas.</p><div class="btnrow"><button type="button" class="btn ghost" id="fbopen">💡 Suggestion</button><button type="button" class="btn ghost" id="fbopen2">⚠️ Signaler un problème</button></div></section>`;
+  $("#fbopen").onclick=()=>openFeedback("suggestion"); $("#fbopen2").onclick=()=>openFeedback("probleme");
   $("#back").onclick=()=>{S.screen="home";render()};
 }
 // Annonce en une ligne (accueil) : le détail s'ouvre au toucher
@@ -1688,7 +1699,9 @@ function patientHelp(a){
   a.innerHTML=`<div class="convhead"><button class="back" id="back" aria-label="Retour">${IC.back}</button><div><h2>Aide</h2><small>Questions fréquentes</small></div></div>
   <section class="card helptour"><h3>Visite guidée</h3><p class="hint">Revoyez en une minute ce que l'app peut faire pour vous.</p><button class="btn" id="tourgo">Revoir la visite guidée</button></section>
   <div class="faqlist">${FAQ.map(([q,r])=>`<details class="faq"><summary>${esc(q)}</summary><p>${esc(r)}</p></details>`).join("")}</div>
-  <section class="card helpcontact"><h3>Une autre question ?</h3><p>Appelez le secrétariat pendant les heures d'ouverture du centre : <a href="tel:+3227811875" translate="no">02 781 18 75</a></p><p class="hint">Urgence vitale : appelez le 112.</p></section>`;
+  <section class="card helpcontact"><h3>Une autre question ?</h3><p>Appelez le secrétariat pendant les heures d'ouverture du centre : <a href="tel:+3227811875" translate="no">02 781 18 75</a></p><p class="hint">Urgence vitale : appelez le 112.</p></section>
+  <section class="card helpcontact"><h3>Une idée ou un problème avec l'app ?</h3><p>Dites-nous ce qui pourrait être amélioré, ou ce qui ne marche pas.</p><div class="btnrow"><button type="button" class="btn ghost" id="fbopen">💡 Suggestion</button><button type="button" class="btn ghost" id="fbopen2">⚠️ Signaler un problème</button></div></section>`;
+  $("#fbopen").onclick=()=>openFeedback("suggestion"); $("#fbopen2").onclick=()=>openFeedback("probleme");
   $("#back").onclick=()=>{S.screen="home";render()};
   $("#tourgo").onclick=()=>openTour();
 }
@@ -1696,6 +1709,7 @@ function patientAccount(a){
   const m=S.me;
   a.innerHTML=`<div class="convhead"><button class="back" id="back" aria-label="Retour">${IC.back}</button><div><h2>Mon compte</h2><small>${esc(S.session.user.email)}</small></div></div>
   <button type="button" class="absrow helprow" data-cs-help>${IC.help}<span>Aide et questions fréquentes</span>${IC.chev||"›"}</button>
+  <button type="button" class="absrow helprow" id="fbopen">${SI.idea}<span>Une idée ou un problème avec l'app ?</span>${IC.chev||"›"}</button>
   <section class="card langcard"><h3>Langue de l'application</h3><p class="hint">Les messages restent écrits par le centre en français.</p>${langPickerHTML()}</section>
   ${textSizeHTML()}
   ${photoCardHTML("Facultatif. Visible uniquement par vous et par l'équipe du centre, pour vous reconnaître.")}
@@ -1717,6 +1731,7 @@ function patientAccount(a){
   <div class="btnrow" style="margin-top:18px"><button class="btn ghost" id="logout">Se déconnecter</button></div>
   ${versionHTML()}`;
   $("#back").onclick=()=>{S.cdraft=null;S.screen="home";render()};
+  $("#fbopen").onclick=()=>openFeedback();
   $("#logout").onclick=logout;
   $("#export").onclick=exportMyData;
   $("#delask").onclick=()=>{ $("#delbox").hidden=false; $("#delconf").focus(); };
@@ -2045,7 +2060,7 @@ function patientReq(a){
   $("#back").onclick=()=>{ clearPend(); S.screen="home"; render(); scrollTo(0,0); };
   if(r.purged_at||r.status==="traite"){ $("#newq").onclick=()=>startFlow("question"); $("#newr").onclick=()=>startFlow("rdv"); bindSavePdf(r); return; }
   bindComposer(key, async (text,pend)=>{
-    const ok = pend ? await uploadAtt(r.id,pend,text) : await run(()=>sb.from("messages").insert({request_id:r.id, body:text}),"Message envoyé");
+    const ok = pend ? await uploadAtt(r.id,pend,text) : await run(()=>sendWithReply(key, rp=>sb.from("messages").insert(rp?{request_id:r.id, body:text, reply_to:rp}:{request_id:r.id, body:text})),"Message envoyé");
     if(!ok) return false;
     S.drafts[key]=""; clearPend(); await loadPatient(); render(); return true;
   });
@@ -2056,7 +2071,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261029e";
+const APP_VERSION="20261029f";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -2187,11 +2202,13 @@ async function loadTeam(){
     const [t,m,g,tp,b]=await Promise.all([
       sb.from("team_threads").select("*").order("last_at",{ascending:false}),
       Promise.resolve(sb.from("team_members").select("thread_id,user_id,last_read_at,pinned_at")).then(r=>r.error?sb.from("team_members").select("thread_id,user_id,last_read_at"):r),
-      sb.from("team_messages").select("id,thread_id,author_id,body,request_id,file_mime,file_name,file_size,created_at").gte("created_at",since).order("created_at").limit(3000),
+      Promise.resolve(sb.from("team_messages").select("id,thread_id,author_id,body,request_id,file_mime,file_name,file_size,created_at,reply_to").gte("created_at",since).order("created_at").limit(3000))
+        .then(r=>r.error?sb.from("team_messages").select("id,thread_id,author_id,body,request_id,file_mime,file_name,file_size,created_at").gte("created_at",since).order("created_at").limit(3000):r),
       sb.from("reply_templates").select("*").order("title"),
       sb.from("binder_items").select("id,category,title,body,phone,url,file_mime,file_name,file_size,updated_by,updated_at,created_at").order("title")]);
     const older=(S.team2.msgs||[]).filter(x=>x.created_at<since&&(t.data||[]).some(th=>th.id===x.thread_id));
-    S.team2={threads:t.data||[],members:m.data||[],msgs:[...older,...(g.data||[])],older:S.team2.older||{}}; S.tpls=tp.data||[]; S.binder=b.data||[];
+    const rx=await Promise.resolve(sb.from("team_message_reactions").select("message_id,user_id,emoji")).catch(e=>({error:e}));
+    S.team2={threads:t.data||[],members:m.data||[],msgs:[...older,...(g.data||[])],older:S.team2.older||{},reacts:rx.error?[]:(rx.data||[]),rxOk:!rx.error}; S.tpls=tp.data||[]; S.binder=b.data||[];
   }catch(e){ console.error(e); }
 }
 const staffName = id => { const t=(S.team||[]).find(x=>x.id===id); if(!t) return "Ancien membre"; return (t.provider_id?provName(t.provider_id):"")||`${t.first_name||""} ${t.last_name||""}`.trim()||ROLE_LABEL[t.role]; };
@@ -2214,7 +2231,8 @@ function tMsgHTML(m){ const mine=m.author_id===S.me.id;
   const file=m.file_mime?(m.file_mime.startsWith("image")?`<button type="button" class="tfile img" data-tfile="${m.id}" data-kind="image"><span class="loading">Photo…</span></button>`
     :m.file_mime.startsWith("audio")?`<div class="tfile" data-tfile="${m.id}" data-kind="audio"><audio controls preload="none"></audio></div>`
     :`<a class="tfile pdf" href="#" data-tfile="${m.id}" data-kind="pdf">📄 ${esc(m.file_name||"document.pdf")}</a>`):"";
-  return `<div class="tm ${mine?"me":""}">${mine?"":`<span class="who">${esc(staffName(m.author_id))}</span>`}${m.body?`<p>${esc(m.body)}</p>`:""}${m.request_id?reqCardHTML(m.request_id):""}${file}<small>${fmt(m.created_at)}</small></div>`; }
+  const q=m.reply_to?S.team2.msgs.find(x=>x.id===m.reply_to):null;
+  return `<div class="tmw ${mine?"me":""}" data-mk="t:${m.id}"><div class="bubw"><div class="tm ${mine?"me":""}">${mine?"":`<span class="who">${esc(staffName(m.author_id))}</span>`}${m.reply_to?quoteHTML("t",q,q?(q.author_id===S.me.id?"Vous":staffName(q.author_id)):""):""}${m.body?`<p>${esc(m.body)}</p>`:""}${m.request_id?reqCardHTML(m.request_id):""}${file}<small>${fmt(m.created_at)}</small></div>${S.team2.rxOk?`<button type="button" class="mact" data-mact="t:${m.id}" aria-label="Répondre ou réagir" title="Répondre ou réagir">${SI.react}</button>`:""}</div>${reactsHTML("t",m.id,(S.team2.reacts||[]).filter(x=>x.message_id===m.id))}</div>`; }
 function tMsgsHTML(t){
   const k="t"+t.id, ms=tMsgs(t.id);
   if(!(k in UNREAD)){ const me=tMembers(t.id).find(m=>m.user_id===S.me.id); UNREAD[k]=me?me.last_read_at:"9999"; }
@@ -2310,12 +2328,181 @@ function bindTeam2(){
     const req=S.tattach&&S.tattach.thread===t.id?S.tattach.id:null;
     const args={p_thread:t.id,p_body:text||"",p_request:req,p_mime:null,p_name:null,p_data:null};
     if(pend){ toast("Envoi…"); args.p_mime=pend.mime; args.p_name=pend.name; args.p_data=await blobToB64(pend.blob); }
-    const {error}=await sb.rpc("team_send",args); if(error){ toast(frError(error)); return false; }
+    const {error}=await sendWithReply(key, rp=>sb.rpc("team_send",rp&&!pend?{...args,p_reply:rp}:args)); if(error){ toast(frError(error)); return false; }
     S.drafts[key]=""; S.tattach=null; clearPend(); await loadTeam(); render(); return true;
   });
 }
 // petite confirmation en deux temps (pas de fenêtre système)
 function confirmInline(btn,label){ if(btn.dataset.sure) return true; btn.dataset.sure="1"; const old=btn.textContent; btn.textContent=label+" Touchez à nouveau"; setTimeout(()=>{ if(document.body.contains(btn)){ btn.textContent=old; delete btn.dataset.sure; } },4000); return false; }
+
+/* =====================================================================
+   RÉPONDRE À UN MESSAGE (CITATION) ET RÉAGIR AVEC UN EMOJI — comme sur WhatsApp
+   Ordinateur : survoler la bulle → bouton 🙂, ou clic droit. Téléphone : appui long sur la bulle.
+   ===================================================================== */
+SI.react='<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5s1.2 1.8 3.5 1.8 3.5-1.8 3.5-1.8"/><path d="M9 9.5h.01M15 9.5h.01"/></svg>';
+SI.reply='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>';
+const REACTS=["👍","❤️","😂","😮","😢","🙏","✅"];
+S.replyTo=null;   // {key, kind:"r"|"t", id}
+function rxFind(kind,id){
+  if(kind==="t"){ const m=S.team2.msgs.find(x=>x.id===id); return m?{m,thread:m.thread_id}:null; }
+  for(const r of S.reqs||[]){ const m=(r.messages||[]).find(x=>x.id===id); if(m) return {m,r}; } return null; }
+function rxSnippet(kind,m){
+  if(!m) return "";
+  if(kind==="t"){ const t=m.body||(m.file_mime?(m.file_mime.startsWith("audio")?"🎤 Message vocal":m.file_mime==="application/pdf"?"📄 "+(m.file_name||"PDF"):"📷 Photo"):m.request_id?"📋 Demande jointe":""); return t.length>140?t.slice(0,140)+"…":t; }
+  const a=m.attachments||[];
+  let t=(a.length&&AUTO_BODY.test(m.body))||!m.body ? (a[0]?(a[0].kind==="image"?"📷 Photo":a[0].kind==="audio"?"🎤 Message vocal":"📄 "+(a[0].name||"Document")):"") : m.body;
+  return t.length>140?t.slice(0,140)+"…":t; }
+function rxAuthor(kind,f){
+  if(!f) return "";
+  if(kind==="t") return f.m.author_id===S.me.id?"Vous":staffName(f.m.author_id);
+  const pat=S.me.role==="patient", mine=pat?f.m.from_patient:(!f.m.from_patient&&f.m.author_id===S.me.id);
+  return mine?"Vous":(chatName(f.m,f.r,pat?"patient":"centre")||"Le centre"); }
+function quoteHTML(kind,q,name){
+  if(!q) return `<div class="quote off"><span>Message d'origine non disponible</span></div>`;
+  return `<button type="button" class="quote" data-jump="${kind}:${q.id}"><b>${esc(name)}</b><span dir="auto">${esc(rxSnippet(kind,q))}</span></button>`; }
+function reactsHTML(kind,id,list,r){
+  list=list||[]; if(!list.length) return "";
+  const g=new Map(); list.forEach(x=>{ if(!g.has(x.emoji)) g.set(x.emoji,[]); g.get(x.emoji).push(x.user_id); });
+  const pat=S.me.role==="patient";
+  const who=u=>u===S.me.id?"vous":(S.team||[]).some(t=>t.id===u)?staffName(u):r?patientName(r.patient_id):"un collègue";
+  return `<div class="reacts">${[...g].map(([e,us])=>{ const mine=us.includes(S.me.id), oth=us.some(u=>u!==S.me.id);
+    const tt=pat?(mine&&oth?"Vous et le centre":mine?"Votre réaction · toucher pour la retirer":"Réaction du centre"):us.map(who).join(", ")+(mine?" · toucher pour retirer":"");
+    return `<button type="button" class="rchip${mine?" mine":""}" data-react="${kind}:${id}:${e}" aria-pressed="${mine}" title="${esc(tt)}">${e}${us.length>1?`<i>${us.length}</i>`:""}</button>`; }).join("")}</div>`; }
+function myReact(kind,id){
+  const f=rxFind(kind,id); if(!f) return null;
+  const L=kind==="t"?(S.team2.reacts||[]).filter(x=>x.message_id===id):(f.m.message_reactions||[]);
+  return (L.find(x=>x.user_id===S.me.id)||{}).emoji||null; }
+function rxRedraw(kind,id){
+  const el=document.querySelector(`[data-mk="${kind}:${id}"]`); if(!el) return; const f=rxFind(kind,id); if(!f) return;
+  el.querySelector(":scope > .reacts")?.remove();
+  el.insertAdjacentHTML("beforeend", kind==="t"?reactsHTML("t",id,(S.team2.reacts||[]).filter(x=>x.message_id===id)):reactsHTML("r",id,f.m.message_reactions,f.r)); }
+async function doReact(kind,id,emoji){
+  const f=rxFind(kind,id); if(!f) return; const cur=myReact(kind,id), e=cur===emoji?"":emoji;
+  const {error}=await sb.rpc(kind==="t"?"react_team_message":"react_message",{p_message:id,p_emoji:e});
+  if(error){ toast(frError(error)); return; }
+  if(kind==="t"){ S.team2.reacts=(S.team2.reacts||[]).filter(x=>!(x.message_id===id&&x.user_id===S.me.id)); if(e) S.team2.reacts.push({message_id:id,user_id:S.me.id,emoji:e}); }
+  else { f.m.message_reactions=(f.m.message_reactions||[]).filter(x=>x.user_id!==S.me.id); if(e) f.m.message_reactions.push({user_id:S.me.id,emoji:e}); }
+  rxRedraw(kind,id); }
+function rxKey(kind,f){ if(kind==="t") return "t"+f.thread; return (S.me.role==="patient"?"p":"s")+f.r.id; }
+function replyBarHTML(key){
+  const R=S.replyTo; if(!R||R.key!==key) return ""; const f=rxFind(R.kind,R.id); if(!f) return "";
+  return `<div class="replybar" id="replybar"><span class="rbic" aria-hidden="true">${SI.reply}</span><div class="quote"><b>Réponse à ${esc(rxAuthor(R.kind,f))}</b><span dir="auto">${esc(rxSnippet(R.kind,f.m))}</span></div><button type="button" class="cbtn sm" id="c-unreply" aria-label="Annuler la réponse">✕</button></div>`; }
+function bindReplyBar(){ const x=$("#c-unreply"); if(x) x.onclick=()=>{ S.replyTo=null; $("#replybar")?.remove(); $("#c-text")?.focus({preventScroll:true}); }; }
+function startReply(kind,id){
+  const f=rxFind(kind,id), ta=$("#c-text"); if(!f||!ta) return;
+  S.replyTo={key:rxKey(kind,f),kind,id};
+  $("#replybar")?.remove(); $("#chatbar")?.insertAdjacentHTML("afterbegin",replyBarHTML(S.replyTo.key)); bindReplyBar();
+  ta.focus({preventScroll:true}); }
+// envoi avec la citation ; si le serveur n'a pas encore la mise à jour (migration 055), on envoie sans citation
+async function sendWithReply(key, call){
+  const rp=S.replyTo&&S.replyTo.key===key?S.replyTo.id:null;
+  let res=await call(rp);
+  if(rp&&res&&res.error&&/reply|schema cache|function|column/i.test(JSON.stringify(res.error))) res=await call(null);
+  if(res&&!res.error&&rp) S.replyTo=null;
+  return res; }
+function closeMsgActions(){ $("#mactpop")?.remove(); }
+function openMsgActions(mk, anchor){
+  closeMsgActions(); const [kind,sid]=mk.split(":"), id=+sid, f=rxFind(kind,id); if(!f) return;
+  const canReply=!!$("#c-text"), cur=myReact(kind,id), txt=kind==="t"?f.m.body:(f.m.attachments?.length&&AUTO_BODY.test(f.m.body)?"":f.m.body);
+  const canReact=kind==="t"?S.team2.rxOk:RX_OK;
+  const pop=document.createElement("div"); pop.id="mactpop"; pop.className="mactpop"; pop.setAttribute("role","menu"); pop.setAttribute("aria-label","Actions sur le message");
+  pop.innerHTML=`${canReact?`<div class="rrow">${REACTS.map(e=>`<button type="button" role="menuitem" data-pe="${e}" class="${cur===e?"on":""}" aria-label="Réagir ${e}">${e}</button>`).join("")}</div>`:""}
+    <div class="racts">${canReply?`<button type="button" role="menuitem" data-pa="reply">${SI.reply}<span>Répondre</span></button>`:""}${txt?`<button type="button" role="menuitem" data-pa="copy">${IC.doc}<span>Copier le texte</span></button>`:""}</div>`;
+  if(!pop.querySelector("button")) return;
+  document.body.appendChild(pop);
+  const b=(anchor.querySelector(".bub,.tm")||anchor).getBoundingClientRect(), pw=pop.offsetWidth, ph=pop.offsetHeight;
+  let top=b.top-ph-8; if(top<8) top=Math.min(innerHeight-ph-8,b.bottom+8);
+  const mine=anchor.classList.contains("me"); let left=mine?b.right-pw:b.left; left=Math.max(8,Math.min(innerWidth-pw-8,left));
+  pop.style.top=top+"px"; pop.style.left=left+"px";
+  anchor.classList.add("mhl");
+  const done=()=>{ anchor.classList.remove("mhl"); closeMsgActions(); document.removeEventListener("pointerdown",off,true); removeEventListener("keydown",k); removeEventListener("scroll",done,true); };
+  const off=e=>{ if(!pop.contains(e.target)) done(); }, k=e=>{ if(e.key==="Escape") done(); };
+  setTimeout(()=>{ document.addEventListener("pointerdown",off,true); addEventListener("scroll",done,true); },0); addEventListener("keydown",k);
+  pop.querySelectorAll("[data-pe]").forEach(x=>x.onclick=()=>{ done(); doReact(kind,id,x.dataset.pe); });
+  pop.querySelectorAll("[data-pa]").forEach(x=>x.onclick=async()=>{ done();
+    if(x.dataset.pa==="reply") startReply(kind,id);
+    else { try{ await navigator.clipboard.writeText(txt); toast("Texte copié"); }catch(e){ toast("La copie n'a pas pu être faite."); } } });
+  (pop.querySelector("[data-pe],[data-pa]"))?.focus({preventScroll:true});
+}
+// gestes communs à toutes les conversations (une seule fois)
+(function(){
+  let lp=null, suppress=false;
+  const target=e=>e.target.closest&&e.target.closest("[data-mk]");
+  document.addEventListener("click",e=>{
+    if(suppress&&!e.target.closest("#mactpop")){ suppress=false; e.preventDefault(); e.stopPropagation(); return; }
+    const rc=e.target.closest("[data-react]"); if(rc){ const [k,i,em]=rc.dataset.react.split(":"); doReact(k,+i,em); return; }
+    const ma=e.target.closest("[data-mact]"); if(ma){ e.stopPropagation(); openMsgActions(ma.dataset.mact, ma.closest("[data-mk]")); return; }
+    const j=e.target.closest("[data-jump]"); if(j){ const el=document.querySelector(`[data-mk="${j.dataset.jump}"]`);
+      if(!el){ toast("Ce message n'est plus affiché ici."); return; } el.scrollIntoView({block:"center",behavior:"smooth"}); el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); }
+  },true);
+  document.addEventListener("contextmenu",e=>{ const t=target(e); if(!t||e.target.closest("audio,input,textarea")) return; e.preventDefault(); openMsgActions(t.dataset.mk,t); });
+  document.addEventListener("pointerdown",e=>{ if(e.pointerType==="mouse") return; const t=target(e); if(!t||e.target.closest("audio,.rchip,.mact,.quote,input,textarea")) return;
+    const x=e.clientX, y=e.clientY; clearTimeout(lp?.timer);
+    lp={x,y,timer:setTimeout(()=>{ lp=null; suppress=true; setTimeout(()=>suppress=false,700); navigator.vibrate?.(15); openMsgActions(t.dataset.mk,t); },480)}; });
+  const cancel=()=>{ if(lp){ clearTimeout(lp.timer); lp=null; } };
+  document.addEventListener("pointermove",e=>{ if(lp&&Math.hypot(e.clientX-lp.x,e.clientY-lp.y)>10) cancel(); });
+  document.addEventListener("pointerup",cancel); document.addEventListener("pointercancel",cancel);
+})();
+
+/* =====================================================================
+   SUGGESTION OU PROBLÈME — patients et équipe écrivent à l'administrateur de l'app
+   ===================================================================== */
+SI.idea='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1 2V16h5.2v-.2c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/></svg>';
+function deviceLabel(){ const u=navigator.userAgent||"";
+  const os=/iPhone|iPad|iPod/.test(u)?"iPhone/iPad":/Android/.test(u)?"Android":/Mac OS X/.test(u)?"Mac":/Windows/.test(u)?"Windows":"Autre";
+  const br=/Edg\//.test(u)?"Edge":/Firefox\//.test(u)?"Firefox":/Chrome\//.test(u)?"Chrome":/Safari\//.test(u)?"Safari":"";
+  return (IS_NATIVE?"App ":"Navigateur ")+os+(br&&!IS_NATIVE?" · "+br:"")+" · "+innerWidth+"×"+innerHeight; }
+function openFeedback(kind0){
+  const pat=S.me&&S.me.role==="patient"; let kind=kind0||"suggestion";
+  const v=document.createElement("div"); v.className="modal"; v.setAttribute("role","dialog"); v.setAttribute("aria-modal","true"); v.setAttribute("aria-labelledby","fb-t");
+  const draw=()=>{ v.innerHTML=`<div class="mbox fbbox"><h2 id="fb-t">Une idée ou un problème ?</h2>
+    <div class="seg fbseg" role="radiogroup" aria-label="Type de message"><button type="button" role="radio" data-fk="suggestion" aria-checked="${kind==="suggestion"}">💡 Suggestion</button><button type="button" role="radio" data-fk="probleme" aria-checked="${kind==="probleme"}">⚠️ Signaler un problème</button></div>
+    <label class="fld" for="fb-body">${kind==="probleme"?"Qu'est-ce qui ne marche pas ? Où, et que s'est-il passé ?":"Votre idée pour améliorer l'app"}<textarea id="fb-body" rows="5" maxlength="2000" placeholder="${kind==="probleme"?"Ex. Quand je touche « Envoyer », rien ne se passe.":"Ex. Pouvoir choisir l'heure du rappel."}">${esc(v._t||"")}</textarea></label>
+    <p class="hint">${pat?"Ce message va à l'équipe qui s'occupe de l'app, pas à votre médecin : n'y mettez pas de question de santé. Pour cela, faites une demande.":"Ce message va à l'administrateur de l'app. Pas de donnée de patient ici."}</p>
+    <p class="hint small" translate="no">Version ${APP_VERSION} · ${esc(deviceLabel())}</p>
+    <div class="btnrow"><button class="btn" id="fb-go">Envoyer</button><button class="btn ghost" id="fb-x">Annuler</button></div></div>`;
+    const ta=v.querySelector("#fb-body"); ta.oninput=()=>{ v._t=ta.value; };
+    v.querySelectorAll("[data-fk]").forEach(b=>b.onclick=()=>{ kind=b.dataset.fk; draw(); v.querySelector("#fb-body").focus(); });
+    v.querySelector("#fb-x").onclick=close;
+    v.querySelector("#fb-go").onclick=async e=>{ const t=ta.value.trim(); if(!t){ toast("Écrivez votre message."); ta.focus(); return; }
+      e.target.disabled=true;
+      const ok=await run(()=>sb.rpc("send_feedback",{p_kind:kind,p_body:t,p_screen:String((pat?S.screen:S.cscreen)||"").slice(0,40),p_version:APP_VERSION,p_device:deviceLabel().slice(0,120)}),"Merci ! Votre message a bien été envoyé.");
+      if(ok){ close(); if(!pat&&isAdmin()&&S.fbLoaded){ await loadFeedback(); if(S.cscreen==="feedback") render(); } } else e.target.disabled=false; }; };
+  const close=()=>{ v.remove(); removeEventListener("keydown",k); }, k=e=>{ if(e.key==="Escape") close(); };
+  draw(); document.body.appendChild(v); v.onclick=e=>{ if(e.target===v) close(); }; addEventListener("keydown",k);
+  v.querySelector("#fb-body").focus();
+}
+// écran de l'administrateur : toutes les suggestions et les problèmes signalés
+S.fbFilter="nouveau";
+async function loadFeedback(){ const {data,error}=await sb.from("feedback").select("*").order("created_at",{ascending:false}).limit(500);
+  S.fbOk=!error; S.feedback=error?[]:(data||[]); S.fbLoaded=true; }
+const fbNew = () => (S.feedback||[]).filter(f=>f.status==="nouveau").length;
+function fbAuthor(f){ if(!f.user_id) return "Compte supprimé"; if(f.user_id===S.me.id) return "Vous";
+  const t=(S.team||[]).find(x=>x.id===f.user_id); if(t) return staffName(f.user_id)+" · "+(ROLE_LABEL[t.role]||"équipe");
+  const pn=patientName(f.user_id); return (pn&&pn!=="?"?pn:"Un patient")+" · patient"; }
+function feedbackHTML(){
+  if(!S.fbLoaded) return `<div class="chead"><div><h1>Suggestions et problèmes</h1></div></div><div class="empty">Chargement…</div>`;
+  const F=S.fbFilter, all=S.feedback||[], L=all.filter(f=>F==="tout"||f.status===F);
+  const cnt=k=>all.filter(f=>k==="tout"||f.status===k).length;
+  const ST={nouveau:"Nouveau",vu:"Vu",fait:"Fait"};
+  return `<div class="chead"><div><h1>Suggestions et problèmes</h1><p>Envoyés par les patients et par l'équipe avec le bouton « Une idée ou un problème ? ». Classés « faits », ils sont effacés après 1 an.</p></div><button class="btn ghost" id="fb-mine">💡 Écrire</button></div>
+  ${!S.fbOk?`<p class="hint">Cette rubrique sera disponible après la mise à jour du serveur (migration 055).</p>`:""}
+  <div class="tfil fbfil" role="group" aria-label="Afficher">${[["nouveau","Nouveaux"],["vu","Vus"],["fait","Faits"],["tout","Tout"]].map(([k,l])=>`<button type="button" data-fbf="${k}" aria-pressed="${F===k}">${l} <i>${cnt(k)}</i></button>`).join("")}</div>
+  <div class="settings">${L.map(f=>`<section class="card fbcard ${f.kind}"><div class="fbhd"><span class="fbk">${f.kind==="probleme"?"⚠️ Problème":"💡 Suggestion"}</span><span class="pill st-${f.status==="fait"?"traite":f.status==="vu"?"encours":"nouveau"}">${ST[f.status]}</span><small>${fmt(f.created_at)}</small></div>
+     <p class="fbwho"><b>${esc(fbAuthor(f))}</b></p><p class="fbbody" dir="auto">${esc(f.body)}</p>
+     <p class="hint small" translate="no">${[f.screen?"Écran : "+f.screen:"",f.app_version?"Version "+f.app_version:"",f.device||""].filter(Boolean).map(esc).join(" · ")}</p>
+     <label class="fld">Note (visible par l'administrateur uniquement)<input data-fbn="${f.id}" maxlength="500" value="${esc(f.admin_note||"")}" placeholder="Ex. corrigé dans la version du 30/10"></label>
+     <div class="btnrow">${f.status!=="vu"?`<button type="button" class="btn ghost" data-fbs="${f.id}:vu">Marquer vu</button>`:""}${f.status!=="fait"?`<button type="button" class="btn" data-fbs="${f.id}:fait">Fait ✓</button>`:`<button type="button" class="btn ghost" data-fbs="${f.id}:nouveau">Rouvrir</button>`}</div></section>`).join("")||`<div class="empty">${F==="nouveau"?"Rien de nouveau.":"Aucun message ici."}</div>`}</div>`;
+}
+function bindFeedback(){
+  if(!S.fbLoaded){ loadFeedback().then(()=>{ if(S.cscreen==="feedback") render(); }); return; }
+  $("#fb-mine").onclick=()=>openFeedback();
+  $$("[data-fbf]").forEach(b=>b.onclick=()=>{ S.fbFilter=b.dataset.fbf; render(); });
+  $$("[data-fbs]").forEach(b=>b.onclick=async()=>{ const [id,st]=b.dataset.fbs.split(":"), f=S.feedback.find(x=>x.id===+id), note=$(`[data-fbn="${id}"]`)?.value||"";
+    b.disabled=true; if(await run(()=>sb.rpc("set_feedback_status",{p_id:+id,p_status:st,p_note:note}),st==="fait"?"Classé « fait »":st==="vu"?"Marqué vu":"Rouvert")){ f.status=st; f.admin_note=note.trim()||null; render(); } else b.disabled=false; });
+  $$("[data-fbn]").forEach(i=>i.onchange=async()=>{ const f=S.feedback.find(x=>x.id===+i.dataset.fbn); if(!f) return;
+    if(await run(()=>sb.rpc("set_feedback_status",{p_id:f.id,p_status:f.status,p_note:i.value}),"Note enregistrée")) f.admin_note=i.value.trim()||null; });
+}
 
 /* ----- fiches conseils (PDF du centre, à envoyer aux patients) ----- */
 const FICHES_LIB=[
@@ -2364,8 +2551,8 @@ async function pickFiche(done){
 function fichesHTML(){
   if(!S.handoutsLoaded) return `<div class="chead"><div><h1>Fiches conseils</h1></div></div><div class="empty">Chargement…</div>`;
   const adm=isAdmin(), L=allFiches(adm), cats=ficheCats(L), D=S.ficDraft;
-  const row=x=>`<div class="medrow${x.hidden?" fichid":""}"><div class="ic">📋</div><div><b>${esc(x.title)}</b><small>${esc(x.sub)}${x.src==="db"?` · ajoutée ${fmt(x.at)} · ${kb(x.size)}`:" · fournie avec l'app"}${x.hidden?" · <b>masquée</b>":""}</small></div>
-    <div class="acts"><button type="button" class="mini ghostmini" data-fo="${L.indexOf(x)}">Ouvrir</button>${adm?(x.src==="db"?`<button type="button" class="linkbtn" data-fe="${x.id}">Modifier</button><button type="button" class="linkbtn" data-fd="${x.id}">Supprimer</button>`:`<button type="button" class="linkbtn" data-fh="${esc(x.id)}" data-on="${x.hidden?0:1}">${x.hidden?"Afficher":"Masquer"}</button>`):""}</div></div>`;
+  const row=x=>`<div class="medrow ficrow2${x.hidden?" fichid":""}" data-n="${esc(norm(x.title+" "+x.sub+" "+x.cat))}"><div class="ic">📋</div><div><b>${esc(x.title)}</b><small>${esc(x.sub)}${x.src==="db"?` · ajoutée ${fmt(x.at)} · ${kb(x.size)}`:" · fournie avec l'app"}${x.hidden?" · <b>masquée</b>":""}</small></div>
+    <div class="acts"><button type="button" class="mini ghostmini" data-fo="${L.indexOf(x)}">Ouvrir</button>${x.hidden?"":`<button type="button" class="mini" data-fsend="${L.indexOf(x)}">${SI.pen}<span>Envoyer à un patient</span></button>`}${adm?(x.src==="db"?`<button type="button" class="linkbtn" data-fe="${x.id}">Modifier</button><button type="button" class="linkbtn" data-fd="${x.id}">Supprimer</button>`:`<button type="button" class="linkbtn" data-fh="${esc(x.id)}" data-on="${x.hidden?0:1}">${x.hidden?"Afficher":"Masquer"}</button>`):""}</div></div>`;
   const form=adm&&D?`<section class="card taskform"><h3>${D.id?"Modifier la fiche":"Ajouter une fiche"}</h3>
      ${D.id?"":`<div class="fld">Fichier PDF (5 Mo maximum)<div class="btnrow" style="margin:4px 0 0"><button type="button" class="btn ghost" id="fa-pick">${IC.clip} ${D.file?"Changer de fichier":"Choisir le PDF"}</button>${D.file?`<span class="hint">${esc(D.file.name)} · ${kb(D.file.size)}</span>`:""}</div><input type="file" id="fa-file" accept="application/pdf" hidden></div>`}
      <label class="fld">Titre<input id="fa-title" maxlength="120" value="${esc(D.title)}" placeholder="Ex. Hypertension : réduire le sel"></label>
@@ -2373,15 +2560,31 @@ function fichesHTML(){
      <label class="fld">Catégorie<input id="fa-cat" maxlength="40" list="fa-cats" value="${esc(D.cat)}" placeholder="Ex. Alimentation"><datalist id="fa-cats">${cats.map(c=>`<option value="${esc(c)}">`).join("")}</datalist></label>
      <div class="btnrow"><button class="btn" id="fa-save">${D.id?"Enregistrer":"Ajouter la fiche"}</button><button class="btn ghost" id="fa-x">Annuler</button></div>
      <p class="hint">Uniquement des documents généraux, jamais de donnée d'un patient. Le PDF est contrôlé (filtre anti-PDF piégé) avant d'être accepté.</p></section>`:"";
-  return `<div class="chead"><div><h1>Fiches conseils</h1><p>Des fiches PDF à envoyer aux patients : dans une conversation, touchez 📋 à côté du champ de message (ou « Fiche conseil » dans Écrire à un patient).</p></div>${adm&&!D&&S.handoutsOk?`<button class="btn" id="fa-new">+ Ajouter une fiche</button>`:""}</div>
+  return `<div class="chead"><div><h1>Fiches conseils</h1><p>Des fiches PDF à envoyer aux patients : « Envoyer à un patient » à côté de la fiche, ou 📋 à côté du champ de message dans une conversation.</p></div>${adm&&!D&&S.handoutsOk?`<button class="btn" id="fa-new">+ Ajouter une fiche</button>`:""}</div>
+  <div class="ficsearch"><input id="fic-q" class="pcq" type="search" placeholder="Rechercher une fiche : diabète, vaccin, cholestérol…" aria-label="Rechercher une fiche" value="${esc(S.ficQ||"")}" autocomplete="off"></div>
   <div class="settings">${form}${adm&&!S.handoutsOk?`<p class="hint">Pour ajouter vos propres fiches, la mise à jour du serveur (migration 054) doit d'abord être faite.</p>`:""}
-  ${cats.map(c=>`<section class="card"><h3>${esc(c)}</h3><div class="list">${L.filter(x=>x.cat===c).map(row).join("")}</div></section>`).join("")}
+  ${cats.map(c=>`<section class="card ficcat"><h3>${esc(c)}</h3><div class="list">${L.filter(x=>x.cat===c).map(row).join("")}</div></section>`).join("")}
+  <div class="empty" id="fic-none" hidden>Aucune fiche ne correspond. Essayez un autre mot.</div>
   <p class="hint">Conseils généraux, relus par le centre.${adm?" Les fiches masquées ne sont plus proposées à l'équipe ; vous pouvez les afficher à nouveau.":" Pour proposer une nouvelle fiche ou une correction, parlez-en à l'administrateur."}</p></div>`;
 }
 function bindFiches(){
   if(!S.handoutsLoaded){ loadHandouts().then(()=>{ if(S.cscreen==="fiches") render(); }); return; }
   const adm=isAdmin(), L=allFiches(adm);
   $$("[data-fo]").forEach(b=>b.onclick=()=>openFiche(L[+b.dataset.fo],b));
+  const fq=$("#fic-q"), filt=()=>{ const q=norm(fq.value.trim()); S.ficQ=fq.value; let any=false;
+    $$(".ficcat").forEach(sec=>{ let n=0; sec.querySelectorAll(".ficrow2").forEach(r=>{ const ok=!q||q.split(/\s+/).every(w=>r.dataset.n.includes(w)); r.hidden=!ok; if(ok) n++; }); sec.hidden=!n; if(n) any=true; });
+    $("#fic-none").hidden=any||!$$(".ficcat").length; };
+  if(fq){ fq.oninput=filt; filt(); }
+  $$("[data-fsend]").forEach(b=>b.onclick=async()=>{ const x=L[+b.dataset.fsend]; b.disabled=true;
+    try{ const blob=await ficheBlob(x);
+      const C=S.compose||(S.compose={patient:null,subject:"Information",body:"",files:[],reply:true,q:""});
+      if(C.files.length>=5){ b.disabled=false; return toast("Déjà 5 pièces jointes dans le message en cours : retirez-en une d'abord."); }
+      const name=x.title.slice(0,70)+".pdf";
+      if(!C.files.some(f=>f.name===name)) C.files.push({key:"compose",kind:"pdf",mime:"application/pdf",name,blob});
+      if(!C.body.trim()) C.body="Bonjour,\n\nVous trouverez ci-joint la fiche « "+x.title+" ».\n\n";
+      S.cscreen="compose"; render(); scrollTo(0,0);
+      toast(C.patient?"Fiche jointe au message":"Fiche jointe : choisissez maintenant le patient");
+    }catch(e){ b.disabled=false; toast("La fiche n'a pas pu être chargée. Réessayez."); } });
   const nw=$("#fa-new"); if(nw) nw.onclick=()=>{ S.ficDraft={title:"",sub:"",cat:"",file:null}; render(); };
   $$("[data-fe]").forEach(b=>b.onclick=()=>{ const h=(S.handouts||[]).find(x=>x.id===+b.dataset.fe); S.ficDraft={id:h.id,title:h.title,sub:h.subtitle||"",cat:h.category}; render(); scrollTo(0,0); });
   $$("[data-fd]").forEach(b=>b.onclick=async()=>{ if(!confirmInline(b,"Supprimer ?")) return; if(await run(()=>sb.rpc("delete_handout",{p_id:+b.dataset.fd}),"Fiche supprimée")){ await loadHandouts(); render(); } });
@@ -2514,6 +2717,9 @@ function staffHelpHTML(){
    ["Rechercher","La loupe (ou Ctrl K sur ordinateur) cherche partout : patients, demandes et leurs messages, messages de l'équipe, tâches, fiches, listes d'attente, inventaire, classeur, actualités, réponses types, caisse. Touchez un résultat pour l'ouvrir."],
    ["Épingler et classer les conversations","Messages : touchez « Épingler » en haut d'une conversation pour la garder tout en haut de votre liste (vos épingles ne changent rien pour les collègues). Les filtres Non lues · Groupes · À deux · Patients trient la liste."],
    ["Ce qui est gardé, ce qui est effacé","Gardé : messages de l'équipe sur l'organisation, inventaire, congés, tâches sans patient, classeur, horaires (5 ans), caisse (10 ans). Effacé : conversations avec les patients (15 jours après la clôture), conversations d'équipe marquées « Concerne des patients » et messages qui joignent une demande (90 jours), tâches liées à un patient (90 jours après)."],
+   ["Répondre à un message et réagir","Comme sur WhatsApp, dans les demandes et dans les messages de l'équipe. Sur ordinateur : passez la souris sur une bulle et cliquez sur 🙂 (ou clic droit). Sur téléphone : appui long sur la bulle. Choisissez un emoji (il s'affiche sous la bulle ; touchez-le à nouveau pour le retirer) ou « Répondre » : le message est cité au-dessus de votre réponse. Touchez une citation pour retrouver le message d'origine."],
+   ["Une idée ou un problème ?","Moi → « Une idée ou un problème ? » envoie une suggestion ou signale un souci de l'app à l'administrateur (la version et le type d'appareil sont ajoutés automatiquement). Les patients ont le même bouton dans Mon compte et dans l'Aide. L'administrateur les lit dans Le centre → Suggestions."],
+   ["Envoyer une fiche conseil","Le centre → Fiches conseils : cherchez la fiche (titre, sujet), puis « Envoyer à un patient » : l'écran Écrire à un patient s'ouvre avec le PDF déjà joint ; choisissez le patient, ajoutez un mot, envoyez. Dans une conversation déjà ouverte, le bouton 📋 à côté du message fait la même chose."],
    ["Agenda Rosa","« Agenda Rosa » ouvre votre agenda Rosa dans l'app (téléphone) ou dans une fenêtre à côté (ordinateur). Connexion avec votre propre compte Rosa."],
    ["Horaires de l'accueil","Secrétariat → Horaires : touchez une case pour encoder l'arrivée, le départ et la pause d'une accueillante (ou un congé, une maladie…) ; chaque accueillante peut corriger les heures de toute l'équipe de l'accueil. Sous le tableau, une case libre pour les désidératas et indisponibilités de la semaine. Les heures de la semaine se calculent toutes seules. L'administration valide la semaine. Onglet « Mois » : le total par personne et le fichier Excel pour le secrétariat social."],
    ["Caisse","Secrétariat → Caisse : encodez chaque paiement en espèces (montant, prestataire, prestation). Jamais de nom de patient. Une erreur ne s'efface pas : « Annuler » avec un motif. Le 1er du mois, le résumé du mois précédent part par e-mail à l'administration, avec le fichier Excel."],
@@ -2538,10 +2744,13 @@ function renderStaff(a){
   const sc=S.cscreen;
   const nav=staffNavHTML(sc);
   let body="";
-  if(sc==="compose") body=composeHTML(); else if(sc==="inventory") body=inventoryHTML(); else if(sc==="tasks") body=tasksHTML(); else if(sc==="accounts") body=accountsHTML(); else if(sc==="news") body=newsAdminHTML(); else if(sc==="team") body=teamHTML(); else if(sc==="settings") body=settingsHTML(); else if(sc==="help") body=staffHelpHTML(); else if(sc==="leaves") body=leavesHTML(); else if(sc==="patients") body=patientsHTML(); else if(sc==="messages") body=teamHTML2(); else if(sc==="templates") body=templatesHTML(); else if(sc==="binder") body=binderHTML(); else if(sc==="desk") body=deskHTML(); else if(sc==="waitlist") body=waitlistHTML(); else if(sc==="fiches") body=fichesHTML(); else if(sc==="hours"&&canOffice()) body=hoursHTML(); else if(sc==="cash"&&canOffice()) body=cashHTML(); else body=inboxHTML();
+  if(sc==="compose") body=composeHTML(); else if(sc==="inventory") body=inventoryHTML(); else if(sc==="tasks") body=tasksHTML(); else if(sc==="accounts") body=accountsHTML(); else if(sc==="news") body=newsAdminHTML(); else if(sc==="team") body=teamHTML(); else if(sc==="settings") body=settingsHTML(); else if(sc==="help") body=staffHelpHTML(); else if(sc==="leaves") body=leavesHTML(); else if(sc==="patients") body=patientsHTML(); else if(sc==="messages") body=teamHTML2(); else if(sc==="templates") body=templatesHTML(); else if(sc==="binder") body=binderHTML(); else if(sc==="desk") body=deskHTML(); else if(sc==="waitlist") body=waitlistHTML(); else if(sc==="fiches") body=fichesHTML(); else if(sc==="feedback"&&isAdmin()) body=feedbackHTML(); else if(sc==="hours"&&canOffice()) body=hoursHTML(); else if(sc==="cash"&&canOffice()) body=cashHTML(); else body=inboxHTML();
   document.body.classList.add("hasbar","sidenav"); document.body.classList.remove("ddopen");
   a.innerHTML=nav+urgBannerHTML()+body;
   $("#logout").onclick=()=>{ closeDD(); logout(); };
+  $("#dd-fb").onclick=()=>{ closeDD(); openFeedback(); };
+  if(isAdmin()&&!S.fbLoaded&&!S.fbLoading){ S.fbLoading=true; loadFeedback().then(()=>{ S.fbLoading=false; const el=document.activeElement;
+    if(fbNew()&&!(el&&/TEXTAREA|INPUT|SELECT/.test(el.tagName))&&!S.pend&&!REC&&!CREC&&!$(".modal")) render(); }).catch(()=>{ S.fbLoading=false; }); }
   $$("[data-urgopen]").forEach(b=>b.onclick=()=>{ const r=S.reqs.find(x=>x.id===+b.dataset.urgopen); if(!r) return;
     S.cscreen="inbox"; S.archive=false; S.itype="all"; S.iq=""; S.short=false; S.sel=r.id;
     S.scope=r.queue==="prestataires"?(r.provider_id===S.me.provider_id?"mine":"prestataires"):r.queue; render(); scrollTo(0,0); });
@@ -2549,7 +2758,7 @@ function renderStaff(a){
   $$("[data-dd]").forEach(b=>b.onclick=e=>{ e.stopPropagation(); openDD(b.dataset.dd); });
   const bk=$(".ddback"); if(bk) bk.onclick=closeDD;
   $$("[data-cs]").forEach(b=>b.onclick=()=>{ closeDD(); if(CREC&&b.dataset.cs!=="compose") composeRecStop(false); S.cscreen=b.dataset.cs; render(); window.scrollTo(0,0); });
-  if(sc==="compose") bindCompose(); else if(sc==="inventory") bindInventory(); else if(sc==="tasks") bindTasks(); else if(sc==="accounts") bindAccounts(); else if(sc==="news") bindNewsAdmin(); else if(sc==="team") bindTeam(); else if(sc==="settings") bindSettings(); else if(sc==="help"||sc==="leaves") {} else if(sc==="patients") bindPatients(); else if(sc==="messages") bindTeam2(); else if(sc==="templates") bindTemplates(); else if(sc==="binder") bindBinder(); else if(sc==="desk") bindDesk(); else if(sc==="waitlist"){ if(S.waitlist) bindWaitlist(); } else if(sc==="fiches") bindFiches(); else if(sc==="hours"&&canOffice()) bindHours(); else if(sc==="cash"&&canOffice()) bindCash(); else bindInbox();
+  if(sc==="compose") bindCompose(); else if(sc==="inventory") bindInventory(); else if(sc==="tasks") bindTasks(); else if(sc==="accounts") bindAccounts(); else if(sc==="news") bindNewsAdmin(); else if(sc==="team") bindTeam(); else if(sc==="settings") bindSettings(); else if(sc==="help"||sc==="leaves") {} else if(sc==="patients") bindPatients(); else if(sc==="messages") bindTeam2(); else if(sc==="templates") bindTemplates(); else if(sc==="binder") bindBinder(); else if(sc==="desk") bindDesk(); else if(sc==="waitlist"){ if(S.waitlist) bindWaitlist(); } else if(sc==="fiches") bindFiches(); else if(sc==="feedback"&&isAdmin()) bindFeedback(); else if(sc==="hours"&&canOffice()) bindHours(); else if(sc==="cash"&&canOffice()) bindCash(); else bindInbox();
 }
 
 /* ----- durée estimée des rendez-vous de médecine générale (visible par l'équipe seulement) ----- */
@@ -2737,7 +2946,7 @@ function bindDetail(){
   const isRx=r.type==="prescription"&&(r.request_items||[]).some(i=>!i.decision);
   const dec=S.drafts["d"+r.id]||(S.drafts["d"+r.id]={});
   bindComposer(key, async (text,pend)=>{
-    const ok = pend ? await uploadAtt(r.id,pend,text) : await run(()=>sb.rpc("staff_message",{p_id:r.id,p_body:text}),"Message envoyé · patient notifié");
+    const ok = pend ? await uploadAtt(r.id,pend,text) : await run(()=>sendWithReply(key, rp=>sb.rpc("staff_message",rp?{p_id:r.id,p_body:text,p_reply:rp}:{p_id:r.id,p_body:text})),"Message envoyé · patient notifié");
     if(!ok) return false;
     S.drafts[key]=""; clearPend(); await refresh(); return true;
   }, v=>{ if(!isRx) close.disabled=!(msgsOf(r).some(m=>!m.from_patient)||v.trim()); });
@@ -3522,7 +3731,8 @@ function navGroups(){
      ...(canPub()?[{cs:"news",ic:SI.news||IC.news,t:"Actualités"}]:[]),
      {cs:"binder",ic:SI.book,t:"Classeur"},
      {cs:"fiches",ic:IC.doc,t:"Fiches conseils"},
-     {cs:"inventory",ic:SI.box,t:"Inventaire",n:invOpen()}]}];
+     {cs:"inventory",ic:SI.box,t:"Inventaire",n:invOpen()},
+     ...(isAdmin()?[{cs:"feedback",ic:SI.idea,t:"Suggestions",n:fbNew()}]:[])]}];
   return G;
 }
 const ME_SCREENS=["settings","help","templates"];
@@ -3537,6 +3747,7 @@ function staffNavHTML(sc){
      <button role="menuitem" class="ddi" data-cs="settings">${IC.bell}<span>Mon profil et notifications</span></button>
      <button role="menuitem" class="ddi" data-cs="templates">${SI.tpl}<span>Mes réponses types</span></button>
      <button role="menuitem" class="ddi" data-cs="help">${IC.help}<span>Aide</span></button>
+     <button role="menuitem" class="ddi" id="dd-fb">${SI.idea}<span>Une idée ou un problème ?</span></button>
      <hr><button role="menuitem" class="ddi" id="logout">${SI.out}<span>Se déconnecter</span></button></div>`;
   // « Plus » sur téléphone : tout, rangé par rubriques
   const more=`<div class="dd ddmore" id="dd-more" hidden role="menu" aria-label="Toutes les rubriques">${G.map(g=>`<p class="ddsec">${g.h}</p>${g.it.filter(x=>!["inbox","messages","compose"].includes(x.cs)).map(ddItem).join("")}`).join("")}
@@ -3776,7 +3987,7 @@ const TFILTERS=[["all","Toutes"],["unread","Non lues"],["group","Groupes"],["dir
 function tFilterOk(t,f){ return f==="all"||(f==="unread"&&tUnread(t)>0)||(f==="group"&&t.kind!=="direct")||(f==="direct"&&t.kind==="direct")||(f==="pat"&&t.patient_related); }
 async function loadOlder(t){
   const first=tMsgs(t.id)[0], before=first?first.created_at:new Date().toISOString();
-  const {data,error}=await sb.from("team_messages").select("id,thread_id,author_id,body,request_id,file_mime,file_name,file_size,created_at").eq("thread_id",t.id).lt("created_at",before).order("created_at",{ascending:false}).limit(100);
+  const {data,error}=await sb.from("team_messages").select("id,thread_id,author_id,body,request_id,file_mime,file_name,file_size,created_at"+(S.team2.rxOk?",reply_to":"")).eq("thread_id",t.id).lt("created_at",before).order("created_at",{ascending:false}).limit(100);
   if(error){ toast(frError(error)); return; }
   const have=new Set(S.team2.msgs.map(m=>m.id)), add=(data||[]).filter(m=>!have.has(m.id));
   S.team2.msgs=[...add,...S.team2.msgs].sort((a,b)=>a.created_at.localeCompare(b.created_at));
@@ -4124,6 +4335,8 @@ function startRealtime(){
       .on("postgres_changes",{event:"INSERT",schema:"public",table:"request_updates"},p=>rtQueue(p.new&&p.new.request_id))
       .on("postgres_changes",{event:"INSERT",schema:"public",table:"notifications"},()=>rtQueue(null))
       .on("postgres_changes",{event:"INSERT",schema:"public",table:"team_messages"},()=>teamRt())
+      .on("postgres_changes",{event:"*",schema:"public",table:"message_reactions"},p=>rtQueue((p.new&&p.new.request_id)||(p.old&&p.old.request_id)))
+      .on("postgres_changes",{event:"*",schema:"public",table:"team_message_reactions"},()=>teamRt())
       .subscribe();
   }catch(e){ console.error(e); RT=null; }
 }
