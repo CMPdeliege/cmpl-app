@@ -2056,7 +2056,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261029d";
+const APP_VERSION="20261029e";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -2326,23 +2326,81 @@ const FICHES_LIB=[
  ["Alimentation","fiche-calculs-vesicule.pdf","Calculs de la vésicule biliaire","Limiter les crises, signes d'alerte"],
  ["Alimentation","fiche-diverticulite.pdf","Diverticules et diverticulite","Pendant la poussée, puis prévention"],
  ["Alimentation","fiche-vitamines-b12-b9.pdf","Vitamines B12 et B9 (folates)","Sources alimentaires, quand compléter"]];
-async function ficheBlob(file){ const r=await fetch("fiches/"+file+"?v="+APP_VERSION,{cache:"no-cache"}); if(!r.ok) throw new Error("Fiche introuvable."); const b=await r.blob(); return new Blob([b],{type:"application/pdf"}); }
-function pickFiche(done){
+// fiches ajoutées par l'administrateur (base de données) + fiches fournies avec l'app
+async function loadHandouts(){
+  const [h,x]=await Promise.all([sb.from("handouts").select("id,category,title,subtitle,file_name,file_size,created_at,updated_at").order("category").order("title"), sb.from("handouts_hidden").select("file")]);
+  S.handoutsOk=!h.error; S.handouts=h.error?[]:(h.data||[]); S.handoutsHidden=x.error?[]:(x.data||[]).map(r=>r.file); S.handoutsLoaded=true;
+}
+function allFiches(withHidden){
+  const hid=new Set(S.handoutsHidden||[]);
+  const base=FICHES_LIB.map(x=>({src:"app",id:x[1],cat:x[0],title:x[2],sub:x[3],hidden:hid.has(x[1])})).filter(x=>withHidden||!x.hidden);
+  const db=(S.handouts||[]).map(h=>({src:"db",id:h.id,cat:h.category,title:h.title,sub:h.subtitle||"",size:h.file_size,at:h.updated_at||h.created_at}));
+  return [...base,...db];
+}
+const ficheCats = L => [...new Set(L.map(x=>x.cat))].sort((a,b)=>a.localeCompare(b,"fr"));
+async function ficheBlob(x){
+  if(x.src==="db"){ const {data,error}=await sb.rpc("get_handout",{p_id:x.id}); if(error||!data||!data[0]) throw error||new Error("Fiche introuvable.");
+    const bin=atob(data[0].data), u8=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u8[i]=bin.charCodeAt(i); return new Blob([u8],{type:"application/pdf"}); }
+  const r=await fetch("fiches/"+x.id+"?v="+APP_VERSION,{cache:"no-cache"}); if(!r.ok) throw new Error("Fiche introuvable."); return new Blob([await r.blob()],{type:"application/pdf"});
+}
+async function openFiche(x,btn){ if(btn) btn.disabled=true;
+  try{ const blob=await ficheBlob(x); if(IS_NATIVE&&SEC()){ await nativePreview(blob,x.title+".pdf"); } else { const u=URL.createObjectURL(blob); window.open(u,"_blank","noopener"); setTimeout(()=>URL.revokeObjectURL(u),60000); } }
+  catch(e){ toast("La fiche n'a pas pu être ouverte."); } finally{ if(btn) btn.disabled=false; } }
+async function pickFiche(done){
+  if(!S.handoutsLoaded) await loadHandouts();
+  const L=allFiches(false), cats=ficheCats(L);
   const v=document.createElement("div"); v.className="modal"; v.setAttribute("role","dialog"); v.setAttribute("aria-modal","true"); v.setAttribute("aria-labelledby","pf-t");
-  const cats=[...new Set(FICHES_LIB.map(x=>x[0]))];
   v.innerHTML=`<div class="mbox ficbox"><h2 id="pf-t">Joindre une fiche conseil</h2><p class="hint">Le PDF est joint au message : vous pouvez ajouter un mot avant d'envoyer.</p>
-    <div class="ficlist">${cats.map(c=>`<p class="srg">${esc(c)}</p>${FICHES_LIB.filter(x=>x[0]===c).map(x=>`<div class="ficrow"><button type="button" class="ficpick" data-fic="${x[1]}"><span class="sric">📋</span><span><b>${esc(x[2])}</b><small>${esc(x[3])}</small></span></button><a class="linkbtn" href="fiches/${x[1]}?v=${APP_VERSION}" target="_blank" rel="noopener">Voir</a></div>`).join("")}`).join("")}</div>
+    <input id="pf-q" class="pcq" type="search" placeholder="Rechercher une fiche…" aria-label="Rechercher une fiche">
+    <div class="ficlist">${cats.map(c=>`<p class="srg" data-cat>${esc(c)}</p>${L.filter(x=>x.cat===c).map((x,i)=>`<div class="ficrow" data-n="${esc(norm(x.title+" "+x.sub+" "+c))}"><button type="button" class="ficpick" data-fk="${L.indexOf(x)}"><span class="sric">📋</span><span><b>${esc(x.title)}</b><small>${esc(x.sub)}</small></span></button><button type="button" class="linkbtn" data-fv="${L.indexOf(x)}">Voir</button></div>`).join("")}`).join("")||`<p class="hint">Aucune fiche.</p>`}</div>
     <div class="btnrow"><button class="btn ghost" id="pf-x">Annuler</button></div></div>`;
   document.body.appendChild(v); const close=()=>v.remove(); v.querySelector("#pf-x").onclick=close; v.onclick=e=>{ if(e.target===v) close(); };
-  v.querySelectorAll("[data-fic]").forEach(b=>b.onclick=async()=>{ const x=FICHES_LIB.find(y=>y[1]===b.dataset.fic); b.disabled=true;
-    try{ const blob=await ficheBlob(x[1]); close(); await done({kind:"pdf",mime:"application/pdf",name:x[2].slice(0,70)+".pdf",blob}); }
+  v.querySelector("#pf-q").oninput=e=>{ const q=norm(e.target.value); v.querySelectorAll(".ficrow").forEach(r=>r.hidden=!!q&&!r.dataset.n.includes(q)); };
+  v.querySelectorAll("[data-fv]").forEach(b=>b.onclick=()=>openFiche(L[+b.dataset.fv],b));
+  v.querySelectorAll("[data-fk]").forEach(b=>b.onclick=async()=>{ const x=L[+b.dataset.fk]; b.disabled=true;
+    try{ const blob=await ficheBlob(x); close(); await done({kind:"pdf",mime:"application/pdf",name:x.title.slice(0,70)+".pdf",blob}); }
     catch(e){ b.disabled=false; toast("La fiche n'a pas pu être chargée. Réessayez."); } });
 }
 function fichesHTML(){
-  const cats=[...new Set(FICHES_LIB.map(x=>x[0]))];
-  return `<div class="chead"><div><h1>Fiches conseils</h1><p>Des fiches PDF du centre à envoyer aux patients : dans une conversation, touchez 📋 à côté du champ de message (ou « Fiche conseil » dans Écrire à un patient).</p></div></div>
-  <div class="settings">${cats.map(c=>`<section class="card"><h3>${esc(c)}</h3><div class="list">${FICHES_LIB.filter(x=>x[0]===c).map(x=>`<div class="medrow"><div class="ic">📋</div><div><b>${esc(x[2])}</b><small>${esc(x[3])}</small></div><div class="acts"><a class="mini ghostmini" href="fiches/${x[1]}?v=${APP_VERSION}" target="_blank" rel="noopener">Ouvrir</a></div></div>`).join("")}</div></section>`).join("")}
-  <p class="hint">Conseils généraux, relus par le centre. Pour proposer une nouvelle fiche ou une correction, parlez-en à l'administrateur.</p></div>`;
+  if(!S.handoutsLoaded) return `<div class="chead"><div><h1>Fiches conseils</h1></div></div><div class="empty">Chargement…</div>`;
+  const adm=isAdmin(), L=allFiches(adm), cats=ficheCats(L), D=S.ficDraft;
+  const row=x=>`<div class="medrow${x.hidden?" fichid":""}"><div class="ic">📋</div><div><b>${esc(x.title)}</b><small>${esc(x.sub)}${x.src==="db"?` · ajoutée ${fmt(x.at)} · ${kb(x.size)}`:" · fournie avec l'app"}${x.hidden?" · <b>masquée</b>":""}</small></div>
+    <div class="acts"><button type="button" class="mini ghostmini" data-fo="${L.indexOf(x)}">Ouvrir</button>${adm?(x.src==="db"?`<button type="button" class="linkbtn" data-fe="${x.id}">Modifier</button><button type="button" class="linkbtn" data-fd="${x.id}">Supprimer</button>`:`<button type="button" class="linkbtn" data-fh="${esc(x.id)}" data-on="${x.hidden?0:1}">${x.hidden?"Afficher":"Masquer"}</button>`):""}</div></div>`;
+  const form=adm&&D?`<section class="card taskform"><h3>${D.id?"Modifier la fiche":"Ajouter une fiche"}</h3>
+     ${D.id?"":`<div class="fld">Fichier PDF (5 Mo maximum)<div class="btnrow" style="margin:4px 0 0"><button type="button" class="btn ghost" id="fa-pick">${IC.clip} ${D.file?"Changer de fichier":"Choisir le PDF"}</button>${D.file?`<span class="hint">${esc(D.file.name)} · ${kb(D.file.size)}</span>`:""}</div><input type="file" id="fa-file" accept="application/pdf" hidden></div>`}
+     <label class="fld">Titre<input id="fa-title" maxlength="120" value="${esc(D.title)}" placeholder="Ex. Hypertension : réduire le sel"></label>
+     <label class="fld">Courte description (facultatif)<input id="fa-sub" maxlength="160" value="${esc(D.sub)}" placeholder="Ex. Les aliments les plus salés, astuces"></label>
+     <label class="fld">Catégorie<input id="fa-cat" maxlength="40" list="fa-cats" value="${esc(D.cat)}" placeholder="Ex. Alimentation"><datalist id="fa-cats">${cats.map(c=>`<option value="${esc(c)}">`).join("")}</datalist></label>
+     <div class="btnrow"><button class="btn" id="fa-save">${D.id?"Enregistrer":"Ajouter la fiche"}</button><button class="btn ghost" id="fa-x">Annuler</button></div>
+     <p class="hint">Uniquement des documents généraux, jamais de donnée d'un patient. Le PDF est contrôlé (filtre anti-PDF piégé) avant d'être accepté.</p></section>`:"";
+  return `<div class="chead"><div><h1>Fiches conseils</h1><p>Des fiches PDF à envoyer aux patients : dans une conversation, touchez 📋 à côté du champ de message (ou « Fiche conseil » dans Écrire à un patient).</p></div>${adm&&!D&&S.handoutsOk?`<button class="btn" id="fa-new">+ Ajouter une fiche</button>`:""}</div>
+  <div class="settings">${form}${adm&&!S.handoutsOk?`<p class="hint">Pour ajouter vos propres fiches, la mise à jour du serveur (migration 054) doit d'abord être faite.</p>`:""}
+  ${cats.map(c=>`<section class="card"><h3>${esc(c)}</h3><div class="list">${L.filter(x=>x.cat===c).map(row).join("")}</div></section>`).join("")}
+  <p class="hint">Conseils généraux, relus par le centre.${adm?" Les fiches masquées ne sont plus proposées à l'équipe ; vous pouvez les afficher à nouveau.":" Pour proposer une nouvelle fiche ou une correction, parlez-en à l'administrateur."}</p></div>`;
+}
+function bindFiches(){
+  if(!S.handoutsLoaded){ loadHandouts().then(()=>{ if(S.cscreen==="fiches") render(); }); return; }
+  const adm=isAdmin(), L=allFiches(adm);
+  $$("[data-fo]").forEach(b=>b.onclick=()=>openFiche(L[+b.dataset.fo],b));
+  const nw=$("#fa-new"); if(nw) nw.onclick=()=>{ S.ficDraft={title:"",sub:"",cat:"",file:null}; render(); };
+  $$("[data-fe]").forEach(b=>b.onclick=()=>{ const h=(S.handouts||[]).find(x=>x.id===+b.dataset.fe); S.ficDraft={id:h.id,title:h.title,sub:h.subtitle||"",cat:h.category}; render(); scrollTo(0,0); });
+  $$("[data-fd]").forEach(b=>b.onclick=async()=>{ if(!confirmInline(b,"Supprimer ?")) return; if(await run(()=>sb.rpc("delete_handout",{p_id:+b.dataset.fd}),"Fiche supprimée")){ await loadHandouts(); render(); } });
+  $$("[data-fh]").forEach(b=>b.onclick=async()=>{ const on=b.dataset.on==="1"; if(await run(()=>sb.rpc("set_handout_hidden",{p_file:b.dataset.fh,p_hidden:on}),on?"Fiche masquée":"Fiche affichée")){ await loadHandouts(); render(); } });
+  const D=S.ficDraft; if(!D) return;
+  const f={title:"#fa-title",sub:"#fa-sub",cat:"#fa-cat"}; Object.entries(f).forEach(([k,sel])=>{ const el=$(sel); el.oninput=()=>{ D[k]=el.value; }; });
+  const inp=$("#fa-file"), pk=$("#fa-pick"); if(pk) pk.onclick=()=>inp.click();
+  if(inp) inp.onchange=()=>{ const x=inp.files[0]; inp.value=""; if(!x) return;
+    if(!(x.type==="application/pdf"||/\.pdf$/i.test(x.name))) return toast("Choisissez un fichier PDF.");
+    if(x.size>5*1048576) return toast("Ce PDF est trop lourd (5 Mo maximum).");
+    D.file=x; if(!D.title) D.title=x.name.replace(/\.pdf$/i,"").replace(/[-_]+/g," ").slice(0,120); render(); };
+  $("#fa-x").onclick=()=>{ S.ficDraft=null; render(); };
+  $("#fa-save").onclick=async e=>{ const btn=e.target;
+    if(!D.id&&!D.file) return toast("Choisissez d'abord le fichier PDF.");
+    if(!D.title.trim()||!D.cat.trim()) return toast("Indiquez le titre et la catégorie.");
+    btn.disabled=true; btn.textContent="Envoi…";
+    const ok=D.id ? await run(()=>sb.rpc("edit_handout",{p_id:D.id,p_category:D.cat,p_title:D.title,p_subtitle:D.sub}),"Fiche modifiée")
+      : await run(async()=>sb.rpc("add_handout",{p_category:D.cat,p_title:D.title,p_subtitle:D.sub,p_name:D.file.name,p_data:await blobToB64(D.file)}),"Fiche ajoutée : elle est disponible pour toute l'équipe");
+    if(ok){ S.ficDraft=null; await loadHandouts(); render(); } else { btn.disabled=false; btn.textContent=D.id?"Enregistrer":"Ajouter la fiche"; } };
 }
 
 /* ----- réponses types ----- */
@@ -2491,7 +2549,7 @@ function renderStaff(a){
   $$("[data-dd]").forEach(b=>b.onclick=e=>{ e.stopPropagation(); openDD(b.dataset.dd); });
   const bk=$(".ddback"); if(bk) bk.onclick=closeDD;
   $$("[data-cs]").forEach(b=>b.onclick=()=>{ closeDD(); if(CREC&&b.dataset.cs!=="compose") composeRecStop(false); S.cscreen=b.dataset.cs; render(); window.scrollTo(0,0); });
-  if(sc==="compose") bindCompose(); else if(sc==="inventory") bindInventory(); else if(sc==="tasks") bindTasks(); else if(sc==="accounts") bindAccounts(); else if(sc==="news") bindNewsAdmin(); else if(sc==="team") bindTeam(); else if(sc==="settings") bindSettings(); else if(sc==="help"||sc==="leaves") {} else if(sc==="patients") bindPatients(); else if(sc==="messages") bindTeam2(); else if(sc==="templates") bindTemplates(); else if(sc==="binder") bindBinder(); else if(sc==="desk") bindDesk(); else if(sc==="waitlist"){ if(S.waitlist) bindWaitlist(); } else if(sc==="fiches"){} else if(sc==="hours"&&canOffice()) bindHours(); else if(sc==="cash"&&canOffice()) bindCash(); else bindInbox();
+  if(sc==="compose") bindCompose(); else if(sc==="inventory") bindInventory(); else if(sc==="tasks") bindTasks(); else if(sc==="accounts") bindAccounts(); else if(sc==="news") bindNewsAdmin(); else if(sc==="team") bindTeam(); else if(sc==="settings") bindSettings(); else if(sc==="help"||sc==="leaves") {} else if(sc==="patients") bindPatients(); else if(sc==="messages") bindTeam2(); else if(sc==="templates") bindTemplates(); else if(sc==="binder") bindBinder(); else if(sc==="desk") bindDesk(); else if(sc==="waitlist"){ if(S.waitlist) bindWaitlist(); } else if(sc==="fiches") bindFiches(); else if(sc==="hours"&&canOffice()) bindHours(); else if(sc==="cash"&&canOffice()) bindCash(); else bindInbox();
 }
 
 /* ----- durée estimée des rendez-vous de médecine générale (visible par l'équipe seulement) ----- */

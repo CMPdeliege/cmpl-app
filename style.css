@@ -1401,3 +1401,4 @@ button.hcell.hasc:hover{background:color-mix(in srgb,var(--hc) 55%,transparent)}
 .ficpick{flex:1;display:flex;align-items:flex-start;gap:11px;border:0;background:transparent;border-radius:10px;padding:8px;text-align:left;color:var(--ink)}
 .ficpick:hover{background:var(--accent-soft)}
 .ficpick b{display:block;font-size:14.5px}.ficpick small{display:block;color:var(--muted);font-size:12.5px}
+.medrow.fichid{opacity:.55}
