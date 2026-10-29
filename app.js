@@ -1431,13 +1431,30 @@ function addEyes(root){
 function renderRecovery(a){
   a.className="wrap";
   a.innerHTML=`<div class="top">${BRAND}</div><div class="auth"><h1>Nouveau mot de passe</h1>
-  <form class="form" id="recform"><label class="fld" for="r-pass">Nouveau mot de passe (8 caractères minimum)<input id="r-pass" type="password" autocomplete="new-password"></label><div id="r-msg"></div><button class="btn full" type="submit">Enregistrer</button></form></div>`;
+  <form class="form" id="recform"><label class="fld" for="r-pass">Nouveau mot de passe (8 caractères minimum)<input id="r-pass" type="password" autocomplete="new-password"></label>
+   <div id="r-mfa" hidden><label class="fld" for="r-code">Code de sécurité (6 chiffres)<input id="r-code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="123456"></label>
+    <p class="hint">Votre compte de l'équipe est protégé par la double authentification : entrez le code affiché dans votre application d'authentification (Google Authenticator, Microsoft Authenticator…). Plus d'accès à cette application ? Demandez à l'administrateur de réinitialiser votre double authentification.</p></div>
+   <div id="r-msg"></div><button class="btn full" type="submit">Enregistrer</button></form></div>`;
   addEyes(a);
-  $("#recform").onsubmit=async e=>{ e.preventDefault(); const p=$("#r-pass").value;
-    if(p.length<8){ $("#r-msg").innerHTML=`<div class="err">Le mot de passe doit contenir au moins 8 caractères.</div>`; return; }
+  // compte de l'équipe avec double authentification : le code est demandé avant de changer le mot de passe
+  let needMfa=false, fids=[];
+  (async()=>{ try{ const {data:aal}=await sb.auth.mfa.getAuthenticatorAssuranceLevel();
+    if(aal&&aal.nextLevel==="aal2"&&aal.currentLevel!=="aal2"){
+      const {data:lf}=await sb.auth.mfa.listFactors(); const vf=(lf?.totp||[]).filter(f=>f.status==="verified");
+      fids=[...vf.filter(f=>!isTrustFactor(f)),...vf.filter(isTrustFactor)].map(f=>f.id);
+      const tr=trustGet();   // ordinateur de confiance : pas besoin de code
+      if(tr&&vf.some(f=>f.id===tr.f)){ const v=await sb.auth.mfa.challengeAndVerify({factorId:tr.f,code:await totpCode(tr.s)}); if(!v.error) return; }
+      needMfa=true; $("#r-mfa").hidden=false; } }catch(e){ console.error(e); } })();
+  $("#recform").onsubmit=async e=>{ e.preventDefault(); const p=$("#r-pass").value, m=$("#r-msg");
+    if(p.length<8){ m.innerHTML=`<div class="err">Le mot de passe doit contenir au moins 8 caractères.</div>`; return; }
+    if(needMfa){ const code=$("#r-code").value.replace(/\D/g,"");
+      if(code.length!==6){ m.innerHTML=`<div class="err">Entrez les 6 chiffres du code de sécurité.</div>`; $("#r-code").focus(); return; }
+      let err=null; for(const fid of fids){ ({error:err}=await sb.auth.mfa.challengeAndVerify({factorId:fid,code})); if(!err) break; if(!/invalid|expired/i.test(err.message||"")) break; }
+      if(err){ m.innerHTML=`<div class="err">${/invalid|expired/i.test(err.message||"")?"Code incorrect ou expiré. Entrez le code actuellement affiché.":esc(frError(err))}</div>`; return; }
+      needMfa=false; $("#r-mfa").hidden=true; }
     const {error}=await sb.auth.updateUser({password:p});
-    if(error){ $("#r-msg").innerHTML=`<div class="err">${esc(frError(error))}</div>`; return; }
-    S.recovery=false; toast("Mot de passe enregistré"); refresh(); };
+    if(error){ m.innerHTML=`<div class="err">${/AAL2/i.test(error.message||"")?"Entrez d'abord votre code de sécurité (double authentification).":esc(frError(error))}</div>`; if(/AAL2/i.test(error.message||"")){ needMfa=true; $("#r-mfa").hidden=false; } return; }
+    markActive(); S.recovery=false; toast("Mot de passe enregistré"); refresh(); };
 }
 function renderPending(a){
   a.className="wrap";
@@ -2038,7 +2055,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261029a";
+const APP_VERSION="20261029b";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
