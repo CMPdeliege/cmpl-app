@@ -2071,7 +2071,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261030a";
+const APP_VERSION="20261030b";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -2729,7 +2729,7 @@ function staffHelpHTML(){
    ["Trouver et trier les demandes","Onglet Demandes : « Les miennes / Secrétariat / Tout le centre » choisit les demandes affichées ; la recherche trouve un patient par son nom ; les pastilles colorées filtrent par type. Les demandes sont rangées par ce qu'il faut faire : urgent ou en retard, le patient a répondu, nouvelles. « En attente du patient » (vous avez répondu) est replié en bas. Les renouvellements simples peuvent être accordés à la suite dans « Prescriptions en série », après les avoir faits dans CareConnect."],
    ["Un patient sans compte dans l'app","Patients → Fiches patients : créez une fiche (nom, prénom, date de naissance, téléphone, e-mail). Vous pouvez ensuite lui lier une tâche, en parler à un collègue (« En parler ») ou l'inviter par e-mail à créer son compte. Jamais de note médicale dans une fiche. Quand le patient s'inscrit, l'administrateur relie son compte à la fiche dans Comptes à valider."],
    ["Photos de l'accueil des patients","Administrateur : Le centre → Actualités → « Photos de l'accueil des patients ». Ajoutez jusqu'à 8 photos du centre (en paysage, jamais de patient reconnaissable), une légende si vous voulez, et l'ordre avec ↑ ↓. Elles défilent en haut de l'accueil des patients."],
-   ["La liste de l'accueil","Secrétariat → Accueil : la liste commune du secrétariat (appels à passer, choses à ne pas oublier). Écrivez la tâche, choisissez le jour et, si besoin, l'heure (« vers 14h30 ») : à cette heure-là, le secrétariat reçoit une notification. Toute l'équipe peut y ajouter quelque chose ; le secrétariat coche quand c'est fait."],
+   ["La liste de l'accueil","Secrétariat → Accueil : la liste commune du secrétariat (appels à passer, choses à ne pas oublier). Écrivez la tâche, choisissez le jour et, si besoin, l'heure (« vers 14h30 ») : à cette heure-là, le secrétariat reçoit une notification. Toute l'équipe la voit, peut y ajouter quelque chose et cocher ce qui est fait. Ces tâches communes n'apparaissent plus dans « Tâches », qui ne montre que vos tâches personnelles et celles que vous confiez."],
    ["Les listes d'attente","Patients → Listes d'attente : un patient à rappeler en cas de désistement, pour un prestataire. Ajoutez-le (patient de l'app, fiche ou simplement nom + téléphone), avec un motif court et ses disponibilités. Quand une place se libère : « Pas de réponse » note l'appel, « RDV fixé » le retire de la liste. Jamais de détail médical."],
    ["Rassurer le patient : « Vu »","Dans une demande, le bouton « ✓ Vu · prévenir le patient » lui affiche « Votre demande a été vue… Elle est en cours de traitement » et lui envoie une notification (sans e-mail). Au transfert, la case « Prévenir le patient » (cochée) lui indique à qui sa demande a été transmise."],
    ["Transférer avec un mot","Dans une demande, choisissez le collègue dans « Transférer à », écrivez un mot dans le champ en dessous, puis Transférer. Le collègue voit le mot en haut de la demande ; le patient ne le voit jamais."],
@@ -3228,7 +3228,8 @@ function bindPatients(){
 const todayISO = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
 const teamName = id => { if(id===S.me.id) return "moi"; const t=S.team.find(x=>x.id===id); return t?`${t.first_name||""} ${t.last_name||""}`.trim()||ROLE_LABEL[t.role]:"—"; };
 const taskPeople = t => (t.task_people||[]).map(p=>p.user_id);
-const forMe = t => t.assigned_to===S.me.id || (t.assigned_group==="secretariat" && isDesk()) || taskPeople(t).includes(S.me.id);
+// « Tâches » = ce qui m'est confié personnellement ; la liste commune du secrétariat est dans « Accueil »
+const forMe = t => t.assigned_to===S.me.id || taskPeople(t).includes(S.me.id);
 const taskForLabel = t => { const main=t.assigned_group?"secrétariat":teamName(t.assigned_to); const more=taskPeople(t).filter(id=>id!==t.assigned_to).map(teamName);
   return [main,...more].join(", "); };
 const myTasks = () => (S.tasks||[]).filter(t=>!t.done_at&&forMe(t));
@@ -3277,12 +3278,12 @@ function tasksHTML(){
   const list=K==="pat"?listAll.filter(isPatTask):K==="org"?listAll.filter(t=>!isPatTask(t)):listAll;
   const others=S.team.filter(t=>t.id!==S.me.id&&t.status==="active");
   const pt=D.patient;
-  return `<div class="chead"><div><h1>Tâches</h1><p>Pour vous, pour un collègue ou pour tout le secrétariat. Une tâche peut être liée à un patient. Elle n'est visible que par vous et la ou les personnes qui doivent la faire.</p></div></div>
+  return `<div class="chead"><div><h1>Tâches</h1><p>Vos tâches et celles que vous confiez. Une tâche pour un collègue n'est visible que par vous et la ou les personnes qui doivent la faire. Une tâche pour « Secrétariat » va dans la liste commune de l'Accueil, visible par toute l'équipe.</p></div></div>
   <div class="taskgrid">
   <section class="card taskform"><h3>Nouvelle tâche</h3>
    <label class="fld">Tâche<input id="tk-title" maxlength="200" autocomplete="off" placeholder="Ex. Changer les filtres de la ventilation" value="${esc(D.title)}"></label>
    <label class="fld">Note (facultatif)<textarea id="tk-notes" rows="3" maxlength="2000" placeholder="Ex. Vérifier sa prise de sang et l'appeler si anomalie">${esc(D.notes)}</textarea></label>
-   <div class="row2"><label class="fld">Pour<select id="tk-to"><option value="me" ${D.to==="me"?"selected":""}>Moi</option><option value="secretariat" ${D.to==="secretariat"?"selected":""}>Secrétariat (toute l'équipe du secrétariat)</option>${others.map(t=>`<option value="${t.id}" ${D.to===t.id?"selected":""}>${esc(`${t.first_name||""} ${t.last_name||""}`.trim())} · ${ROLE_LABEL[t.role]}</option>`).join("")}</select></label>
+   <div class="row2"><label class="fld">Pour<select id="tk-to"><option value="me" ${D.to==="me"?"selected":""}>Moi</option><option value="secretariat" ${D.to==="secretariat"?"selected":""}>Secrétariat (liste de l'Accueil)</option>${others.map(t=>`<option value="${t.id}" ${D.to===t.id?"selected":""}>${esc(`${t.first_name||""} ${t.last_name||""}`.trim())} · ${ROLE_LABEL[t.role]}</option>`).join("")}</select></label>
    <label class="fld">Échéance (facultatif)<input id="tk-due" type="date" value="${esc(D.due)}"></label></div>
    <div class="tkextra"><span class="hint">Aussi concernés :</span>${(D.extra||[]).map(id=>`<span class="ipill">${esc(teamName(id))}</span>`).join("")||`<span class="hint">personne d'autre</span>`}
     <button type="button" class="linkbtn" id="tk-extra">${(D.extra||[]).length?"Modifier":"+ Ajouter des personnes"}</button></div>
@@ -3332,7 +3333,7 @@ function bindTasks(){
       toast(error?"Tâche ajoutée, mais le rappel n'a pas pu être enregistré : "+frError(error):"Tâche ajoutée · rappel "+REMIND[D.remind].toLowerCase()); }
     if((D.files||[]).length){ toast("Envoi des documents…"); if(await uploadTaskFiles(r.data,D.files)) toast("Tâche ajoutée avec ses documents"); }
     if(pt&&!pt.record){ if(pt.child) S.children[pt.id]=pt; else S.profiles[pt.id]=pt; }
-    S.tdraft=null; S.tview=D.to==="me"||(D.to==="secretariat"&&isDesk())?"todo":"given"; await refresh(); };
+    S.tdraft=null; S.tview=D.to==="me"?"todo":"given"; await refresh(); };
   $$("[data-tv]").forEach(b=>b.onclick=()=>{ S.tview=b.dataset.tv; render(); });
   $$("[data-tppl]").forEach(b=>b.onclick=()=>{ const t=S.tasks.find(x=>x.id===+b.dataset.tppl);
     pickColleagues("Personnes concernées par cette tâche",t.assigned_to?[t.assigned_to]:[],async ids=>{ if(await run(()=>sb.rpc("set_task_people",{p_id:t.id,p_users:ids}),ids.length?"Personnes mises à jour":"Plus personne en plus")){ t.task_people=ids.map(user_id=>({user_id})); render(); return true; } return false; },false,taskPeople(t)); });
@@ -3371,7 +3372,7 @@ function deskHTML(){
   const open=deskTasks().filter(t=>!t.done_at).sort(deskSort), doneToday=deskTasks().filter(t=>t.done_at&&t.done_at.slice(0,10)>=todayISO()).sort((a,b)=>new Date(b.done_at)-new Date(a.done_at));
   let list="", g=-1;
   for(const t of open){ const k=deskGroup(t); if(k!==g){ g=k; list+=`<h4 class="tgroup g${k===0?0:k===1?1:k===2?2:3}">${DESK_GROUPS[k]} <span>${open.filter(x=>deskGroup(x)===k).length}</span></h4>`; } list+=deskRowHTML(t); }
-  return `<div class="chead"><div><h1>Accueil</h1><p>La liste commune de l'accueil : appels à passer, choses à ne pas oublier. ${isDesk()?"Tout le secrétariat la voit et peut cocher.":"Ce que vous ajoutez ici va à tout le secrétariat (vous ne voyez que vos propres ajouts)."} À l'heure indiquée, le secrétariat reçoit une notification.</p></div></div>
+  return `<div class="chead"><div><h1>Accueil</h1><p>La liste commune de l'accueil : appels à passer, choses à ne pas oublier. Toute l'équipe la voit et peut cocher ce qui est fait. À l'heure indiquée, le secrétariat reçoit une notification.</p></div></div>
   <section class="card deskform">
    <div class="deskadd"><label class="fld grow">À faire<input id="dk-title" maxlength="200" autocomplete="off" placeholder="Ex. Rappeler Mme Dupont (0470 12 34 56) pour son rendez-vous" value="${esc(D.title)}"></label>
     <label class="fld">Jour<input id="dk-date" type="date" value="${esc(D.date)}"></label>
