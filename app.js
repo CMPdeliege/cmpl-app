@@ -2071,7 +2071,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261029f";
+const APP_VERSION="20261030a";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -2508,7 +2508,9 @@ function bindFeedback(){
 const FICHES_LIB=[
  ["Prévention","fiche-coeur-prevention.pdf","Protéger son cœur et ses artères","Alimentation et activité physique pour l'adulte"],
  ["Vaccination","fiche-vaccination-enfants.pdf","Calendrier de vaccination de l'enfant","Programme ONE, nouveau calendrier du 1er novembre 2026"],
- ["Alimentation","fiche-diabete-alimentation.pdf","Bien manger avec un diabète","Assiette, aliments à privilégier, hypoglycémie"],
+ ["Diabète","fiche-diabete-alimentation.pdf","Bien manger avec un diabète","Assiette, aliments à privilégier, hypoglycémie"],
+ ["Diabète","fiche-diabete-ramadan.pdf","Diabète et jeûne du ramadan","Peut-on jeûner, médicaments, glycémie, quand rompre le jeûne"],
+ ["Diabète","fiche-hypoglycemie.pdf","L'hypoglycémie","Les signes, la règle des « 15 », l'éviter"],
  ["Alimentation","fiche-cholesterol-triglycerides.pdf","Cholestérol et triglycérides","À éviter, à privilégier"],
  ["Alimentation","fiche-calculs-vesicule.pdf","Calculs de la vésicule biliaire","Limiter les crises, signes d'alerte"],
  ["Alimentation","fiche-diverticulite.pdf","Diverticules et diverticulite","Pendant la poussée, puis prévention"],
@@ -2717,6 +2719,7 @@ function staffHelpHTML(){
    ["Rechercher","La loupe (ou Ctrl K sur ordinateur) cherche partout : patients, demandes et leurs messages, messages de l'équipe, tâches, fiches, listes d'attente, inventaire, classeur, actualités, réponses types, caisse. Touchez un résultat pour l'ouvrir."],
    ["Épingler et classer les conversations","Messages : touchez « Épingler » en haut d'une conversation pour la garder tout en haut de votre liste (vos épingles ne changent rien pour les collègues). Les filtres Non lues · Groupes · À deux · Patients trient la liste."],
    ["Ce qui est gardé, ce qui est effacé","Gardé : messages de l'équipe sur l'organisation, inventaire, congés, tâches sans patient, classeur, horaires (5 ans), caisse (10 ans). Effacé : conversations avec les patients (15 jours après la clôture), conversations d'équipe marquées « Concerne des patients » et messages qui joignent une demande (90 jours), tâches liées à un patient (90 jours après)."],
+   ["Joindre un document à une tâche","Tâches et Accueil : en créant la tâche, « Joindre un document » (photo, PDF) ou « Scanner » ; ou plus tard, « Joindre » sous la tâche. 10 documents maximum, 5 Mo chacun. Seules les personnes de la tâche les voient ; ils sont effacés 90 jours après que la tâche est faite. Touchez un document pour l'ouvrir."],
    ["Répondre à un message et réagir","Comme sur WhatsApp, dans les demandes et dans les messages de l'équipe. Sur ordinateur : passez la souris sur une bulle et cliquez sur 🙂 (ou clic droit). Sur téléphone : appui long sur la bulle. Choisissez un emoji (il s'affiche sous la bulle ; touchez-le à nouveau pour le retirer) ou « Répondre » : le message est cité au-dessus de votre réponse. Touchez une citation pour retrouver le message d'origine."],
    ["Une idée ou un problème ?","Moi → « Une idée ou un problème ? » envoie une suggestion ou signale un souci de l'app à l'administrateur (la version et le type d'appareil sont ajoutés automatiquement). Les patients ont le même bouton dans Mon compte et dans l'Aide. L'administrateur les lit dans Le centre → Suggestions."],
    ["Envoyer une fiche conseil","Le centre → Fiches conseils : cherchez la fiche (titre, sujet), puis « Envoyer à un patient » : l'écran Écrire à un patient s'ouvre avec le PDF déjà joint ; choisissez le patient, ajoutez un mot, envoyez. Dans une conversation déjà ouverte, le bouton 📋 à côté du message fait la même chose."],
@@ -3245,7 +3248,7 @@ function taskRowHTML(t){
   const canRem=!t.done_at&&t.due_date&&t.due_date>=todayISO();
   return `<div class="taskrow ${t.done_at?"done":""}">
      <button class="tcheck" data-tdone="${t.id}" aria-pressed="${!!t.done_at}" aria-label="${t.done_at?"Marquer comme à faire":"Marquer comme faite"}">${t.done_at?"✓":""}</button>
-     <div><b>${esc(t.title)}</b>${isPatTask(t)?"":` <span class="ipill orgtag">🏥 Organisation</span>`}${t.notes?`<p class="tnotes">${esc(t.notes)}</p>`:""}${taskLinkHTML(t)}
+     <div><b>${esc(t.title)}</b>${isPatTask(t)?"":` <span class="ipill orgtag">🏥 Organisation</span>`}${t.notes?`<p class="tnotes">${esc(t.notes)}</p>`:""}${taskLinkHTML(t)}${tkFilesHTML(t)}
       <small>Pour : ${esc(taskForLabel(t))}${t.created_by===S.me.id&&!t.done_at?` <button type="button" class="linkbtn tppl" data-tppl="${t.id}">👥 Personnes</button>`:""} · de ${esc(teamName(t.created_by))} · ${fmt(t.created_at)}${t.done_at?` · faite ${fmt(t.done_at)} par ${esc(teamName(t.done_by))}`:""}</small>${dueTag(t)}
       ${canRem?`<label class="tremind${t.remind_days!=null?" on":""}" title="Rappel par e-mail à 8 h à la personne qui doit faire la tâche"><span aria-hidden="true">🔔</span><select data-trem="${t.id}" aria-label="Rappel par e-mail"><option value="">Pas de rappel</option>${remindOpts(t.remind_days)}</select>${t.reminded_at?`<em>envoyé</em>`:""}</label>`:""}</div>
      ${t.created_by===S.me.id?`<button class="linkbtn tdel" data-tdel="${t.id}">Supprimer</button>`:"<span></span>"}</div>`;
@@ -3288,6 +3291,7 @@ function tasksHTML(){
    <div class="fld">Patient lié (facultatif : sans patient, la tâche est rangée dans « Organisation »)
    ${pt?`<div class="recipient">${`<div class="ic">${IC.user}</div>`}<div><b>${esc(`${pt.first_name||""} ${pt.last_name||""}`)}</b><small>Né(e) le ${fmtDate(pt.birth_date)}${pt.child?" · enfant":""}</small></div><button type="button" class="linkbtn" id="tk-unpick">Retirer</button></div>`
    :`<input id="tk-q" type="text" autocomplete="off" placeholder="Nom ou prénom (au moins 2 lettres)" value="${esc(D.q)}"><div id="tk-res"></div>`}</div>
+   ${TFILES_OK()?`<div class="fld">Documents (facultatif : photo, PDF ou scan)${tkPendHTML(D,"tasks")}</div>`:""}
    <div class="btnrow"><button class="btn" id="tk-add" ${D.title.trim()?"":"disabled"}>Ajouter la tâche</button></div>
   </section>
   <section>
@@ -3326,6 +3330,7 @@ function bindTasks(){
     if((D.extra||[]).length){ const {error}=await sb.rpc("set_task_people",{p_id:r.data,p_users:D.extra}); if(error) toast("Tâche ajoutée, mais les autres personnes n'ont pas pu être ajoutées : "+frError(error)); }
     if(D.due&&D.remind!=null){ const {error}=await sb.rpc("set_task_reminder",{p_id:r.data,p_days:D.remind});
       toast(error?"Tâche ajoutée, mais le rappel n'a pas pu être enregistré : "+frError(error):"Tâche ajoutée · rappel "+REMIND[D.remind].toLowerCase()); }
+    if((D.files||[]).length){ toast("Envoi des documents…"); if(await uploadTaskFiles(r.data,D.files)) toast("Tâche ajoutée avec ses documents"); }
     if(pt&&!pt.record){ if(pt.child) S.children[pt.id]=pt; else S.profiles[pt.id]=pt; }
     S.tdraft=null; S.tview=D.to==="me"||(D.to==="secretariat"&&isDesk())?"todo":"given"; await refresh(); };
   $$("[data-tv]").forEach(b=>b.onclick=()=>{ S.tview=b.dataset.tv; render(); });
@@ -3356,7 +3361,7 @@ function deskRowHTML(t){
   return `<div class="deskrow ${t.done_at?"done":""} ${deskLate(t)?"late":""}">
     <button class="tcheck" data-ddone="${t.id}" aria-pressed="${!!t.done_at}" aria-label="${t.done_at?"Remettre à faire":"Fait"}">${t.done_at?"✓":""}</button>
     <div class="dtime">${t.due_time?`<b>${hm5(t.due_time).replace(":","h")}</b>`:`<span>—</span>`}${d?`<small>${esc(d)}</small>`:""}</div>
-    <div class="dbody"><b>${esc(t.title)}</b>${t.notes?`<p class="tnotes">${esc(t.notes)}</p>`:""}${taskLinkHTML(t)}
+    <div class="dbody"><b>${esc(t.title)}</b>${t.notes?`<p class="tnotes">${esc(t.notes)}</p>`:""}${taskLinkHTML(t)}${tkFilesHTML(t)}
      <small>Ajouté par ${esc(teamName(t.created_by))} · ${fmt(t.created_at)}${t.done_at?` · fait ${fmt(t.done_at)} par ${esc(teamName(t.done_by))}`:""}</small></div>
     <div class="dacts">${t.done_at?"":`<label class="dtimeedit" title="Changer l'heure"><span aria-hidden="true">🕑</span><input type="time" data-dtime="${t.id}" value="${hm5(t.due_time)}" aria-label="Heure"></label>`}
      ${t.created_by===S.me.id||isDesk()?`<button class="linkbtn tdel" data-ddel="${t.id}">Supprimer</button>`:""}</div></div>`;
@@ -3372,15 +3377,65 @@ function deskHTML(){
     <label class="fld">Jour<input id="dk-date" type="date" value="${esc(D.date)}"></label>
     <label class="fld">Vers (heure)<input id="dk-time" type="time" value="${esc(D.time)}"></label>
     <button class="btn" id="dk-add" ${D.title.trim()?"":"disabled"}>Ajouter</button></div>
-   <details class="dkmore" ${D.notes?"open":""}><summary>Ajouter une précision</summary><textarea id="dk-notes" rows="2" maxlength="2000" placeholder="Facultatif. Pas de détail médical.">${esc(D.notes)}</textarea></details>
+   <details class="dkmore" ${D.notes||(D.files||[]).length?"open":""}><summary>Ajouter une précision ou un document</summary><textarea id="dk-notes" rows="2" maxlength="2000" placeholder="Facultatif. Pas de détail médical.">${esc(D.notes)}</textarea>${tkPendHTML(D,"desk")}</details>
   </section>
   <div class="desklist">${list||`<div class="empty"><span class="yay" aria-hidden="true">✨</span>Rien à faire à l'accueil pour l'instant.</div>`}</div>
   ${doneToday.length?`<details class="deskdone"><summary>Fait aujourd'hui (${doneToday.length})</summary><div class="desklist">${doneToday.map(deskRowHTML).join("")}</div></details>`:""}`;
 }
-let TASK_SEL="*, task_people(user_id)";
+// documents joints (migration 056), puis personnes en plus (046) : si une mise à jour manque, on charge sans
+const TASK_SELS=["*, task_people(user_id), task_files(id,name,mime,size,created_by,created_at)","*, task_people(user_id)","*"];
+let TASK_SEL=TASK_SELS[0];
+const TFILES_OK = () => TASK_SEL===TASK_SELS[0];
 async function loadTasks(){ let r=await sb.from("tasks").select(TASK_SEL).order("created_at",{ascending:false}).limit(500);
-  if(r.error&&TASK_SEL!=="*"){ TASK_SEL="*"; r=await sb.from("tasks").select("*").order("created_at",{ascending:false}).limit(500); }
+  while(r.error&&TASK_SEL!=="*"){ TASK_SEL=TASK_SELS[TASK_SELS.indexOf(TASK_SEL)+1]; r=await sb.from("tasks").select(TASK_SEL).order("created_at",{ascending:false}).limit(500); }
   if(!r.error) S.tasks=r.data||[]; return r; }
+/* ----- documents joints aux tâches et à la liste de l'accueil ----- */
+function tkFilesHTML(t){
+  if(!TFILES_OK()) return "";
+  const F=(t.task_files||[]).slice().sort((a,b)=>a.created_at.localeCompare(b.created_at));
+  const canDel=f=>f.created_by===S.me.id||t.created_by===S.me.id||isAdmin();
+  if(!F.length&&t.done_at) return "";
+  return `<div class="tkfiles">${F.map(f=>`<span class="tkfile"><button type="button" data-tkf="${f.id}" title="Ouvrir">${f.mime==="application/pdf"?"📄":"📷"} <span>${esc(f.name)}</span></button>${canDel(f)?`<button type="button" class="tkx" data-tkfdel="${t.id}:${f.id}" aria-label="Retirer ${esc(f.name)}">✕</button>`:""}</span>`).join("")}
+    ${t.done_at||F.length>=10?"":`<button type="button" class="linkbtn tkadd" data-tkadd="${t.id}">${IC.clip} Joindre</button><button type="button" class="linkbtn tkadd" data-tkscan="${t.id}">${IC.scan} Scanner</button>`}</div>`; }
+// documents choisis dans le formulaire, avant que la tâche existe
+function tkPendHTML(D,id){
+  if(!TFILES_OK()) return "";
+  return `<div class="tkpend">${(D.files||[]).map((f,i)=>`<span class="tkfile">${f.kind==="image"?"📷":"📄"} <span>${esc(f.name)}</span><button type="button" class="tkx" data-tkpx="${id}:${i}" aria-label="Retirer">✕</button></span>`).join("")}
+    ${(D.files||[]).length<10?`<button type="button" class="linkbtn tkadd" data-tkpadd="${id}">${IC.clip} Joindre un document</button><button type="button" class="linkbtn tkadd" data-tkpscan="${id}">${IC.scan} Scanner</button>`:""}<small class="hint">Visibles seulement par les personnes de la tâche. Effacés 90 jours après que la tâche est faite.</small></div>`; }
+async function uploadTaskFiles(taskId, files){
+  let bad=0;
+  for(const f of files||[]){
+    const {error}=await sb.rpc("add_task_file",{p_task:taskId,p_mime:f.mime,p_name:f.name,p_data:await blobToB64(f.blob)});
+    if(error){ bad++; console.error(error); }
+    if(f.url) URL.revokeObjectURL(f.url); }
+  if(bad) toast(bad>1?`${bad} documents n'ont pas pu être joints.`:"Un document n'a pas pu être joint.");
+  return !bad; }
+function pickTaskFile(done){
+  const inp=document.createElement("input"); inp.type="file"; inp.accept="image/*,application/pdf"; inp.multiple=true;
+  inp.onchange=async()=>{ for(const f of [...inp.files]){ try{ done(await prepFile(f,"task")); }catch(e){ toast(e.message); } } };
+  inp.click(); }
+(function(){
+  const draftOf = id => id==="desk"?S.ddraft:S.tdraft;
+  const after = async (taskId, pf) => { toast("Envoi…"); if(await uploadTaskFiles(taskId,[pf])){ toast("Document joint"); await loadTasks(); render(); } };
+  document.addEventListener("click",async e=>{
+    const b=e.target.closest("[data-tkf],[data-tkfdel],[data-tkadd],[data-tkscan],[data-tkpx],[data-tkpadd],[data-tkpscan]"); if(!b) return;
+    if(b.dataset.tkf){ b.disabled=true;
+      try{ const {data,error}=await sb.rpc("get_task_file",{p_id:+b.dataset.tkf}); if(error||!data||!data[0]) throw error||new Error("absent");
+        const d=data[0], bin=atob(d.data), u8=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u8[i]=bin.charCodeAt(i);
+        const blob=new Blob([u8],{type:d.mime});
+        if(d.mime.startsWith("image/")) openViewer(URL.createObjectURL(blob));
+        else if(IS_NATIVE&&SEC()) await nativePreview(blob,d.name);
+        else { const u=URL.createObjectURL(blob); window.open(u,"_blank","noopener"); setTimeout(()=>URL.revokeObjectURL(u),60000); }
+      }catch(err){ toast("Ce document n'a pas pu être ouvert."); } finally{ b.disabled=false; } return; }
+    if(b.dataset.tkfdel){ if(!confirmInline(b,"Retirer ?")) return; const [tid,fid]=b.dataset.tkfdel.split(":").map(Number);
+      if(await run(()=>sb.rpc("delete_task_file",{p_id:fid}),"Document retiré")){ const t=S.tasks.find(x=>x.id===tid); if(t) t.task_files=(t.task_files||[]).filter(f=>f.id!==fid); render(); } return; }
+    if(b.dataset.tkadd){ const id=+b.dataset.tkadd; pickTaskFile(pf=>after(id,pf)); return; }
+    if(b.dataset.tkscan){ const id=+b.dataset.tkscan; openScanner(pf=>after(id,pf)); return; }
+    if(b.dataset.tkpx){ const [k,i]=b.dataset.tkpx.split(":"), D=draftOf(k); const f=D.files.splice(+i,1)[0]; if(f&&f.url) URL.revokeObjectURL(f.url); render(); return; }
+    if(b.dataset.tkpadd){ const D=draftOf(b.dataset.tkpadd); pickTaskFile(pf=>{ (D.files||(D.files=[])).push(pf); render(); }); return; }
+    if(b.dataset.tkpscan){ const D=draftOf(b.dataset.tkpscan); openScanner(pf=>{ (D.files||(D.files=[])).push(pf); render(); }); return; }
+  });
+})();
 let deskTimer=null;
 function bindDesk(){
   clearInterval(deskTimer);
@@ -3398,6 +3453,7 @@ function bindDesk(){
     const r=await run(()=>sb.rpc("create_task",{p_title:D.title.trim(),p_notes:D.notes.trim()||null,p_due:D.date||(D.time?todayISO():null),p_assignee:null,p_group:"secretariat",p_patient:null,p_child:null,p_record:null}),D.time?null:"Ajouté à la liste de l'accueil");
     if(!r){ upd(); return; }
     if(D.time){ const {error}=await sb.rpc("set_task_time",{p_id:r.data,p_time:D.time}); toast(error?"Ajouté, mais l'heure n'a pas pu être enregistrée : "+frError(error):`Ajouté · vers ${D.time.replace(":","h")}`); }
+    if((D.files||[]).length){ toast("Envoi des documents…"); if(await uploadTaskFiles(r.data,D.files)) toast("Ajouté avec ses documents"); }
     S.ddraft=null; await refresh(); $("#dk-title")?.focus(); };
   $$("[data-ddone]").forEach(b=>b.onclick=async()=>{ const t=S.tasks.find(x=>x.id===+b.dataset.ddone), d=!t.done_at;
     if(await run(()=>sb.rpc("set_task_done",{p_id:t.id,p_done:d}),d?"Fait":"Remis à faire")){ t.done_at=d?new Date().toISOString():null; t.done_by=d?S.me.id:null; render(); } });
