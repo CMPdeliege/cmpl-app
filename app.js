@@ -2071,7 +2071,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261030b";
+const APP_VERSION="20261030c";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -2201,7 +2201,8 @@ async function loadTeam(){
     const since=new Date(Date.now()-90*864e5).toISOString();
     const [t,m,g,tp,b]=await Promise.all([
       sb.from("team_threads").select("*").order("last_at",{ascending:false}),
-      Promise.resolve(sb.from("team_members").select("thread_id,user_id,last_read_at,pinned_at")).then(r=>r.error?sb.from("team_members").select("thread_id,user_id,last_read_at"):r),
+      Promise.resolve(sb.from("team_members").select("thread_id,user_id,last_read_at,pinned_at,marked_unread,flagged_at"))
+        .then(r=>r.error?Promise.resolve(sb.from("team_members").select("thread_id,user_id,last_read_at,pinned_at")).then(r2=>r2.error?sb.from("team_members").select("thread_id,user_id,last_read_at"):r2):(S.tflagOk=true,r)),
       Promise.resolve(sb.from("team_messages").select("id,thread_id,author_id,body,request_id,file_mime,file_name,file_size,created_at,reply_to").gte("created_at",since).order("created_at").limit(3000))
         .then(r=>r.error?sb.from("team_messages").select("id,thread_id,author_id,body,request_id,file_mime,file_name,file_size,created_at").gte("created_at",since).order("created_at").limit(3000):r),
       sb.from("reply_templates").select("*").order("title"),
@@ -2216,9 +2217,16 @@ const staffInitials = id => { const n=staffName(id).replace(/^Dr\.?\s+/,""); ret
 const tMembers = tid => S.team2.members.filter(m=>m.thread_id===tid);
 const tMsgs = tid => S.team2.msgs.filter(m=>m.thread_id===tid);
 function tTitle(t){ if(t.kind!=="direct") return t.title||"Groupe"; const o=tMembers(t.id).find(m=>m.user_id!==S.me.id); return o?staffName(o.user_id):"Conversation"; }
-function tUnread(t){ const me=tMembers(t.id).find(m=>m.user_id===S.me.id); if(!me) return 0; return tMsgs(t.id).filter(m=>m.author_id!==S.me.id&&m.created_at>me.last_read_at).length; }
+function tUnread(t){ const me=tMembers(t.id).find(m=>m.user_id===S.me.id); if(!me) return 0; const n=tMsgs(t.id).filter(m=>m.author_id!==S.me.id&&m.created_at>me.last_read_at).length; return n||(me.marked_unread?1:0); }
+const tMe = t => tMembers(t.id).find(m=>m.user_id===S.me.id);
+const tFlagged = t => !!tMe(t)?.flagged_at;
 const teamUnread = () => (S.team2.threads||[]).reduce((n,t)=>n+tUnread(t),0);
-function tPreview(m){ if(!m) return "Aucun message"; const who=m.author_id===S.me.id?"Vous":staffName(m.author_id).split(" ").slice(-1)[0];
+// prénom du collègue (avec l'initiale du nom si deux collègues ont le même prénom)
+function staffFirst(id){ const t=(S.team||[]).find(x=>x.id===id); if(!t) return "Ancien membre";
+  const f=(t.first_name||"").trim(); if(!f) return staffName(id);
+  const same=(S.team||[]).filter(x=>x.id!==id&&x.status==="active"&&(x.first_name||"").trim().toLowerCase()===f.toLowerCase());
+  return same.length&&t.last_name?`${f} ${t.last_name.trim()[0].toUpperCase()}.`:f; }
+function tPreview(m){ if(!m) return "Aucun message"; const who=m.author_id===S.me.id?"Vous":staffFirst(m.author_id);
   const what=m.body||(m.file_mime?(m.file_mime.startsWith("audio")?"🎤 Message vocal":m.file_mime==="application/pdf"?"📄 "+(m.file_name||"PDF"):"📷 Photo"):m.request_id?"📋 Demande jointe":""); return `${who} : ${what}`; }
 const avColor = s => ["#702629","#8a6d33","#1d5a8a","#2e6b2f","#6b3d7a","#9a5b00"][[...String(s)].reduce((a,c)=>a+c.charCodeAt(0),0)%6];
 function tAvatar(t){ if(t.kind==="direct"){ const o=tMembers(t.id).find(m=>m.user_id!==S.me.id); if(o&&AV.get(o.user_id)) return avatarHTML(AV.get(o.user_id),"",40); return `<span class="tav" style="background:${avColor(o?.user_id||t.id)}">${esc(o?staffInitials(o.user_id):"?")}</span>`; }
@@ -2241,13 +2249,16 @@ function tMsgsHTML(t){
 }
 function teamHTML2(){
   const F=S.tfilter||"all", all=tSorted(), list=all.filter(t=>tFilterOk(t,F)), cur=S.team2.threads.find(t=>t.id===S.tthread)||null;
-  const pins=list.filter(tPinned), rest=list.filter(t=>!tPinned(t));
-  const rowH=t=>{ const u=tUnread(t), last=tMsgs(t.id).slice(-1)[0]; return `<button type="button" class="trow ${t.id===S.tthread?"on":""} ${u?"unread":""}" data-thread="${t.id}">${tAvatar(t)}<span class="tx"><b>${tPinned(t)?`<i class="tpin" aria-label="Épinglée">${SI.pin}</i>`:""}${esc(tTitle(t))}${t.patient_related?`<i class="tpat" title="Concerne des patients : effacée après 90 jours">patients</i>`:""}</b><small>${esc(tPreview(last))}</small></span><span class="tside"><small>${last?fmt(last.created_at):""}</small>${u?`<span class="sn">${u}</span>`:""}</span></button>`; };
+  const flags=list.filter(tFlagged).sort((a,b)=>(tMe(b).flagged_at||"").localeCompare(tMe(a).flagged_at||"")), pins=list.filter(t=>tPinned(t)&&!tFlagged(t)), rest=list.filter(t=>!tPinned(t)&&!tFlagged(t));
+  const rowH=t=>{ const u=tUnread(t), last=tMsgs(t.id).slice(-1)[0]; return `<button type="button" class="trow ${t.id===S.tthread?"on":""} ${u?"unread":""}" data-thread="${t.id}">${tAvatar(t)}<span class="tx"><b>${tFlagged(t)?`<i class="tflag" aria-label="Prioritaire">${SI.flag}</i>`:""}${tPinned(t)?`<i class="tpin" aria-label="Épinglée">${SI.pin}</i>`:""}${esc(tTitle(t))}${t.patient_related?`<i class="tpat" title="Concerne des patients : effacée après 90 jours">patients</i>`:""}</b><small>${esc(tPreview(last))}</small></span><span class="tside"><small>${last?fmt(last.created_at):""}</small>${u?`<span class="sn">${u}</span>`:""}</span></button>`; };
   const listHTML=`<div class="tlist"><button type="button" class="tnew" id="t-new">+ Nouvelle conversation</button>
     <div class="tfil" role="group" aria-label="Afficher">${TFILTERS.map(([k,l])=>{ const n=k==="all"?0:all.filter(t=>tFilterOk(t,k)).length; return k!=="all"&&!n?"":`<button type="button" data-tf="${k}" aria-pressed="${F===k}">${l}${k==="unread"&&n?` <i>${n}</i>`:""}</button>`; }).join("")}</div>
-    ${pins.length?`<p class="tsec">${SI.pin} Épinglées</p>${pins.map(rowH).join("")}${rest.length?`<p class="tsec">Autres conversations</p>`:""}`:""}
+    ${flags.length?`<p class="tsec tsecflag">${SI.flag} Prioritaires · à ne pas oublier</p>${flags.map(rowH).join("")}`:""}
+    ${pins.length?`<p class="tsec">${SI.pin} Épinglées</p>${pins.map(rowH).join("")}`:""}${(flags.length||pins.length)&&rest.length?`<p class="tsec">Autres conversations</p>`:""}
     ${list.length?rest.map(rowH).join(""):`<div class="empty">${F==="all"?"Aucune conversation.":"Aucune conversation dans ce filtre."}</div>`}</div>`;
   const thHTML=cur?`<div class="tthread"><div class="thd"><button type="button" class="back tback" id="t-back" aria-label="Retour aux conversations">${IC.back}</button>${tAvatar(cur)}<div class="thinfo"><b>${esc(tTitle(cur))}</b><small>${esc(tMembers(cur.id).map(m=>m.user_id===S.me.id?"vous":staffName(m.user_id)).join(", "))}</small></div>
+      ${S.tflagOk?`<button type="button" class="tpinbtn tflagbtn" id="t-flag" aria-pressed="${tFlagged(cur)}" title="${tFlagged(cur)?"Retirer le drapeau prioritaire":"Marquer comme prioritaire : la conversation reste en haut, avec un drapeau rouge"}">${SI.flag}<span>${tFlagged(cur)?"Prioritaire":"Prioritaire ?"}</span></button>
+      <button type="button" class="tpinbtn" id="t-unread" title="Marquer comme non lu et revenir à la liste">${SI.dot}<span>Non lu</span></button>`:""}
       <button type="button" class="tpinbtn" id="t-pin" aria-pressed="${tPinned(cur)}" title="${tPinned(cur)?"Désépingler":"Épingler en haut de la liste"}">${SI.pin}<span>${tPinned(cur)?"Épinglée":"Épingler"}</span></button>
       ${cur.kind==="group"?`<button type="button" class="linkbtn" id="t-addm">Ajouter</button><button type="button" class="linkbtn" id="t-leave">Quitter</button>`:""}</div>
       <label class="tpatsw"><input type="checkbox" id="t-pat" ${cur.patient_related?"checked":""}> <span><b>Concerne des patients</b> ${cur.patient_related?"– messages effacés après 90 jours":"– sinon, les messages sont gardés (organisation du centre)"}</span></label>
@@ -2308,12 +2319,14 @@ function pickRequest(done){
   v.querySelectorAll("[data-pr]").forEach(b=>b.onclick=()=>{ close(); done(+b.dataset.pr); }); v.querySelector("#pr-q").focus();
 }
 function bindTeam2(){
-  $$("[data-thread]").forEach(b=>b.onclick=()=>{ S.tthread=+b.dataset.thread; const me=tMembers(S.tthread).find(m=>m.user_id===S.me.id); UNREAD["t"+S.tthread]=me?me.last_read_at:"9999"; delete UNREAD["s:tmsgs:"+S.tthread]; if(me) me.last_read_at=new Date().toISOString(); render(); sb.rpc("team_read",{p_thread:S.tthread}).then(()=>{}); });
+  $$("[data-thread]").forEach(b=>b.onclick=()=>{ S.tthread=+b.dataset.thread; const me=tMembers(S.tthread).find(m=>m.user_id===S.me.id); UNREAD["t"+S.tthread]=me?me.last_read_at:"9999"; delete UNREAD["s:tmsgs:"+S.tthread]; if(me){ me.last_read_at=new Date().toISOString(); me.marked_unread=false; } render(); sb.rpc("team_read",{p_thread:S.tthread}).then(()=>{}); });
   $("#t-new").onclick=()=>pickColleagues("Nouvelle conversation",[],async(ids,name,pat)=>{ const {data,error}=await sb.rpc("team_start",{p_members:ids,p_title:name||null}); if(error){ toast(frError(error)); return false; }
     if(pat) await sb.rpc("team_set_patient",{p_thread:data,p_on:true}); await loadTeam(); S.tthread=data; render(); return true; },true);
   const back=$("#t-back"); if(back) back.onclick=()=>{ S.tthread=null; render(); };
   $$("[data-tf]").forEach(b=>b.onclick=()=>{ S.tfilter=S.tfilter===b.dataset.tf?"all":b.dataset.tf; render(); });
   const t=S.team2.threads.find(x=>x.id===S.tthread); if(!t) return;
+  const fl=$("#t-flag"); if(fl) fl.onclick=async()=>{ const on=!tFlagged(t); if(await run(()=>sb.rpc("team_flag",{p_thread:t.id,p_on:on}),on?"Conversation prioritaire : elle reste en haut":"Drapeau retiré")){ const me=tMe(t); if(me) me.flagged_at=on?new Date().toISOString():null; render(); } };
+  const un=$("#t-unread"); if(un) un.onclick=async()=>{ if(await run(()=>sb.rpc("team_mark_unread",{p_thread:t.id,p_on:true}),"Marquée comme non lue")){ const me=tMe(t); if(me) me.marked_unread=true; S.tthread=null; render(); updateBadges(); } };
   $("#t-pin").onclick=async()=>{ const on=!tPinned(t); if(await run(()=>sb.rpc("team_pin",{p_thread:t.id,p_pin:on}),on?"Conversation épinglée":"Conversation désépinglée")){ const me=tMembers(t.id).find(m=>m.user_id===S.me.id); if(me) me.pinned_at=on?new Date().toISOString():null; render(); } };
   $("#t-pat").onchange=async e=>{ const on=e.target.checked; if(await run(()=>sb.rpc("team_set_patient",{p_thread:t.id,p_on:on}),on?"Conversation marquée « patients » : effacée après 90 jours":"Conversation d'organisation : messages gardés")){ t.patient_related=on; render(); } else e.target.checked=!on; };
   const ol=$("#t-older"); if(ol) ol.onclick=()=>{ ol.disabled=true; ol.textContent="Chargement…"; loadOlder(t); };
@@ -2717,7 +2730,8 @@ function staffHelpHTML(){
    ["Le classeur du centre","Le centre → Classeur : numéros utiles, procédures et documents. Toute l'équipe peut ajouter et modifier les fiches."],
    ["Le menu","Sur ordinateur, le menu est à gauche, rangé en 4 rubriques : Patients (demandes, écrire, fiches, listes d'attente), Équipe (messages, tâches, congés), Secrétariat (accueil, horaires, caisse) et Le centre (actualités, classeur, inventaire). Sur téléphone : la barre du bas, et « Plus » pour tout le reste. Le chiffre rouge indique ce qui attend."],
    ["Rechercher","La loupe (ou Ctrl K sur ordinateur) cherche partout : patients, demandes et leurs messages, messages de l'équipe, tâches, fiches, listes d'attente, inventaire, classeur, actualités, réponses types, caisse. Touchez un résultat pour l'ouvrir."],
-   ["Épingler et classer les conversations","Messages : touchez « Épingler » en haut d'une conversation pour la garder tout en haut de votre liste (vos épingles ne changent rien pour les collègues). Les filtres Non lues · Groupes · À deux · Patients trient la liste."],
+   ["Épingler et classer les conversations","Messages : touchez « Épingler » en haut d'une conversation pour la garder tout en haut de votre liste (vos épingles ne changent rien pour les collègues). Les filtres Non lues · Prioritaires · Groupes · À deux · Patients trient la liste."],
+   ["Ne pas oublier de répondre","Messages : en haut d'une conversation, « Prioritaire » met un drapeau rouge ; la conversation reste tout en haut de votre liste jusqu'à ce que vous retiriez le drapeau. « Non lu » la remet en gras avec une pastille, comme si vous ne l'aviez pas ouverte, jusqu'à ce que vous la rouvriez. Ces repères sont personnels : les collègues ne voient rien changer."],
    ["Ce qui est gardé, ce qui est effacé","Gardé : messages de l'équipe sur l'organisation, inventaire, congés, tâches sans patient, classeur, horaires (5 ans), caisse (10 ans). Effacé : conversations avec les patients (15 jours après la clôture), conversations d'équipe marquées « Concerne des patients » et messages qui joignent une demande (90 jours), tâches liées à un patient (90 jours après)."],
    ["Joindre un document à une tâche","Tâches et Accueil : en créant la tâche, « Joindre un document » (photo, PDF) ou « Scanner » ; ou plus tard, « Joindre » sous la tâche. 10 documents maximum, 5 Mo chacun. Seules les personnes de la tâche les voient ; ils sont effacés 90 jours après que la tâche est faite. Touchez un document pour l'ouvrir."],
    ["Répondre à un message et réagir","Comme sur WhatsApp, dans les demandes et dans les messages de l'équipe. Sur ordinateur : passez la souris sur une bulle et cliquez sur 🙂 (ou clic droit). Sur téléphone : appui long sur la bulle. Choisissez un emoji (il s'affiche sous la bulle ; touchez-le à nouveau pour le retirer) ou « Répondre » : le message est cité au-dessus de votre réponse. Touchez une citation pour retrouver le message d'origine."],
@@ -3764,6 +3778,8 @@ SI.search='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="c
 SI.clock='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
 SI.euro='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.6"/><path d="M6 12h.01M18 12h.01"/></svg>';
 SI.more='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>';
+SI.flag='<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 21V4"/><path d="M5 4h11l-2 4 2 4H5"/></svg>';
+SI.dot='<svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="5" fill="currentColor"/></svg>';
 SI.pin='<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17v5"/><path d="M9 3h6l-1 6 4 3v2H6v-2l4-3z"/></svg>';
 
 /* ---------- navigation par rubriques ---------- */
@@ -4040,8 +4056,8 @@ function openAvatarPicker(){
 
 /* ---------- messagerie : épingles, classement, « concerne des patients » ---------- */
 const tPinned = t => !!tMembers(t.id).find(m=>m.user_id===S.me.id)?.pinned_at;
-const TFILTERS=[["all","Toutes"],["unread","Non lues"],["group","Groupes"],["direct","À deux"],["pat","Patients"]];
-function tFilterOk(t,f){ return f==="all"||(f==="unread"&&tUnread(t)>0)||(f==="group"&&t.kind!=="direct")||(f==="direct"&&t.kind==="direct")||(f==="pat"&&t.patient_related); }
+const TFILTERS=[["all","Toutes"],["unread","Non lues"],["flag","Prioritaires"],["group","Groupes"],["direct","À deux"],["pat","Patients"]];
+function tFilterOk(t,f){ return f==="all"||(f==="unread"&&tUnread(t)>0)||(f==="flag"&&tFlagged(t))||(f==="group"&&t.kind!=="direct")||(f==="direct"&&t.kind==="direct")||(f==="pat"&&t.patient_related); }
 async function loadOlder(t){
   const first=tMsgs(t.id)[0], before=first?first.created_at:new Date().toISOString();
   const {data,error}=await sb.from("team_messages").select("id,thread_id,author_id,body,request_id,file_mime,file_name,file_size,created_at"+(S.team2.rxOk?",reply_to":"")).eq("thread_id",t.id).lt("created_at",before).order("created_at",{ascending:false}).limit(100);

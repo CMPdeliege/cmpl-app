@@ -1477,3 +1477,10 @@ button.hcell.hasc:hover{background:color-mix(in srgb,var(--hc) 55%,transparent)}
 .tkadd:hover{color:var(--accent);text-decoration:underline}
 .tkadd svg{width:15px;height:15px}
 .taskrow.done .tkfile{opacity:.75}
+
+/* ---------- messagerie : prioritaire / non lu ---------- */
+.tflag{display:inline-flex;vertical-align:-2px;margin-right:4px;color:var(--danger)}.tflag svg{width:14px;height:14px}
+.tsecflag{color:var(--danger)}
+.tflagbtn[aria-pressed="true"]{background:var(--danger-soft);border-color:var(--danger);color:var(--danger)}
+#t-unread svg{color:var(--accent);width:10px;height:10px}
+@media (max-width:520px){ .thd{flex-wrap:wrap;row-gap:8px} .thd .thinfo{flex:1 1 calc(100% - 110px);min-width:0} .thd .tpinbtn{padding:6px 10px} .thd .tpinbtn span{display:inline} }
