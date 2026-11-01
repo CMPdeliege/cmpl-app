@@ -2071,7 +2071,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261030c";
+const APP_VERSION="20261101b";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -2517,6 +2517,46 @@ function bindFeedback(){
     if(await run(()=>sb.rpc("set_feedback_status",{p_id:f.id,p_status:f.status,p_note:i.value}),"Note enregistrée")) f.admin_note=i.value.trim()||null; });
 }
 
+/* ----- anniversaires de l'équipe ----- */
+const MOIS=["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"];
+// anniversaires : d'après la date de naissance des comptes (migration 060), sinon dates indiquées à la main (059)
+async function loadBirthdays(){ let r=await sb.rpc("team_birthdays"); S.bdV2=!r.error;
+  if(r.error) r=await sb.from("staff_birthdays").select("user_id,day,month");
+  S.bdOk=!r.error; S.bdays=r.error?[]:(r.data||[]).map(b=>({...b,shared:b.shared!==false})); S.bdLoaded=true; }
+function isBdayOn(b,dt){ const m=dt.getMonth()+1, d=dt.getDate(); if(b.month===m&&b.day===d) return true;
+  const y=dt.getFullYear(), leap=(y%4===0&&y%100!==0)||y%400===0; return b.month===2&&b.day===29&&m===2&&d===28&&!leap; }
+function bdayBannerHTML(){
+  if(!S.bdLoaded||!S.bdays?.length) return "";
+  const today=new Date(), list=S.bdays.filter(b=>isBdayOn(b,today)&&(b.shared||b.user_id===S.me.id)&&(S.team||[]).some(t=>t.id===b.user_id&&t.status==="active"));
+  if(!list.length) return "";
+  const me=list.some(b=>b.user_id===S.me.id), others=list.filter(b=>b.user_id!==S.me.id);
+  return `<div class="bdban">${me?`<p><span aria-hidden="true">🎂</span> <b>Joyeux anniversaire${S.me.first_name?" "+esc(S.me.first_name):""} !</b> Toute l'équipe vous souhaite une très belle journée.</p>`:""}
+    ${others.map(b=>`<p><span aria-hidden="true">🎉</span> Aujourd'hui, c'est l'anniversaire de <b>${esc(staffFirst(b.user_id))}</b>. <button type="button" class="linkbtn" data-bdwrite="${b.user_id}">Lui écrire</button></p>`).join("")}</div>`; }
+function bdayCardHTML(){
+  if(!S.bdOk) return "";
+  const b=(S.bdays||[]).find(x=>x.user_id===S.me.id), fromAccount=S.bdV2&&b&&S.me.birth_date;
+  const pick=`<div class="pgrid"><label class="fld">Jour<select id="bd-d"><option value="">—</option>${Array.from({length:31},(_,i)=>`<option ${b?.day===i+1?"selected":""}>${i+1}</option>`).join("")}</select></label>
+    <label class="fld">Mois<select id="bd-m"><option value="">—</option>${MOIS.map((m,i)=>`<option value="${i+1}" ${b?.month===i+1?"selected":""}>${m}</option>`).join("")}</select></label></div>
+    <div class="btnrow"><button type="button" class="btn ghost" id="bd-save">Enregistrer</button>${b&&!fromAccount?`<button type="button" class="linkbtn" id="bd-del">Retirer</button>`:""}</div>`;
+  return `<section class="card"><h3>🎂 Mon anniversaire</h3>
+    ${b?`<p>Votre anniversaire : <b>${b.day} ${MOIS[b.month-1]}</b>${fromAccount?" <span class=\"hint\">(d'après la date de naissance de votre compte)</span>":""}</p>`
+       :`<p class="hint">Aucune date de naissance dans votre compte : indiquez le jour et le mois si vous le souhaitez.</p>${pick}`}
+    <p class="hint">Le jour J à 8 h, vous recevez un petit mot de l'équipe. Vos collègues ne voient que le jour et le mois, jamais l'année.</p>
+    ${S.bdV2&&b?`<label class="chk2"><input type="checkbox" id="bd-share" ${b.shared?"checked":""}> Prévenir mes collègues le jour de mon anniversaire</label>`:""}
+    ${b&&!fromAccount?`<details class="dkmore"><summary>Changer la date</summary>${pick}</details>`:""}</section>`; }
+function bindBdayCard(){
+  const sh=$("#bd-share"); if(sh) sh.onchange=async()=>{ const on=sh.checked;
+    if(await run(()=>sb.rpc("set_birthday_shared",{p_on:on}),on?"Vos collègues seront prévenus le jour de votre anniversaire":"Votre anniversaire ne sera pas annoncé aux collègues")){ const b=(S.bdays||[]).find(x=>x.user_id===S.me.id); if(b) b.shared=on; } else sh.checked=!on; };
+  const sv=$("#bd-save"); if(sv) sv.onclick=async()=>{ const d=+$("#bd-d").value||null, m=+$("#bd-m").value||null; if(!d||!m) return toast("Choisissez le jour et le mois.");
+    if(await run(()=>sb.rpc("set_my_birthday",{p_day:d,p_month:m}),`Anniversaire enregistré : ${d} ${MOIS[m-1]}`)){ await loadBirthdays(); render(); } };
+  const dl=$("#bd-del"); if(dl) dl.onclick=async()=>{ if(await run(()=>sb.rpc("set_my_birthday",{p_day:null,p_month:null}),"Anniversaire retiré")){ await loadBirthdays(); render(); } };
+}
+async function writeTo(uid){
+  const direct=(S.team2.threads||[]).find(t=>t.kind==="direct"&&tMembers(t.id).some(m=>m.user_id===uid)&&tMembers(t.id).some(m=>m.user_id===S.me.id));
+  let id=direct?.id;
+  if(!id){ const {data,error}=await sb.rpc("team_start",{p_members:[uid],p_title:null}); if(error){ toast(frError(error)); return; } id=data; await loadTeam(); }
+  S.tthread=id; S.cscreen="messages"; S.drafts["t"+id]=S.drafts["t"+id]||"Joyeux anniversaire ! 🎂"; render(); scrollTo(0,0); }
+
 /* ----- fiches conseils (PDF du centre, à envoyer aux patients) ----- */
 const FICHES_LIB=[
  ["Prévention","fiche-coeur-prevention.pdf","Protéger son cœur et ses artères","Alimentation et activité physique pour l'adulte"],
@@ -2524,6 +2564,10 @@ const FICHES_LIB=[
  ["Diabète","fiche-diabete-alimentation.pdf","Bien manger avec un diabète","Assiette, aliments à privilégier, hypoglycémie"],
  ["Diabète","fiche-diabete-ramadan.pdf","Diabète et jeûne du ramadan","Peut-on jeûner, médicaments, glycémie, quand rompre le jeûne"],
  ["Diabète","fiche-hypoglycemie.pdf","L'hypoglycémie","Les signes, la règle des « 15 », l'éviter"],
+ ["Grossesse","fiche-grossesse-dates-cles.pdf","Grossesse : les dates clés","NIPT, échographies, test du sucre, vaccins, médicaments à éviter, démarches"],
+ ["Grossesse","fiche-grossesse-tension-alimentation.pdf","Grossesse : tension artérielle et alimentation","Signes d'alerte, mesurer sa tension, prise de poids, aliments à éviter"],
+ ["Poids","fiche-obesite-adulte.pdf","Surpoids et obésité chez l'adulte","Alimentation, activité, accompagnement, médicaments, chirurgie"],
+ ["Poids","fiche-obesite-enfant.pdf","Surpoids et obésité de l'enfant","En famille, sans régime : repas, activité, écrans, sommeil"],
  ["Alimentation","fiche-cholesterol-triglycerides.pdf","Cholestérol et triglycérides","À éviter, à privilégier"],
  ["Alimentation","fiche-calculs-vesicule.pdf","Calculs de la vésicule biliaire","Limiter les crises, signes d'alerte"],
  ["Alimentation","fiche-diverticulite.pdf","Diverticules et diverticulite","Pendant la poussée, puis prévention"],
@@ -2731,6 +2775,7 @@ function staffHelpHTML(){
    ["Le menu","Sur ordinateur, le menu est à gauche, rangé en 4 rubriques : Patients (demandes, écrire, fiches, listes d'attente), Équipe (messages, tâches, congés), Secrétariat (accueil, horaires, caisse) et Le centre (actualités, classeur, inventaire). Sur téléphone : la barre du bas, et « Plus » pour tout le reste. Le chiffre rouge indique ce qui attend."],
    ["Rechercher","La loupe (ou Ctrl K sur ordinateur) cherche partout : patients, demandes et leurs messages, messages de l'équipe, tâches, fiches, listes d'attente, inventaire, classeur, actualités, réponses types, caisse. Touchez un résultat pour l'ouvrir."],
    ["Épingler et classer les conversations","Messages : touchez « Épingler » en haut d'une conversation pour la garder tout en haut de votre liste (vos épingles ne changent rien pour les collègues). Les filtres Non lues · Prioritaires · Groupes · À deux · Patients trient la liste."],
+   ["Anniversaires","L'anniversaire vient de la date de naissance de votre compte (les collègues ne voient que le jour et le mois). Le jour J à 8 h, vous recevez un petit mot, et vos collègues un rappel ; les anniversaires du week-end sont annoncés le vendredi. Moi → Mon profil → « Mon anniversaire » : décochez « Prévenir mes collègues » si vous préférez rester discret. Ce jour-là, un bandeau dans Demandes et Messages propose « Lui écrire »."],
    ["Ne pas oublier de répondre","Messages : en haut d'une conversation, « Prioritaire » met un drapeau rouge ; la conversation reste tout en haut de votre liste jusqu'à ce que vous retiriez le drapeau. « Non lu » la remet en gras avec une pastille, comme si vous ne l'aviez pas ouverte, jusqu'à ce que vous la rouvriez. Ces repères sont personnels : les collègues ne voient rien changer."],
    ["Ce qui est gardé, ce qui est effacé","Gardé : messages de l'équipe sur l'organisation, inventaire, congés, tâches sans patient, classeur, horaires (5 ans), caisse (10 ans). Effacé : conversations avec les patients (15 jours après la clôture), conversations d'équipe marquées « Concerne des patients » et messages qui joignent une demande (90 jours), tâches liées à un patient (90 jours après)."],
    ["Joindre un document à une tâche","Tâches et Accueil : en créant la tâche, « Joindre un document » (photo, PDF) ou « Scanner » ; ou plus tard, « Joindre » sous la tâche. 10 documents maximum, 5 Mo chacun. Seules les personnes de la tâche les voient ; ils sont effacés 90 jours après que la tâche est faite. Touchez un document pour l'ouvrir."],
@@ -2763,7 +2808,10 @@ function renderStaff(a){
   let body="";
   if(sc==="compose") body=composeHTML(); else if(sc==="inventory") body=inventoryHTML(); else if(sc==="tasks") body=tasksHTML(); else if(sc==="accounts") body=accountsHTML(); else if(sc==="news") body=newsAdminHTML(); else if(sc==="team") body=teamHTML(); else if(sc==="settings") body=settingsHTML(); else if(sc==="help") body=staffHelpHTML(); else if(sc==="leaves") body=leavesHTML(); else if(sc==="patients") body=patientsHTML(); else if(sc==="messages") body=teamHTML2(); else if(sc==="templates") body=templatesHTML(); else if(sc==="binder") body=binderHTML(); else if(sc==="desk") body=deskHTML(); else if(sc==="waitlist") body=waitlistHTML(); else if(sc==="fiches") body=fichesHTML(); else if(sc==="feedback"&&isAdmin()) body=feedbackHTML(); else if(sc==="hours"&&canOffice()) body=hoursHTML(); else if(sc==="cash"&&canOffice()) body=cashHTML(); else body=inboxHTML();
   document.body.classList.add("hasbar","sidenav"); document.body.classList.remove("ddopen");
-  a.innerHTML=nav+urgBannerHTML()+body;
+  a.innerHTML=nav+urgBannerHTML()+(sc==="inbox"||sc==="messages"?bdayBannerHTML():"")+body;
+  $$("[data-bdwrite]").forEach(b=>b.onclick=()=>writeTo(b.dataset.bdwrite));
+  if(!S.bdLoaded&&!S.bdLoading){ S.bdLoading=true; loadBirthdays().then(()=>{ S.bdLoading=false; const el=document.activeElement;
+    if((S.bdays||[]).some(b=>isBdayOn(b,new Date()))||S.cscreen==="settings"){ if(!(el&&/TEXTAREA|INPUT|SELECT/.test(el.tagName))&&!S.pend&&!$(".modal")) render(); } }).catch(()=>{ S.bdLoading=false; }); }
   $("#logout").onclick=()=>{ closeDD(); logout(); };
   $("#dd-fb").onclick=()=>{ closeDD(); openFeedback(); };
   if(isAdmin()&&!S.fbLoaded&&!S.fbLoading){ S.fbLoading=true; loadFeedback().then(()=>{ S.fbLoading=false; const el=document.activeElement;
@@ -3698,6 +3746,7 @@ function settingsHTML(){
    ${faceIdCardHTML()}
    ${trustCardHTML()}
    ${textSizeHTML()}
+   ${bdayCardHTML()}
    <section class="card"><h3>Quand me prévenir</h3><div class="pgrid">
     <label class="fld">Haute priorité (à voir en moins de 24 h)${sel("s-haute",s.haute)}</label>
     <label class="fld">Pas pressé (à voir en moins de 72 h)${sel("s-normale",s.normale)}</label></div>
@@ -3738,7 +3787,7 @@ function awayDefaultText(u=$("#s-until")?.value, fwId=$("#s-fw")?.value){
   return `Bonjour,\nJe suis absent(e)${until}. Votre message a bien été reçu${fw?` et sera traité par ${(fw.first_name||"")+" "+(fw.last_name||"")}`:" et sera traité à mon retour"}.\nPour une question qui ne peut pas attendre, appelez le secrétariat au 02 781 18 75. Urgence vitale : 112.`;
 }
 function bindSettings(){
-  bindPhotoCard(); bindPush(); bindTextSize(); bindFaceIdCard(); bindTrustCard();
+  bindPhotoCard(); bindPush(); bindTextSize(); bindFaceIdCard(); bindTrustCard(); bindBdayCard();
   const dc=$("#s-direct"); if(dc) dc.onchange=async()=>{ const v=dc.checked;
     if(await run(()=>sb.rpc("set_my_direct_contact",{p_ok:v}),v?"Les patients peuvent vous écrire directement":"Les demandes passeront d'abord par le secrétariat")){ const pr=P.byId(S.me.provider_id); if(pr) pr.direct_contact=v; } else dc.checked=!v; };
   $("#lv-add").onclick=async()=>{ const f=$("#lv-from").value, t=$("#lv-to").value;
