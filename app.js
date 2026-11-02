@@ -2071,7 +2071,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261102a";
+const APP_VERSION="20261102b";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -2775,6 +2775,7 @@ function staffHelpHTML(){
    ["Le menu","Sur ordinateur, le menu est à gauche, rangé en 4 rubriques : Patients (demandes, écrire, fiches, listes d'attente), Équipe (messages, tâches, congés), Secrétariat (accueil, horaires, caisse) et Le centre (actualités, classeur, inventaire). Sur téléphone : la barre du bas, et « Plus » pour tout le reste. Le chiffre rouge indique ce qui attend."],
    ["Rechercher","La loupe (ou Ctrl K sur ordinateur) cherche partout : patients, demandes et leurs messages, messages de l'équipe, tâches, fiches, listes d'attente, inventaire, classeur, actualités, réponses types, caisse. Touchez un résultat pour l'ouvrir."],
    ["Épingler et classer les conversations","Messages : touchez « Épingler » en haut d'une conversation pour la garder tout en haut de votre liste (vos épingles ne changent rien pour les collègues). Les filtres Non lues · Prioritaires · Groupes · À deux · Patients trient la liste."],
+   ["Notification de nouvelle tâche","Quand un collègue vous confie une tâche ou vous ajoute dans « Aussi concernés », vous recevez une notification (sans le titre ni le nom du patient) ; en dehors des heures d'ouverture, elle arrive à l'ouverture, sauf si vous avez choisi d'être prévenu(e) aussi en dehors des heures. Le secrétariat est prévenu quand quelqu'un d'autre ajoute quelque chose à la liste de l'Accueil."],
    ["Inventaire : le stock","Le centre → Inventaire → 📦 Stock : un onglet par famille (Administratif, Médicaments, Vaccins, Matériel médical, Cuisine, Entretien, Salle d'attente). Une ligne par article avec le total, où il est rangé et la péremption la plus proche (rouge : périmé, orange : bientôt ou en partie périmé). Touchez un article : quantité par local avec − / +, date de péremption, n° de lot (médicaments, vaccins), et « Ajouter à À commander ». « ⚠️ Alertes » ne montre que ce qui est périmé, bientôt périmé ou sous le stock minimum. « Excel » télécharge tout le stock. Toute l'équipe peut modifier."],
    ["Anniversaires","L'anniversaire vient de la date de naissance de votre compte (les collègues ne voient que le jour et le mois). Le jour J à 8 h, vous recevez un petit mot, et vos collègues un rappel ; les anniversaires du week-end sont annoncés le vendredi. Moi → Mon profil → « Mon anniversaire » : décochez « Prévenir mes collègues » si vous préférez rester discret. Ce jour-là, un bandeau dans Demandes et Messages propose « Lui écrire »."],
    ["Ne pas oublier de répondre","Messages : en haut d'une conversation, « Prioritaire » met un drapeau rouge ; la conversation reste tout en haut de votre liste jusqu'à ce que vous retiriez le drapeau. « Non lu » la remet en gras avec une pastille, comme si vous ne l'aviez pas ouverte, jusqu'à ce que vous la rouvriez. Ces repères sont personnels : les collègues ne voient rien changer."],
@@ -3545,7 +3546,7 @@ function tasksHTML(){
   const list=K==="pat"?listAll.filter(isPatTask):K==="org"?listAll.filter(t=>!isPatTask(t)):listAll;
   const others=S.team.filter(t=>t.id!==S.me.id&&t.status==="active");
   const pt=D.patient;
-  return `<div class="chead"><div><h1>Tâches</h1><p>Vos tâches et celles que vous confiez. Une tâche pour un collègue n'est visible que par vous et la ou les personnes qui doivent la faire. Une tâche pour « Secrétariat » va dans la liste commune de l'Accueil, visible par toute l'équipe.</p></div></div>
+  return `<div class="chead"><div><h1>Tâches</h1><p>Vos tâches et celles que vous confiez. Une tâche pour un collègue n'est visible que par vous et la ou les personnes qui doivent la faire, qui reçoivent une notification. Une tâche pour « Secrétariat » va dans la liste commune de l'Accueil, visible par toute l'équipe.</p></div></div>
   <div class="taskgrid">
   <section class="card taskform"><h3>Nouvelle tâche</h3>
    <label class="fld">Tâche<input id="tk-title" maxlength="200" autocomplete="off" placeholder="Ex. Changer les filtres de la ventilation" value="${esc(D.title)}"></label>
