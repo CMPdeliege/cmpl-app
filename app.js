@@ -2071,7 +2071,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261102d";
+const APP_VERSION="20261102e";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -2776,7 +2776,7 @@ function staffHelpHTML(){
    ["Rechercher","La loupe (ou Ctrl K sur ordinateur) cherche partout : patients, demandes et leurs messages, messages de l'équipe, tâches, fiches, listes d'attente, inventaire, classeur, actualités, réponses types, caisse. Touchez un résultat pour l'ouvrir."],
    ["Épingler et classer les conversations","Messages : touchez « Épingler » en haut d'une conversation pour la garder tout en haut de votre liste (vos épingles ne changent rien pour les collègues). Les filtres Non lues · Prioritaires · Groupes · À deux · Patients trient la liste."],
    ["Notification de nouvelle tâche","Quand un collègue vous confie une tâche ou vous ajoute dans « Aussi concernés », vous recevez une notification (sans le titre ni le nom du patient) ; elle arrive aussi le soir et le week-end, sauf si vous avez décoché « Équipe » dans Mon profil. Le secrétariat est prévenu quand quelqu'un d'autre ajoute quelque chose à la liste de l'Accueil."],
-   ["Infos et documents (accueil)","Secrétariat → Infos et documents. Coordonnées : nom, adresse, BCE, IBAN, avec des boutons « Copier » (ex. pour un fournisseur). Reçu : nom du patient, montant, moyen de paiement, objet → « Créer le reçu » fait un PDF numéroté (R-2026-0001) à imprimer ; en espèces, il peut aussi aller dans la Caisse. Facture : destinataire, lignes et montants, texte libre → PDF numéroté (F-2026-0001) avec l'IBAN et la communication. Documents : tous les reçus et factures, à rouvrir ou imprimer ; une erreur se corrige en annulant (jamais en effaçant). Prestataires : choisissez un prestataire pour voir ses infos (jours, tarifs, à savoir…). Mots de passe (secrétariat et administration) : chiffrés, « Afficher » ou « Copier » ; chaque affichage est noté."],
+   ["Infos et documents (accueil)","Secrétariat → Infos et documents. Coordonnées : nom, adresse, BCE, IBAN, avec des boutons « Copier » (ex. pour un fournisseur) ; l'administrateur les modifie avec le crayon. Reçu : nom du patient, montant, moyen de paiement, objet → « Créer le reçu » fait un PDF numéroté (R-2026-0001) à imprimer ; en espèces, il peut aussi aller dans la Caisse. Facture : destinataire, lignes et montants, texte libre → PDF numéroté (F-2026-0001) avec l'IBAN et la communication. Documents : tous les reçus et factures, à rouvrir ou imprimer ; une erreur se corrige en annulant (jamais en effaçant). Prestataires : choisissez un prestataire pour voir ses infos (jours, tarifs, à savoir…). Mots de passe (secrétariat et administration) : chiffrés, « Afficher » ou « Copier » ; chaque affichage est noté."],
    ["Inventaire : le stock","Le centre → Inventaire → 📦 Stock : un onglet par famille (Administratif, Médicaments, Vaccins, Matériel médical, Cuisine, Entretien, Salle d'attente). Une ligne par article avec le total, où il est rangé et la péremption la plus proche (rouge : périmé, orange : bientôt ou en partie périmé). Touchez un article : quantité par local avec − / +, date de péremption, n° de lot (médicaments, vaccins), et « Ajouter à À commander ». « ⚠️ Alertes » ne montre que ce qui est périmé, bientôt périmé ou sous le stock minimum. « Excel » télécharge tout le stock. Toute l'équipe peut modifier."],
    ["Anniversaires","L'anniversaire vient de la date de naissance de votre compte (les collègues ne voient que le jour et le mois). Le jour J à 8 h, vous recevez un petit mot, et vos collègues un rappel ; les anniversaires du week-end sont annoncés le vendredi. Moi → Mon profil → « Mon anniversaire » : décochez « Prévenir mes collègues » si vous préférez rester discret. Ce jour-là, un bandeau dans Demandes et Messages propose « Lui écrire »."],
    ["Ne pas oublier de répondre","Messages : en haut d'une conversation, « Prioritaire » met un drapeau rouge ; la conversation reste tout en haut de votre liste jusqu'à ce que vous retiriez le drapeau. « Non lu » la remet en gras avec une pastille, comme si vous ne l'aviez pas ouverte, jusqu'à ce que vous la rouvriez. Ces repères sont personnels : les collègues ne voient rien changer."],
@@ -3566,18 +3566,26 @@ function infosHTML(){
   return head+`<div class="infbody">${body}</div>`;
 }
 /* --- coordonnées --- */
+SI.pencil='<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>';
 function coordHTML(){
-  const C=ci(), I=S.inf;
+  const C=ci(), I=S.inf, ed=canEditCI();
   if(I.editCI) return `<section class="card"><h3>Modifier les coordonnées</h3><div class="stkform">${CI_FIELDS.map(([k,l])=>`<label class="fld ${k==="horaires"||k==="adresse"?"grow":""}">${l}<input data-ci="${k}" value="${esc(C[k]||"")}" maxlength="160"></label>`).join("")}</div>
     <div class="btnrow"><button class="btn" id="ci-save">Enregistrer</button><button class="btn ghost" id="ci-x">Annuler</button></div>
-    <p class="hint">Ces informations apparaissent sur les reçus et les factures créés ensuite.</p></section>`;
-  const row=(l,v,mono)=>v?`<div class="cirow"><span>${l}</span><b class="${mono?"mono":""}">${esc(v)}</b><button type="button" class="mini ghostmini" data-copy="${esc(v)}">Copier</button></div>`:"";
+    <p class="hint">Ces informations apparaissent sur les reçus et les factures créés ensuite (les documents déjà créés ne changent pas).</p></section>`;
+  // une ligne : valeur + Copier + crayon (modification rapide d'un seul champ)
+  const row=(l,key,mono)=>{ const v=key==="_adr"?`${C.adresse}, ${C.cp_ville}`:C[key];
+    if(I.ciField===key) return `<div class="cirow ciedit"><span>${l}</span>${key==="_adr"?`<div class="ciins"><input data-cif="adresse" value="${esc(C.adresse||"")}" maxlength="160" aria-label="Rue et numéro"><input data-cif="cp_ville" value="${esc(C.cp_ville||"")}" maxlength="160" aria-label="Code postal et commune"></div>`:`<input data-cif="${key}" value="${esc(v||"")}" maxlength="160" aria-label="${l}">`}
+      <span class="cibtns"><button type="button" class="mini" id="cif-ok">Enregistrer</button><button type="button" class="linkbtn" id="cif-x">Annuler</button></span></div>`;
+    if(!v&&!ed) return "";
+    return `<div class="cirow"><span>${l}</span>${v?`<b class="${mono?"mono":""}">${esc(v)}</b>`:`<i class="hint">à compléter</i>`}<span class="cibtns">${v?`<button type="button" class="mini ghostmini" data-copy="${esc(v)}">Copier</button>`:""}${ed?`<button type="button" class="cipen" data-cifield="${key}" aria-label="Modifier ${l}" title="Modifier">${SI.pencil}</button>`:""}</span></div>`; };
+  const hd=t=>`<div class="cihd"><h3>${t}</h3>${ed?`<button type="button" class="linkbtn cipenall" data-cieditall>${SI.pencil} Tout modifier</button>`:""}</div>`;
   return `<div class="cigrid">
-   <section class="card"><h3>Le centre</h3>${row("Nom",C.nom)}${row("Adresse",`${C.adresse}, ${C.cp_ville}`)}${row("Téléphone",C.telephone)}${row("E-mail",C.email)}${row("Site",C.site)}${row("Heures",C.horaires)}
+   <section class="card">${hd("Le centre")}${row("Nom","nom")}${row("Adresse","_adr")}${row("Téléphone","telephone")}${row("E-mail","email")}${row("Site","site")}${row("Heures","horaires")}
     <div class="btnrow"><button type="button" class="btn ghost" data-copy="${esc(`${C.nom}\n${C.adresse}\n${C.cp_ville}\nTél. ${C.telephone}\n${C.email}${C.site?"\n"+C.site:""}`)}">Copier l'adresse complète</button></div></section>
-   <section class="card"><h3>Société et banque</h3>${row("Société",C.societe)}${row("BCE",C.bce,true)}${row("N° de TVA",C.bce?"BE"+C.bce.replace(/\D/g,""):"",true)}${row("IBAN",C.iban,true)}${row("BIC",C.bic,true)}
+   <section class="card">${hd("Société et banque")}${row("Société","societe")}${row("BCE","bce",true)}${row("IBAN","iban",true)}${row("BIC","bic",true)}
+    <p class="hint">Le centre n'est pas assujetti à la TVA.</p>
     <div class="btnrow"><button type="button" class="btn" data-copy="${esc(`${C.societe} (${C.nom})\nBCE ${C.bce}\nIBAN ${C.iban}${C.bic?"\nBIC "+C.bic:""}\n${C.adresse}, ${C.cp_ville}`)}">Copier pour un fournisseur ou un patient</button></div></section></div>
-   ${canEditCI()?`<button type="button" class="linkbtn" id="ci-edit">Modifier les coordonnées</button>`:`<p class="hint">Une erreur ? Demandez à l'administrateur de la corriger.</p>`}`;
+   ${ed?`<p class="hint">Touchez le crayon ${SI.pencil} à côté d'une information pour la modifier. Les reçus et factures déjà créés gardent les anciennes coordonnées.</p>`:`<p class="hint">Une information a changé ? Demandez à l'administrateur de la mettre à jour.</p>`}`;
 }
 /* --- reçu --- */
 const newRecu = () => ({party:"",adresse:"",amount:"",method:"Espèces",date:todayISO(),kind:"consultation",precision:"",prov:"",remarque:"",cash:true,q:[]});
@@ -3700,7 +3708,13 @@ function bindInfos(){
   const dn=$("#doc-new"); if(dn) dn.onclick=()=>{ I.done=null; if(I.tab==="recu") I.recu=newRecu(); else I.fact=newFact(); render(); };
   if(!S.infoLoaded||!S.infoOk) return;
   // coordonnées
-  const ce=$("#ci-edit"); if(ce) ce.onclick=()=>{ I.editCI=true; render(); };
+  $$("[data-cieditall]").forEach(b=>b.onclick=()=>{ I.editCI=true; I.ciField=null; render(); });
+  $$("[data-cifield]").forEach(b=>b.onclick=()=>{ I.ciField=b.dataset.cifield; render(); const f=$("[data-cif]"); if(f){ f.focus(); f.select(); } });
+  const cfx=$("#cif-x"); if(cfx) cfx.onclick=()=>{ I.ciField=null; render(); };
+  const cfo=$("#cif-ok"); if(cfo){ const save=async()=>{ const data={...ci()}; $$("[data-cif]").forEach(i=>data[i.dataset.cif]=i.value.trim());
+      if(data.iban&&!/^[A-Z]{2}\d{2}[A-Z0-9 ]{10,30}$/i.test(data.iban.replace(/\s+/g," ").trim())) return toast("Cet IBAN ne semble pas valide.");
+      cfo.disabled=true; if(await run(()=>sb.rpc("set_center_info",{p_data:data}),"Modifié")){ S.centerInfo=data; I.ciField=null; render(); } else cfo.disabled=false; };
+    cfo.onclick=save; $$("[data-cif]").forEach(i=>i.onkeydown=e=>{ if(e.key==="Enter") save(); if(e.key==="Escape"){ I.ciField=null; render(); } }); }
   const cx=$("#ci-x"); if(cx) cx.onclick=()=>{ I.editCI=false; render(); };
   const cs=$("#ci-save"); if(cs) cs.onclick=async()=>{ const data={...ci()}; $$("[data-ci]").forEach(i=>data[i.dataset.ci]=i.value.trim());
     if(await run(()=>sb.rpc("set_center_info",{p_data:data}),"Coordonnées enregistrées")){ S.centerInfo=data; I.editCI=false; render(); } };

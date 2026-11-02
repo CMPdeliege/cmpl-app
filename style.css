@@ -1620,3 +1620,13 @@ button.hcell.hasc:hover{background:color-mix(in srgb,var(--hc) 55%,transparent)}
 .docform .fld>input,.docform .fld>select{font:inherit;font-size:15px;color:var(--ink);background:var(--surface);border:1.5px solid var(--line);border-radius:10px;padding:9px 11px;width:100%;box-sizing:border-box}
 .docform .stkform{margin:0 0 4px}
 .docform .stkform .fld{margin:0}
+.cihd{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.cihd h3{margin:0}
+.cipenall{display:inline-flex;align-items:center;gap:5px;font-size:13.5px}
+.cibtns{display:flex;gap:6px;align-items:center}
+.cipen{border:1px solid var(--line);background:var(--surface);color:var(--muted);width:32px;height:32px;border-radius:50%;display:grid;place-items:center;cursor:pointer}
+.cipen:hover{color:var(--accent);border-color:var(--accent)}
+.cirow.ciedit{grid-template-columns:130px minmax(0,1fr) auto}
+.cirow.ciedit input{font:inherit;font-size:15px;border:1.5px solid var(--accent);border-radius:9px;padding:8px 10px;width:100%;box-sizing:border-box}
+.ciins{display:flex;flex-direction:column;gap:6px}
+@media (max-width:600px){ .cirow.ciedit{grid-template-columns:1fr;grid-template-areas:none} .cirow.ciedit>*{grid-area:auto!important} }
