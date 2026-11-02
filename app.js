@@ -2071,7 +2071,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261030c";
+const APP_VERSION="20261102d";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -2517,6 +2517,46 @@ function bindFeedback(){
     if(await run(()=>sb.rpc("set_feedback_status",{p_id:f.id,p_status:f.status,p_note:i.value}),"Note enregistrée")) f.admin_note=i.value.trim()||null; });
 }
 
+/* ----- anniversaires de l'équipe ----- */
+const MOIS=["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"];
+// anniversaires : d'après la date de naissance des comptes (migration 060), sinon dates indiquées à la main (059)
+async function loadBirthdays(){ let r=await sb.rpc("team_birthdays"); S.bdV2=!r.error;
+  if(r.error) r=await sb.from("staff_birthdays").select("user_id,day,month");
+  S.bdOk=!r.error; S.bdays=r.error?[]:(r.data||[]).map(b=>({...b,shared:b.shared!==false})); S.bdLoaded=true; }
+function isBdayOn(b,dt){ const m=dt.getMonth()+1, d=dt.getDate(); if(b.month===m&&b.day===d) return true;
+  const y=dt.getFullYear(), leap=(y%4===0&&y%100!==0)||y%400===0; return b.month===2&&b.day===29&&m===2&&d===28&&!leap; }
+function bdayBannerHTML(){
+  if(!S.bdLoaded||!S.bdays?.length) return "";
+  const today=new Date(), list=S.bdays.filter(b=>isBdayOn(b,today)&&(b.shared||b.user_id===S.me.id)&&(S.team||[]).some(t=>t.id===b.user_id&&t.status==="active"));
+  if(!list.length) return "";
+  const me=list.some(b=>b.user_id===S.me.id), others=list.filter(b=>b.user_id!==S.me.id);
+  return `<div class="bdban">${me?`<p><span aria-hidden="true">🎂</span> <b>Joyeux anniversaire${S.me.first_name?" "+esc(S.me.first_name):""} !</b> Toute l'équipe vous souhaite une très belle journée.</p>`:""}
+    ${others.map(b=>`<p><span aria-hidden="true">🎉</span> Aujourd'hui, c'est l'anniversaire de <b>${esc(staffFirst(b.user_id))}</b>. <button type="button" class="linkbtn" data-bdwrite="${b.user_id}">Lui écrire</button></p>`).join("")}</div>`; }
+function bdayCardHTML(){
+  if(!S.bdOk) return "";
+  const b=(S.bdays||[]).find(x=>x.user_id===S.me.id), fromAccount=S.bdV2&&b&&S.me.birth_date;
+  const pick=`<div class="pgrid"><label class="fld">Jour<select id="bd-d"><option value="">—</option>${Array.from({length:31},(_,i)=>`<option ${b?.day===i+1?"selected":""}>${i+1}</option>`).join("")}</select></label>
+    <label class="fld">Mois<select id="bd-m"><option value="">—</option>${MOIS.map((m,i)=>`<option value="${i+1}" ${b?.month===i+1?"selected":""}>${m}</option>`).join("")}</select></label></div>
+    <div class="btnrow"><button type="button" class="btn ghost" id="bd-save">Enregistrer</button>${b&&!fromAccount?`<button type="button" class="linkbtn" id="bd-del">Retirer</button>`:""}</div>`;
+  return `<section class="card"><h3>🎂 Mon anniversaire</h3>
+    ${b?`<p>Votre anniversaire : <b>${b.day} ${MOIS[b.month-1]}</b>${fromAccount?" <span class=\"hint\">(d'après la date de naissance de votre compte)</span>":""}</p>`
+       :`<p class="hint">Aucune date de naissance dans votre compte : indiquez le jour et le mois si vous le souhaitez.</p>${pick}`}
+    <p class="hint">Le jour J à 8 h, vous recevez un petit mot de l'équipe. Vos collègues ne voient que le jour et le mois, jamais l'année.</p>
+    ${S.bdV2&&b?`<label class="chk2"><input type="checkbox" id="bd-share" ${b.shared?"checked":""}> Prévenir mes collègues le jour de mon anniversaire</label>`:""}
+    ${b&&!fromAccount?`<details class="dkmore"><summary>Changer la date</summary>${pick}</details>`:""}</section>`; }
+function bindBdayCard(){
+  const sh=$("#bd-share"); if(sh) sh.onchange=async()=>{ const on=sh.checked;
+    if(await run(()=>sb.rpc("set_birthday_shared",{p_on:on}),on?"Vos collègues seront prévenus le jour de votre anniversaire":"Votre anniversaire ne sera pas annoncé aux collègues")){ const b=(S.bdays||[]).find(x=>x.user_id===S.me.id); if(b) b.shared=on; } else sh.checked=!on; };
+  const sv=$("#bd-save"); if(sv) sv.onclick=async()=>{ const d=+$("#bd-d").value||null, m=+$("#bd-m").value||null; if(!d||!m) return toast("Choisissez le jour et le mois.");
+    if(await run(()=>sb.rpc("set_my_birthday",{p_day:d,p_month:m}),`Anniversaire enregistré : ${d} ${MOIS[m-1]}`)){ await loadBirthdays(); render(); } };
+  const dl=$("#bd-del"); if(dl) dl.onclick=async()=>{ if(await run(()=>sb.rpc("set_my_birthday",{p_day:null,p_month:null}),"Anniversaire retiré")){ await loadBirthdays(); render(); } };
+}
+async function writeTo(uid){
+  const direct=(S.team2.threads||[]).find(t=>t.kind==="direct"&&tMembers(t.id).some(m=>m.user_id===uid)&&tMembers(t.id).some(m=>m.user_id===S.me.id));
+  let id=direct?.id;
+  if(!id){ const {data,error}=await sb.rpc("team_start",{p_members:[uid],p_title:null}); if(error){ toast(frError(error)); return; } id=data; await loadTeam(); }
+  S.tthread=id; S.cscreen="messages"; S.drafts["t"+id]=S.drafts["t"+id]||"Joyeux anniversaire ! 🎂"; render(); scrollTo(0,0); }
+
 /* ----- fiches conseils (PDF du centre, à envoyer aux patients) ----- */
 const FICHES_LIB=[
  ["Prévention","fiche-coeur-prevention.pdf","Protéger son cœur et ses artères","Alimentation et activité physique pour l'adulte"],
@@ -2524,6 +2564,10 @@ const FICHES_LIB=[
  ["Diabète","fiche-diabete-alimentation.pdf","Bien manger avec un diabète","Assiette, aliments à privilégier, hypoglycémie"],
  ["Diabète","fiche-diabete-ramadan.pdf","Diabète et jeûne du ramadan","Peut-on jeûner, médicaments, glycémie, quand rompre le jeûne"],
  ["Diabète","fiche-hypoglycemie.pdf","L'hypoglycémie","Les signes, la règle des « 15 », l'éviter"],
+ ["Grossesse","fiche-grossesse-dates-cles.pdf","Grossesse : les dates clés","NIPT, échographies, test du sucre, vaccins, médicaments à éviter, démarches"],
+ ["Grossesse","fiche-grossesse-tension-alimentation.pdf","Grossesse : tension artérielle et alimentation","Signes d'alerte, mesurer sa tension, prise de poids, aliments à éviter"],
+ ["Poids","fiche-obesite-adulte.pdf","Surpoids et obésité chez l'adulte","Alimentation, activité, accompagnement, médicaments, chirurgie"],
+ ["Poids","fiche-obesite-enfant.pdf","Surpoids et obésité de l'enfant","En famille, sans régime : repas, activité, écrans, sommeil"],
  ["Alimentation","fiche-cholesterol-triglycerides.pdf","Cholestérol et triglycérides","À éviter, à privilégier"],
  ["Alimentation","fiche-calculs-vesicule.pdf","Calculs de la vésicule biliaire","Limiter les crises, signes d'alerte"],
  ["Alimentation","fiche-diverticulite.pdf","Diverticules et diverticulite","Pendant la poussée, puis prévention"],
@@ -2731,6 +2775,10 @@ function staffHelpHTML(){
    ["Le menu","Sur ordinateur, le menu est à gauche, rangé en 4 rubriques : Patients (demandes, écrire, fiches, listes d'attente), Équipe (messages, tâches, congés), Secrétariat (accueil, horaires, caisse) et Le centre (actualités, classeur, inventaire). Sur téléphone : la barre du bas, et « Plus » pour tout le reste. Le chiffre rouge indique ce qui attend."],
    ["Rechercher","La loupe (ou Ctrl K sur ordinateur) cherche partout : patients, demandes et leurs messages, messages de l'équipe, tâches, fiches, listes d'attente, inventaire, classeur, actualités, réponses types, caisse. Touchez un résultat pour l'ouvrir."],
    ["Épingler et classer les conversations","Messages : touchez « Épingler » en haut d'une conversation pour la garder tout en haut de votre liste (vos épingles ne changent rien pour les collègues). Les filtres Non lues · Prioritaires · Groupes · À deux · Patients trient la liste."],
+   ["Notification de nouvelle tâche","Quand un collègue vous confie une tâche ou vous ajoute dans « Aussi concernés », vous recevez une notification (sans le titre ni le nom du patient) ; elle arrive aussi le soir et le week-end, sauf si vous avez décoché « Équipe » dans Mon profil. Le secrétariat est prévenu quand quelqu'un d'autre ajoute quelque chose à la liste de l'Accueil."],
+   ["Infos et documents (accueil)","Secrétariat → Infos et documents. Coordonnées : nom, adresse, BCE, IBAN, avec des boutons « Copier » (ex. pour un fournisseur). Reçu : nom du patient, montant, moyen de paiement, objet → « Créer le reçu » fait un PDF numéroté (R-2026-0001) à imprimer ; en espèces, il peut aussi aller dans la Caisse. Facture : destinataire, lignes et montants, texte libre → PDF numéroté (F-2026-0001) avec l'IBAN et la communication. Documents : tous les reçus et factures, à rouvrir ou imprimer ; une erreur se corrige en annulant (jamais en effaçant). Prestataires : choisissez un prestataire pour voir ses infos (jours, tarifs, à savoir…). Mots de passe (secrétariat et administration) : chiffrés, « Afficher » ou « Copier » ; chaque affichage est noté."],
+   ["Inventaire : le stock","Le centre → Inventaire → 📦 Stock : un onglet par famille (Administratif, Médicaments, Vaccins, Matériel médical, Cuisine, Entretien, Salle d'attente). Une ligne par article avec le total, où il est rangé et la péremption la plus proche (rouge : périmé, orange : bientôt ou en partie périmé). Touchez un article : quantité par local avec − / +, date de péremption, n° de lot (médicaments, vaccins), et « Ajouter à À commander ». « ⚠️ Alertes » ne montre que ce qui est périmé, bientôt périmé ou sous le stock minimum. « Excel » télécharge tout le stock. Toute l'équipe peut modifier."],
+   ["Anniversaires","L'anniversaire vient de la date de naissance de votre compte (les collègues ne voient que le jour et le mois). Le jour J à 8 h, vous recevez un petit mot, et vos collègues un rappel ; les anniversaires du week-end sont annoncés le vendredi. Moi → Mon profil → « Mon anniversaire » : décochez « Prévenir mes collègues » si vous préférez rester discret. Ce jour-là, un bandeau dans Demandes et Messages propose « Lui écrire »."],
    ["Ne pas oublier de répondre","Messages : en haut d'une conversation, « Prioritaire » met un drapeau rouge ; la conversation reste tout en haut de votre liste jusqu'à ce que vous retiriez le drapeau. « Non lu » la remet en gras avec une pastille, comme si vous ne l'aviez pas ouverte, jusqu'à ce que vous la rouvriez. Ces repères sont personnels : les collègues ne voient rien changer."],
    ["Ce qui est gardé, ce qui est effacé","Gardé : messages de l'équipe sur l'organisation, inventaire, congés, tâches sans patient, classeur, horaires (5 ans), caisse (10 ans). Effacé : conversations avec les patients (15 jours après la clôture), conversations d'équipe marquées « Concerne des patients » et messages qui joignent une demande (90 jours), tâches liées à un patient (90 jours après)."],
    ["Joindre un document à une tâche","Tâches et Accueil : en créant la tâche, « Joindre un document » (photo, PDF) ou « Scanner » ; ou plus tard, « Joindre » sous la tâche. 10 documents maximum, 5 Mo chacun. Seules les personnes de la tâche les voient ; ils sont effacés 90 jours après que la tâche est faite. Touchez un document pour l'ouvrir."],
@@ -2761,9 +2809,12 @@ function renderStaff(a){
   const sc=S.cscreen;
   const nav=staffNavHTML(sc);
   let body="";
-  if(sc==="compose") body=composeHTML(); else if(sc==="inventory") body=inventoryHTML(); else if(sc==="tasks") body=tasksHTML(); else if(sc==="accounts") body=accountsHTML(); else if(sc==="news") body=newsAdminHTML(); else if(sc==="team") body=teamHTML(); else if(sc==="settings") body=settingsHTML(); else if(sc==="help") body=staffHelpHTML(); else if(sc==="leaves") body=leavesHTML(); else if(sc==="patients") body=patientsHTML(); else if(sc==="messages") body=teamHTML2(); else if(sc==="templates") body=templatesHTML(); else if(sc==="binder") body=binderHTML(); else if(sc==="desk") body=deskHTML(); else if(sc==="waitlist") body=waitlistHTML(); else if(sc==="fiches") body=fichesHTML(); else if(sc==="feedback"&&isAdmin()) body=feedbackHTML(); else if(sc==="hours"&&canOffice()) body=hoursHTML(); else if(sc==="cash"&&canOffice()) body=cashHTML(); else body=inboxHTML();
+  if(sc==="compose") body=composeHTML(); else if(sc==="inventory") body=inventoryHTML(); else if(sc==="tasks") body=tasksHTML(); else if(sc==="accounts") body=accountsHTML(); else if(sc==="news") body=newsAdminHTML(); else if(sc==="team") body=teamHTML(); else if(sc==="settings") body=settingsHTML(); else if(sc==="help") body=staffHelpHTML(); else if(sc==="leaves") body=leavesHTML(); else if(sc==="patients") body=patientsHTML(); else if(sc==="messages") body=teamHTML2(); else if(sc==="templates") body=templatesHTML(); else if(sc==="binder") body=binderHTML(); else if(sc==="desk") body=deskHTML(); else if(sc==="waitlist") body=waitlistHTML(); else if(sc==="fiches") body=fichesHTML(); else if(sc==="infos") body=infosHTML(); else if(sc==="feedback"&&isAdmin()) body=feedbackHTML(); else if(sc==="hours"&&canOffice()) body=hoursHTML(); else if(sc==="cash"&&canOffice()) body=cashHTML(); else body=inboxHTML();
   document.body.classList.add("hasbar","sidenav"); document.body.classList.remove("ddopen");
-  a.innerHTML=nav+urgBannerHTML()+body;
+  a.innerHTML=nav+urgBannerHTML()+(sc==="inbox"||sc==="messages"?bdayBannerHTML():"")+body;
+  $$("[data-bdwrite]").forEach(b=>b.onclick=()=>writeTo(b.dataset.bdwrite));
+  if(!S.bdLoaded&&!S.bdLoading){ S.bdLoading=true; loadBirthdays().then(()=>{ S.bdLoading=false; const el=document.activeElement;
+    if((S.bdays||[]).some(b=>isBdayOn(b,new Date()))||S.cscreen==="settings"){ if(!(el&&/TEXTAREA|INPUT|SELECT/.test(el.tagName))&&!S.pend&&!$(".modal")) render(); } }).catch(()=>{ S.bdLoading=false; }); }
   $("#logout").onclick=()=>{ closeDD(); logout(); };
   $("#dd-fb").onclick=()=>{ closeDD(); openFeedback(); };
   if(isAdmin()&&!S.fbLoaded&&!S.fbLoading){ S.fbLoading=true; loadFeedback().then(()=>{ S.fbLoading=false; const el=document.activeElement;
@@ -2775,7 +2826,7 @@ function renderStaff(a){
   $$("[data-dd]").forEach(b=>b.onclick=e=>{ e.stopPropagation(); openDD(b.dataset.dd); });
   const bk=$(".ddback"); if(bk) bk.onclick=closeDD;
   $$("[data-cs]").forEach(b=>b.onclick=()=>{ closeDD(); if(CREC&&b.dataset.cs!=="compose") composeRecStop(false); S.cscreen=b.dataset.cs; render(); window.scrollTo(0,0); });
-  if(sc==="compose") bindCompose(); else if(sc==="inventory") bindInventory(); else if(sc==="tasks") bindTasks(); else if(sc==="accounts") bindAccounts(); else if(sc==="news") bindNewsAdmin(); else if(sc==="team") bindTeam(); else if(sc==="settings") bindSettings(); else if(sc==="help"||sc==="leaves") {} else if(sc==="patients") bindPatients(); else if(sc==="messages") bindTeam2(); else if(sc==="templates") bindTemplates(); else if(sc==="binder") bindBinder(); else if(sc==="desk") bindDesk(); else if(sc==="waitlist"){ if(S.waitlist) bindWaitlist(); } else if(sc==="fiches") bindFiches(); else if(sc==="feedback"&&isAdmin()) bindFeedback(); else if(sc==="hours"&&canOffice()) bindHours(); else if(sc==="cash"&&canOffice()) bindCash(); else bindInbox();
+  if(sc==="compose") bindCompose(); else if(sc==="inventory") bindInventory(); else if(sc==="tasks") bindTasks(); else if(sc==="accounts") bindAccounts(); else if(sc==="news") bindNewsAdmin(); else if(sc==="team") bindTeam(); else if(sc==="settings") bindSettings(); else if(sc==="help"||sc==="leaves") {} else if(sc==="patients") bindPatients(); else if(sc==="messages") bindTeam2(); else if(sc==="templates") bindTemplates(); else if(sc==="binder") bindBinder(); else if(sc==="desk") bindDesk(); else if(sc==="waitlist"){ if(S.waitlist) bindWaitlist(); } else if(sc==="fiches") bindFiches(); else if(sc==="infos") bindInfos(); else if(sc==="feedback"&&isAdmin()) bindFeedback(); else if(sc==="hours"&&canOffice()) bindHours(); else if(sc==="cash"&&canOffice()) bindCash(); else bindInbox();
 }
 
 /* ----- durée estimée des rendez-vous de médecine générale (visible par l'équipe seulement) ----- */
@@ -3105,7 +3156,7 @@ const newInv = () => ({title:"",qty:"",notes:"",urgent:false,photos:[],tab:"a_co
 // Inventaire compact : une ligne par article, ajout rapide en une ligne, actions groupées
 function invSimilar(t){ const w=norm(t||"").split(/\s+/).filter(x=>x.length>2); if(!w.length) return null;
   return (S.inventory||[]).find(i=>i.status!=="recu"&&w.every(x=>norm(i.title).includes(x)))||null; }
-function inventoryHTML(){
+function orderHTML(){
   const I=S.inv||(S.inv=newInv()); I.sel=I.sel||[];
   const all=S.inventory||[], n=st=>all.filter(i=>i.status===st).length, since=Date.now()-60*864e5;
   const q=norm(I.q||"").split(/\s+/).filter(Boolean);
@@ -3128,7 +3179,7 @@ function inventoryHTML(){
        <small class="invmeta">Demandé par ${esc(teamName(it.created_by))} ${fmt(it.created_at)}${it.status!=="a_commander"&&it.status_at?` · ${INV_ST[it.status]} ${fmt(it.status_at)}${it.status_by?` (${esc(teamName(it.status_by))})`:""}`:""}</small>
        <div class="btnrow">${it.status!=="a_commander"?`<button class="btn ghost" data-invst="a_commander" data-id="${it.id}">Remettre à commander</button>`:""}${canDel(it)?`<button class="linkbtn" data-invdel="${it.id}">Supprimer</button>`:""}</div></div>`:""}
     </div>`; };
-  return `<div class="chead"><div><h1>Inventaire</h1><p>Ce qui manque au centre. Toute l'équipe ajoute ; le secrétariat coche ce qui est commandé puis reçu.</p></div></div>
+  return `<p class="hint invintro">Ce qui manque au centre. Toute l'équipe ajoute ; le secrétariat coche ce qui est commandé puis reçu.</p>
   <div class="inv">
    <section class="card invquick">
     <div class="invline"><input id="inv-title" maxlength="200" autocomplete="off" placeholder="Ce qu'il faut (ex. gel d'échographie)" value="${esc(I.title)}" aria-label="Ce qu'il faut">
@@ -3149,7 +3200,7 @@ function inventoryHTML(){
    ${hidden?`<button type="button" class="linkbtn" id="inv-all">Afficher l'historique complet (${hidden} plus ancien${hidden>1?"s":""})</button>`:""}
   </div>`;
 }
-function bindInventory(){
+function bindOrder(){
   const I=S.inv, t=$("#inv-title"), add=$("#inv-add");
   let dupT=null; t.oninput=()=>{ I.title=t.value; add.disabled=!I.title.trim(); clearTimeout(dupT); dupT=setTimeout(()=>{ const had=!!$(".invdup"), has=!!invSimilar(I.title); if(had!==has){ render(); const n=$("#inv-title"); n.focus(); n.setSelectionRange(n.value.length,n.value.length); } },400); };
   t.onkeydown=e=>{ if(e.key==="Enter"&&!add.disabled) add.click(); };
@@ -3186,6 +3237,546 @@ function bindInventory(){
     if(b.dataset.sure!=="1"){ b.dataset.sure="1"; b.textContent="Confirmer la suppression"; return; }
     b.disabled=true; if(await run(()=>sb.rpc("delete_inventory_item",{p_id:+b.dataset.invdel}),"Supprimé")){ I.open=null; await loadInventory(); render(); } else b.disabled=false; });
   $$("[data-invph]").forEach(async b=>{ try{ const u=await invPhoto(+b.dataset.invph); b.querySelector("img").src=u; b.onclick=()=>openViewer(u); }catch(e){ b.classList.add("failed"); } });
+}
+
+/* =====================================================================
+   INVENTAIRE · STOCK DU CENTRE (tableau par onglets, détail par local et date de péremption)
+   ===================================================================== */
+const STK_TABS=[["Administratif","🗂️"],["Médicaments","💊"],["Vaccins","💉"],["Matériel médical","🩺"],["Cuisine et alimentaire","☕"],["Entretien et ménage","🧽"],["Salle d'attente","🧸"]];
+const STK_SUBS={"Administratif":["Papeterie","Cartouches et toners","Courrier","Accueil","Piles"],"Médicaments":["Injectables","Désinfection et soins"],"Vaccins":[],
+  "Matériel médical":["Injections et prélèvements","Pansements et bandes","Petite chirurgie","Examens","Hygiène des soins"],"Cuisine et alimentaire":["Alimentaire","Vaisselle","Équipement"],
+  "Entretien et ménage":["Produits d'entretien","Papier","Sacs poubelle"],"Salle d'attente":[]};
+const STK_UNITS=["pièces","boîtes","paquets","flacons","rouleaux","doses","ampoules","bidons"];
+const STK_LOCS=["Accueil","Anas","Omar","Noura","Farah","Polyvalent","Cuisine","Couloir garage","Frigo"];
+const STK_MONTHS=["janv.","févr.","mars","avr.","mai","juin","juil.","août","sept.","oct.","nov.","déc."];
+const hasLotNo = tab => tab==="Médicaments"||tab==="Vaccins";
+async function loadStock(){
+  const [it,lo]=await Promise.all([sb.from("stock_items").select("*").order("name").limit(3000),sb.from("stock_lots").select("*").order("id").limit(10000)]);
+  S.stockOk=!it.error&&!lo.error; S.stock={items:it.error?[]:(it.data||[]),lots:lo.error?[]:(lo.data||[])}; S.stockLoaded=true;
+}
+// date de péremption : le 1er du mois = « mois/année », utilisable jusqu'à la fin du mois
+const expEnd = s => { if(!s) return null; const d=new Date(s+"T12:00"); return d.getDate()===1?new Date(d.getFullYear(),d.getMonth()+1,0,23,59):d; };
+const expTxt = s => { if(!s) return ""; const d=new Date(s+"T12:00"); return d.getDate()===1?`${String(d.getMonth()+1).padStart(2,"0")}/${d.getFullYear()}`:d.toLocaleDateString("fr-BE"); };
+function expState(s){ const e=expEnd(s); if(!e) return ""; const days=(e-Date.now())/864e5; return days<0?"exp":days<=90?"soon":"ok"; }
+const stkLots = id => (S.stock?.lots||[]).filter(l=>l.item_id===id);
+const nfmt = n => n==null?"":(Math.round(n*100)/100).toLocaleString("fr-BE");
+function stkInfo(it){
+  const L=stkLots(it.id), known=L.filter(l=>l.qty!=null), total=known.reduce((a,l)=>a+Number(l.qty),0), unknown=L.some(l=>l.qty==null)||!L.length;
+  const withQty=L.filter(l=>l.expiry&&Number(l.qty||0)>0), states=withQty.map(l=>expState(l.expiry));
+  const first=withQty.slice().sort((a,b)=>a.expiry.localeCompare(b.expiry))[0];
+  const expQty=withQty.filter(l=>expState(l.expiry)==="exp").reduce((a,l)=>a+Number(l.qty),0);
+  let st=""; if(states.length&&states.every(s=>s==="exp")) st="exp"; else if(states.includes("exp")) st="part"; else if(states.includes("soon")) st="soon";
+  const low=it.min_qty!=null&&total<Number(it.min_qty);
+  const byloc={}; L.forEach(l=>{ const k=l.location||"?"; byloc[k]=(byloc[k]||0)+Number(l.qty||0); });
+  return {L,total,unknown,first,st,expQty,low,byloc};
+}
+const stkAlert = it => { const i=stkInfo(it); return i.low||i.st==="exp"||i.st==="part"; };
+const stkAlertCount = () => (S.stock?.items||[]).filter(stkAlert).length;
+const ST_LABEL={exp:"Périmé",part:"En partie périmé",soon:"Périme bientôt"};
+function monthYearSel(id,val,cls){
+  const d=val?new Date(val+"T12:00"):null, y0=new Date().getFullYear()-2;
+  return `<span class="mysel ${cls||""}"><select data-mym="${id}" aria-label="Mois de péremption"><option value="">—</option>${STK_MONTHS.map((m,i)=>`<option value="${i+1}" ${d&&d.getMonth()===i?"selected":""}>${m}</option>`).join("")}</select><select data-myy="${id}" aria-label="Année de péremption"><option value="">—</option>${Array.from({length:14},(_,i)=>y0+i).map(y=>`<option ${d&&d.getFullYear()===y?"selected":""}>${y}</option>`).join("")}</select></span>`; }
+function readMY(id){ const m=$(`[data-mym="${id}"]`)?.value, y=$(`[data-myy="${id}"]`)?.value; return m&&y?`${y}-${String(m).padStart(2,"0")}-01`:null; }
+function stockHTML(){
+  if(!S.stockLoaded) return `<div class="empty">Chargement…</div>`;
+  if(!S.stockOk) return `<p class="hint">Le tableau du stock sera disponible après la mise à jour du serveur (migration 061).</p>`;
+  const K=S.stk||(S.stk={tab:"Matériel médical",q:"",alert:false,open:null,add:null}), items=S.stock.items;
+  const q=norm(K.q||"").split(/\s+/).filter(Boolean);
+  let list=items.filter(it=>q.length?q.every(w=>norm(`${it.name} ${it.subcat||""} ${it.supplier||""} ${stkLots(it.id).map(l=>l.location||"").join(" ")}`).includes(w)):it.tab===K.tab);
+  if(K.alert) list=list.filter(it=>{ const i=stkInfo(it); return i.low||i.st; });
+  const subs=STK_SUBS[K.tab]||[];
+  list.sort((a,b)=>(q.length?STK_TABS.findIndex(t=>t[0]===a.tab)-STK_TABS.findIndex(t=>t[0]===b.tab):0)||((subs.indexOf(a.subcat)+1||99)-(subs.indexOf(b.subcat)+1||99))||(a.subcat||"").localeCompare(b.subcat||"")||a.name.localeCompare(b.name,"fr"));
+  const tabCount=t=>items.filter(it=>it.tab===t).length, tabAl=t=>items.filter(it=>it.tab===t&&stkAlert(it)).length;
+  let rows="", g=null;
+  for(const it of list){
+    const key=q.length?`${it.tab} · ${it.subcat||""}`:(it.subcat||"Autres");
+    if(key!==g){ g=key; rows+=`<div class="stksub">${esc(key)}</div>`; }
+    const i=stkInfo(it), op=K.open===it.id;
+    const where=Object.entries(i.byloc).map(([k,v])=>Object.keys(i.byloc).length>1?`${esc(k)} ${nfmt(v)}`:esc(k)).join(" · ");
+    rows+=`<div class="stkrow${op?" open":""}${i.st==="exp"?" exp":i.st?" warn":""}${i.low?" low":""}" data-stkid="${it.id}">
+      <button type="button" class="stkmain" data-stkopen="${it.id}" aria-expanded="${op}">
+       <span class="stkname"><b>${esc(it.name)}</b>${it.notes?`<small>${esc(it.notes)}</small>`:""}</span>
+       <span class="stktot">${i.unknown&&!i.total?"?":nfmt(i.total)}<small>${esc(it.unit||"")}</small>${i.low?`<em class="stklow">sous le minimum (${nfmt(it.min_qty)})</em>`:""}</span>
+       <span class="stkwhere">${where||"—"}</span>
+       <span class="stkexp">${i.first?expTxt(i.first.expiry):""}${i.st?`<em class="stkst ${i.st}">${ST_LABEL[i.st]}${i.st==="part"?` (${nfmt(i.expQty)} à jeter)`:""}</em>`:""}</span>
+       <span class="stkchev" aria-hidden="true">›</span></button>
+      ${op?stkDetailHTML(it,i):""}</div>`;
+  }
+  const A=K.add;
+  return `<div class="stkbar">
+    <div class="stktabs" role="tablist">${STK_TABS.map(([t,ic])=>`<button type="button" role="tab" class="stktab" data-stktab="${esc(t)}" aria-selected="${!q.length&&K.tab===t}"><span aria-hidden="true">${ic}</span>${esc(t)} <i>${tabCount(t)}</i>${tabAl(t)?`<b class="stkal" title="${tabAl(t)} alerte(s)">${tabAl(t)}</b>`:""}</button>`).join("")}</div>
+    <div class="stktools"><input id="stk-q" type="search" class="pcq" placeholder="Rechercher dans tout le stock…" value="${esc(K.q||"")}" aria-label="Rechercher dans le stock">
+     <button type="button" class="tpinbtn" id="stk-alert" aria-pressed="${!!K.alert}">⚠️ <span>Alertes</span></button>
+     <button type="button" class="btn ghost" id="stk-xls">${IC.doc} Excel</button>
+     <button type="button" class="btn" id="stk-new">+ Ajouter un article</button></div></div>
+   ${A?stkAddHTML(A):""}
+   <div class="stktable">
+    <div class="stkhead"><span>Article</span><span>Total</span><span>Où</span><span>Péremption</span><span></span></div>
+    ${rows||`<div class="empty">${q.length?"Rien ne correspond.":K.alert?"Aucune alerte dans cet onglet.":K.tab==="Vaccins"?"Aucun vaccin encore. « + Ajouter un article » pour commencer (avec le n° de lot et la péremption).":"Aucun article dans cet onglet."}</div>`}
+   </div>
+   <p class="hint">Touchez un article pour le détail par local et par date de péremption, et pour corriger les quantités. Toute l'équipe peut modifier. Rouge : périmé · orange : périme dans les 3 mois ou en partie périmé.</p>`;
+}
+function stkDetailHTML(it,i){
+  const lot=hasLotNo(it.tab), L=i.L.slice().sort((a,b)=>(a.location||"").localeCompare(b.location||"")||(a.expiry||"9").localeCompare(b.expiry||"9"));
+  return `<div class="stkdet">
+   <div class="stklots">${L.map(l=>{ const es=expState(l.expiry); return `<div class="stklot ${es}" data-lot="${l.id}">
+     <label class="fld"><span>Local</span><input data-lotf="location" value="${esc(l.location||"")}" list="stk-locs" maxlength="60"></label>
+     <div class="fld"><span>Quantité</span><div class="stkqty"><button type="button" class="cbtn sm" data-adj="-1" aria-label="Retirer 1">−</button><input data-lotf="qty" inputmode="decimal" value="${l.qty==null?"":nfmt(l.qty)}" aria-label="Quantité"><button type="button" class="cbtn sm" data-adj="1" aria-label="Ajouter 1">+</button></div></div>
+     <div class="fld"><span>Péremption${es==="exp"?" · <b class=\"stkst exp\">périmé</b>":es==="soon"?" · <b class=\"stkst soon\">bientôt</b>":""}</span>${monthYearSel("l"+l.id,l.expiry)}</div>
+     ${lot?`<label class="fld"><span>N° de lot</span><input data-lotf="lot_no" value="${esc(l.lot_no||"")}" maxlength="60"></label>`:""}
+     <label class="fld grow"><span>Note</span><input data-lotf="note" value="${esc(l.note||"")}" maxlength="200"></label>
+     <button type="button" class="linkbtn stkdel" data-lotdel="${l.id}" aria-label="Supprimer cette ligne">Supprimer</button></div>`; }).join("")||`<p class="hint">Aucune quantité enregistrée.</p>`}
+    <button type="button" class="linkbtn" data-lotadd="${it.id}">+ Ajouter un local ou une autre date de péremption</button></div>
+   <details class="stkedit"><summary>Modifier l'article (nom, onglet, minimum, fournisseur…)</summary>
+    <div class="stkform">
+     <label class="fld">Nom<input id="se-name" value="${esc(it.name)}" maxlength="120"></label>
+     <label class="fld">Onglet<select id="se-tab">${STK_TABS.map(([t])=>`<option ${t===it.tab?"selected":""}>${esc(t)}</option>`).join("")}</select></label>
+     <label class="fld">Sous-catégorie<input id="se-sub" value="${esc(it.subcat||"")}" list="stk-subs-${esc(it.tab).replace(/\W/g,"")}" maxlength="60"></label>
+     <label class="fld">Unité<input id="se-unit" value="${esc(it.unit||"")}" list="stk-units" maxlength="30"></label>
+     <label class="fld">Stock minimum<input id="se-min" inputmode="decimal" value="${it.min_qty==null?"":nfmt(it.min_qty)}" placeholder="ex. 2"></label>
+     <label class="fld">Fournisseur / référence<input id="se-sup" value="${esc(it.supplier||"")}" maxlength="160"></label>
+     <label class="fld grow">Remarque<input id="se-notes" value="${esc(it.notes||"")}" maxlength="500"></label>
+    </div>
+    <div class="btnrow"><button type="button" class="btn ghost" id="se-save">Enregistrer</button><button type="button" class="linkbtn" id="se-del">Supprimer l'article</button></div></details>
+   <div class="btnrow"><button type="button" class="btn ghost" data-stkorder="${it.id}">🛒 Ajouter à « À commander »</button>${it.updated_by?`<small class="hint">Modifié par ${esc(teamName(it.updated_by))} ${fmt(it.updated_at)}</small>`:""}</div>
+  </div>`;
+}
+function stkAddHTML(A){
+  return `<section class="card stkadd"><h3>Nouvel article</h3>
+   <div class="stkform">
+    <label class="fld grow">Nom<input id="sa-name" value="${esc(A.name)}" maxlength="120" placeholder="Ex. Compresses stériles 10 × 10 cm" autocomplete="off"></label>
+    <label class="fld">Onglet<select id="sa-tab">${STK_TABS.map(([t])=>`<option ${t===A.tab?"selected":""}>${esc(t)}</option>`).join("")}</select></label>
+    <label class="fld">Sous-catégorie<input id="sa-sub" value="${esc(A.sub)}" list="stk-subs-${esc(A.tab).replace(/\W/g,"")}" maxlength="60"></label>
+    <label class="fld">Unité<input id="sa-unit" value="${esc(A.unit)}" list="stk-units" maxlength="30" placeholder="pièces"></label>
+   </div>
+   <div class="stkform">
+    <label class="fld">Local<input id="sa-loc" value="${esc(A.loc)}" list="stk-locs" maxlength="60"></label>
+    <label class="fld">Quantité<input id="sa-qty" inputmode="decimal" value="${esc(A.qty)}"></label>
+    <div class="fld">Péremption (facultatif)${monthYearSel("new",A.exp)}</div>
+    ${hasLotNo(A.tab)?`<label class="fld">N° de lot<input id="sa-lot" value="${esc(A.lot||"")}" maxlength="60"></label>`:""}
+    <label class="fld">Stock minimum<input id="sa-min" inputmode="decimal" value="${esc(A.min)}" placeholder="facultatif"></label>
+   </div>
+   <div class="btnrow"><button type="button" class="btn" id="sa-save">Ajouter</button><button type="button" class="btn ghost" id="sa-x">Annuler</button></div></section>`;
+}
+const stkDatalists = () => `<datalist id="stk-locs">${[...new Set([...STK_LOCS,...(S.stock?.lots||[]).map(l=>l.location).filter(Boolean)])].map(x=>`<option value="${esc(x)}">`).join("")}</datalist>
+  <datalist id="stk-units">${STK_UNITS.map(x=>`<option value="${x}">`).join("")}</datalist>
+  ${STK_TABS.map(([t])=>`<datalist id="stk-subs-${esc(t).replace(/\W/g,"")}">${[...new Set([...(STK_SUBS[t]||[]),...(S.stock?.items||[]).filter(i=>i.tab===t).map(i=>i.subcat).filter(Boolean)])].map(x=>`<option value="${esc(x)}">`).join("")}</datalist>`).join("")}`;
+const numIn = v => { const s=String(v??"").trim().replace(",","."); if(!s) return null; const n=Number(s); return isFinite(n)&&n>=0?n:NaN; };
+function bindStock(){
+  if(!S.stockLoaded){ loadStock().then(()=>{ if(S.cscreen==="inventory") render(); }); return; }
+  const K=S.stk; if(!K) return;
+  $$("[data-stktab]").forEach(b=>b.onclick=()=>{ K.tab=b.dataset.stktab; K.q=""; K.open=null; render(); });
+  const qi=$("#stk-q"); if(qi){ let t; qi.oninput=()=>{ clearTimeout(t); t=setTimeout(()=>{ K.q=qi.value; K.open=null; render(); const n=$("#stk-q"); n.focus(); n.setSelectionRange(n.value.length,n.value.length); },250); }; }
+  const al=$("#stk-alert"); if(al) al.onclick=()=>{ K.alert=!K.alert; render(); };
+  const nw=$("#stk-new"); if(nw) nw.onclick=()=>{ K.add={name:K.q||"",tab:K.tab,sub:"",unit:"",loc:"",qty:"",exp:null,min:""}; K.q=""; render(); $("#sa-name")?.focus(); };
+  const xl=$("#stk-xls"); if(xl) xl.onclick=()=>stockExport();
+  $$("[data-stkopen]").forEach(b=>b.onclick=()=>{ const id=+b.dataset.stkopen; K.open=K.open===id?null:id; render(); });
+  // nouvel article
+  const A=K.add; if(A){
+    const keep=()=>{ A.name=$("#sa-name").value; A.sub=$("#sa-sub").value; A.unit=$("#sa-unit").value; A.loc=$("#sa-loc").value; A.qty=$("#sa-qty").value; A.min=$("#sa-min").value; A.lot=$("#sa-lot")?.value||""; A.exp=readMY("new"); };
+    $("#sa-tab").onchange=e=>{ keep(); A.tab=e.target.value; render(); };
+    $("#sa-x").onclick=()=>{ K.add=null; render(); };
+    $("#sa-save").onclick=async e=>{ keep(); const qty=numIn(A.qty), min=numIn(A.min);
+      if(!A.name.trim()) return toast("Donnez un nom à l'article.");
+      if(Number.isNaN(qty)||Number.isNaN(min)) return toast("Quantité ou minimum : un nombre, s'il vous plaît.");
+      e.target.disabled=true;
+      const r=await run(()=>sb.rpc("stock_save_item",{p_id:null,p_tab:A.tab,p_subcat:A.sub,p_name:A.name,p_unit:A.unit,p_min:min,p_supplier:null,p_notes:null}));
+      if(!r){ e.target.disabled=false; return; }
+      if(A.loc||qty!=null||A.exp) await run(()=>sb.rpc("stock_save_lot",{p_id:null,p_item:r.data,p_location:A.loc,p_qty:qty,p_expiry:A.exp,p_lot_no:A.lot||null,p_note:null}));
+      toast("Article ajouté"); K.add=null; K.tab=A.tab; K.open=r.data; await loadStock(); render(); };
+  }
+  const it=(S.stock.items||[]).find(x=>x.id===K.open); if(!it) return;
+  const saveLot=async row=>{ const id=+row.dataset.lot, l=S.stock.lots.find(x=>x.id===id); const f=k=>row.querySelector(`[data-lotf="${k}"]`)?.value;
+    const qty=numIn(f("qty")); if(Number.isNaN(qty)){ toast("La quantité doit être un nombre."); return; }
+    const exp=readMY("l"+id);
+    const ok=await run(()=>sb.rpc("stock_save_lot",{p_id:id,p_item:it.id,p_location:f("location")||null,p_qty:qty,p_expiry:exp,p_lot_no:f("lot_no")??l.lot_no,p_note:f("note")||null}),"Enregistré");
+    if(ok){ Object.assign(l,{location:f("location")||null,qty,expiry:exp,lot_no:f("lot_no")??l.lot_no,note:f("note")||null}); render(); } };
+  $$(".stklot").forEach(row=>{
+    row.querySelectorAll("[data-lotf]").forEach(inp=>inp.onchange=()=>saveLot(row));
+    row.querySelectorAll("[data-mym],[data-myy]").forEach(s=>s.onchange=()=>{ const id=row.dataset.lot; const m=$(`[data-mym="l${id}"]`).value, y=$(`[data-myy="l${id}"]`).value; if((m&&y)||(!m&&!y)) saveLot(row); });
+    row.querySelectorAll("[data-adj]").forEach(b=>b.onclick=async()=>{ const id=+row.dataset.lot, l=S.stock.lots.find(x=>x.id===id); b.disabled=true;
+      const {data,error}=await sb.rpc("stock_adjust",{p_lot:id,p_delta:+b.dataset.adj}); b.disabled=false;
+      if(error){ toast(frError(error)); return; } l.qty=data; render(); });
+  });
+  $$("[data-lotdel]").forEach(b=>b.onclick=async()=>{ if(!confirmInline(b,"Supprimer ?")) return;
+    if(await run(()=>sb.rpc("stock_delete_lot",{p_id:+b.dataset.lotdel}),"Ligne supprimée")){ S.stock.lots=S.stock.lots.filter(l=>l.id!==+b.dataset.lotdel); render(); } });
+  $$("[data-lotadd]").forEach(b=>b.onclick=async()=>{ b.disabled=true;
+    const r=await run(()=>sb.rpc("stock_save_lot",{p_id:null,p_item:it.id,p_location:null,p_qty:0,p_expiry:null,p_lot_no:null,p_note:null}));
+    if(r){ await loadStock(); render(); const last=[...document.querySelectorAll(".stklot")].find(x=>+x.dataset.lot===r.data); last?.querySelector('[data-lotf="location"]')?.focus(); } else b.disabled=false; });
+  const sv=$("#se-save"); if(sv) sv.onclick=async()=>{ const min=numIn($("#se-min").value); if(Number.isNaN(min)) return toast("Le minimum doit être un nombre.");
+    if(await run(()=>sb.rpc("stock_save_item",{p_id:it.id,p_tab:$("#se-tab").value,p_subcat:$("#se-sub").value,p_name:$("#se-name").value,p_unit:$("#se-unit").value,p_min:min,p_supplier:$("#se-sup").value,p_notes:$("#se-notes").value}),"Article modifié")){ K.tab=$("#se-tab").value; await loadStock(); render(); } };
+  const dl=$("#se-del"); if(dl) dl.onclick=async()=>{ if(!confirmInline(dl,"Supprimer l'article et tout son stock ?")) return;
+    if(await run(()=>sb.rpc("stock_delete_item",{p_id:it.id}),"Article supprimé")){ K.open=null; await loadStock(); render(); } };
+  $$("[data-stkorder]").forEach(b=>b.onclick=async()=>{ b.disabled=true; const i=stkInfo(it);
+    const qty=it.min_qty!=null&&i.total<it.min_qty?`${nfmt(it.min_qty-i.total)} ${it.unit||""}`.trim():null;
+    if(await run(()=>sb.rpc("add_inventory_item",{p_title:it.name,p_quantity:qty,p_notes:it.supplier||null,p_urgent:false}),"Ajouté à la liste « À commander »")) await loadInventory(); else b.disabled=false; });
+}
+// export Excel : un tableau par onglet, à la suite
+function stockExport(){
+  const cells=new Map(), set=(r,c,o)=>cells.set(`${r},${c}`,o); let r=0;
+  const H=["Onglet","Sous-catégorie","Article","Local","Quantité","Unité","Péremption","État","N° de lot","Stock minimum","Fournisseur","Remarque"];
+  set(r,0,{v:`Inventaire du centre – ${new Date().toLocaleDateString("fr-BE")}`,bold:true,size:14}); r+=2;
+  H.forEach((h,c)=>set(r,c,{v:h,bold:true,fill:"#e7e6e6",border:true,wrap:true})); r++;
+  for(const [t] of STK_TABS){
+    const its=S.stock.items.filter(i=>i.tab===t).sort((a,b)=>(a.subcat||"").localeCompare(b.subcat||"")||a.name.localeCompare(b.name,"fr"));
+    for(const it of its){ const L=stkLots(it.id); (L.length?L:[{}]).forEach(l=>{ const es=expState(l.expiry), fill=es==="exp"?"#f8d7d3":es==="soon"?"#fce8c8":null;
+      [t,it.subcat||"",it.name,l.location||"",l.qty==null?"":Number(l.qty),it.unit||"",expTxt(l.expiry),es==="exp"?"Périmé":es==="soon"?"Bientôt":"",l.lot_no||"",it.min_qty==null?"":Number(it.min_qty),it.supplier||"",[it.notes,l.note].filter(Boolean).join(" ; ")]
+        .forEach((v,c)=>set(r,c,{v,border:true,fill:c>=3&&c<=7?fill:null,wrap:c===2||c===11})); r++; }); }
+  }
+  const blob=buildXlsx("Inventaire",{cells,widths:[20,22,36,16,10,10,12,12,14,12,24,30]});
+  saveFile(blob,`inventaire-cmpl-${todayISO()}.xlsx`);
+}
+
+// Inventaire : « Stock » (tableau du stock par onglets) et « À commander » (liste de courses)
+function inventoryHTML(){
+  const m=S.invMode||"stock";
+  return `<div class="chead"><div><h1>Inventaire</h1><p>Le stock du centre, et la liste de ce qu'il faut commander.</p></div></div>
+  <div class="invmode" role="tablist"><button type="button" role="tab" data-invmode="stock" aria-selected="${m==="stock"}">📦 Stock${S.stockLoaded&&stkAlertCount()?` <b class="stkal">${stkAlertCount()}</b>`:""}</button><button type="button" role="tab" data-invmode="order" aria-selected="${m==="order"}">🛒 À commander${invOpen()?` <i>${invOpen()}</i>`:""}</button></div>
+  ${m==="stock"?stockHTML()+stkDatalists():orderHTML()}`;
+}
+function bindInventory(){
+  $$("[data-invmode]").forEach(b=>b.onclick=()=>{ S.invMode=b.dataset.invmode; render(); });
+  if((S.invMode||"stock")==="stock"){
+    if(S.stockLoaded&&Date.now()-(S.stockAt||0)>60000&&!S.stk?.add){ S.stockAt=Date.now(); loadStock().then(()=>{ const el=document.activeElement; if(S.cscreen==="inventory"&&!(el&&/INPUT|SELECT|TEXTAREA/.test(el.tagName))) render(); }); }
+    if(!S.stockAt) S.stockAt=Date.now();
+    bindStock();
+  } else bindOrder();
+}
+
+/* =====================================================================
+   INFOS ET DOCUMENTS DE L'ACCUEIL
+   Coordonnées du centre · Reçu · Facture · Documents créés · Prestataires · Mots de passe
+   ===================================================================== */
+const CI_DEFAULT={nom:"Centre Médical Prince de Liège",societe:"ALBINTA SRL",bce:"0756.551.795",iban:"BE37 0689 3982 3428",bic:"",adresse:"21-23 rue du Potaerdenberg",cp_ville:"1070 Anderlecht",telephone:"02 781 18 75",email:"admin@cmpl.be",site:"www.cmpl.be",horaires:"Du lundi au vendredi, de 9 h à 19 h"};
+const CI_FIELDS=[["nom","Nom du centre"],["societe","Société"],["bce","Numéro d'entreprise (BCE)"],["iban","IBAN"],["bic","BIC"],["adresse","Adresse"],["cp_ville","Code postal et commune"],["telephone","Téléphone"],["email","E-mail"],["site","Site internet"],["horaires","Heures d'ouverture"]];
+const ci = () => ({...CI_DEFAULT,...(S.centerInfo||{})});
+const PAY_METHODS=["Espèces","Bancontact","Virement","Payconiq","Autre"];
+const RC_KINDS=[["consultation","Consultation"],["visite","Visite à domicile"],["attestation","Attestation"],["certificat","Certificat"],["vaccin","Vaccin"],["autre","Autre"]];
+const PI_FIELDS=[["presence","Jours et heures de présence"],["consult","Consultations proposées"],["pas","Ce qu'il/elle ne fait pas, à savoir"],["duree","Durée des rendez-vous"],["tarifs","Tarifs"],["convention","Conventionné(e) ?"],["langues","Langues parlées"],["contact","Contact professionnel"],["autres","Autres informations"]];
+const canEditCI = () => isAdmin()||isGestion();
+SI.idcard='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M6.5 16c.6-1.5 1.5-2 2.5-2s1.9.5 2.5 2M14 10h4M14 13h3"/></svg>';
+// montant en toutes lettres (ex. 50,00 → « cinquante euros »)
+function eurWords(n){
+  const U=["zéro","un","deux","trois","quatre","cinq","six","sept","huit","neuf","dix","onze","douze","treize","quatorze","quinze","seize"];
+  const T={20:"vingt",30:"trente",40:"quarante",50:"cinquante",60:"soixante"};
+  const lt100=x=>{ if(x<17) return U[x]; if(x<20) return "dix-"+U[x-10]; if(x<70){ const t=Math.floor(x/10)*10,u=x%10; return T[t]+(u===0?"":u===1?" et un":"-"+U[u]); }
+    if(x<80) return x===71?"soixante et onze":"soixante-"+lt100(x-60); if(x===80) return "quatre-vingts"; return "quatre-vingt-"+lt100(x-80); };
+  const lt1000=x=>{ const c=Math.floor(x/100), r=x%100; let s=c===0?"":c===1?"cent":U[c]+(r===0?" cents":" cent"); if(r) s+=(s?" ":"")+lt100(r); return s||"zéro"; };
+  const words=x=>{ if(x<1000) return lt1000(x); const m=Math.floor(x/1000), r=x%1000; return (m===1?"mille":lt1000(m)+" mille")+(r?" "+lt1000(r):""); };
+  const e=Math.floor(n+1e-9), c=Math.round((n-e)*100);
+  return `${words(e)} euro${e>1?"s":""}${c?` et ${words(c)} centime${c>1?"s":""}`:""}`;
+}
+let LOGO_PDF=null;
+async function logoForPdf(){ if(LOGO_PDF) return LOGO_PDF; try{ LOGO_PDF=await imageForPdf("logo.png"); }catch(e){ LOGO_PDF=null; } return LOGO_PDF; }
+// PDF A4 d'une page : reçu ou facture
+async function officePdf(doc){
+  const C=ci(), d=doc.data||{}, W=595.28, H=841.89, M=50, CW=W-2*M, ops=[];
+  const RED="0.439 0.149 0.161", GOLD="0.624 0.510 0.282", GREY="0.43 0.37 0.36", INK="0.17 0.11 0.11", CREAM="0.973 0.953 0.925";
+  let y=H-M;
+  const T=(t,x,size,{bold=false,color=INK,right=false}={})=>{ const s=winText(t); const xx=right?x-textW(s,size,bold):x; ops.push(`BT /${bold?"F2":"F1"} ${size} Tf ${color} rg ${xx.toFixed(2)} ${y.toFixed(2)} Td ${pdfStr(s)} Tj ET`); };
+  const P=(t,x,width,size,opt={})=>{ for(const l of wrapText(t,size,width,opt.bold)){ y-=size+3.5; T(l,x,size,opt); } };
+  const rect=(x,yy,w,h,fill)=>ops.push(`${fill} rg ${x.toFixed(2)} ${yy.toFixed(2)} ${w.toFixed(2)} ${h.toFixed(2)} re f`);
+  const line=(x1,y1,x2,y2,col="0.85 0.80 0.76",w=0.7)=>ops.push(`${col} RG ${w} w ${x1.toFixed(2)} ${y1.toFixed(2)} m ${x2.toFixed(2)} ${y2.toFixed(2)} l S`);
+  const logo=await logoForPdf();
+  // en-tête
+  if(logo) ops.push(`q 58 0 0 58 ${M} ${(H-M-58).toFixed(2)} cm /Im0 Do Q`);
+  const lx=logo?M+70:M; y=H-M-14;
+  T(C.nom,lx,14,{bold:true,color:RED}); y-=14; T(`${C.societe} · BCE ${C.bce}`,lx,9.5,{color:GREY});
+  y-=12; T(`${C.adresse}, ${C.cp_ville}`,lx,9.5,{color:GREY}); y-=12; T(`Tél. ${C.telephone} · ${C.email}${C.site?` · ${C.site}`:""}`,lx,9.5,{color:GREY});
+  const isR=doc.kind==="recu"; y=H-M-14;
+  T(isR?"REÇU":"FACTURE",W-M,22,{bold:true,color:RED,right:true}); y-=18; T(`N° ${doc.number}`,W-M,11,{bold:true,right:true});
+  y-=14; T(`Date : ${fmtDate(doc.doc_date+"T12:00")}`,W-M,10,{color:GREY,right:true});
+  y=H-M-80; line(M,y,W-M,y,GOLD,1.2); y-=26;
+  if(isR){
+    T("Reçu de",M,9.5,{color:GREY}); y-=4; P(doc.party,M,CW,13,{bold:true}); if(d.adresse) P(d.adresse,M,CW,10,{color:GREY});
+    y-=22; const bh=74; rect(M,y-bh+16,CW,bh,CREAM); y-=8;
+    T("Montant reçu",M+16,10,{color:GREY}); y-=24; T(eur(doc.amount),M+16,24,{bold:true,color:RED});
+    y-=18; T(`(${eurWords(Number(doc.amount))})`,M+16,10,{color:GREY}); y-=36;
+    const rows=[["Objet",[d.objet_label,d.precision].filter(Boolean).join(" · ")||"—"],["Prestataire",d.prestataire||"—"],["Moyen de paiement",doc.method||"—"],["Date du paiement",fmtDate(doc.doc_date+"T12:00")]];
+    for(const [k,v] of rows){ T(k,M,10.5,{color:GREY}); T(v,M+150,10.5,{bold:true}); y-=8; line(M,y,W-M,y); y-=16; }
+    if(d.remarque){ y-=4; T("Remarque",M,10,{color:GREY}); P(d.remarque,M,CW,10.5); y-=10; }
+    y-=18; T(`Pour le ${C.nom}`,M,10.5); y-=14; T(d.par||"",M,10.5,{bold:true});
+    T("Signature et cachet",W-M-170,9,{color:GREY}); ops.push(`0.80 0.75 0.70 RG 0.7 w ${W-M-170} ${(y-62).toFixed(2)} 170 56 re S`);
+    y-=96; P("Ce reçu atteste du paiement de la somme indiquée ci-dessus. Il ne remplace pas l'attestation de soins (ou l'eAttest) nécessaire au remboursement par la mutuelle.",M,CW,9,{color:GREY});
+  } else {
+    T("Facturé à",M,9.5,{color:GREY}); const y0=y; y-=4; P(doc.party,M,CW/2,11.5,{bold:true});
+    const yAfter=y; y=y0; T("Échéance",W-M-150,9.5,{color:GREY}); y-=16; T(d.echeance?fmtDate(d.echeance+"T12:00"):"À réception",W-M-150,11.5,{bold:true});
+    y=Math.min(yAfter,y)-20;
+    if(d.objet){ T("Objet : ",M,10.5,{color:GREY}); const ow=textW("Objet : ",10.5); const keep=y; y+=0; T(d.objet,M+ow,10.5,{bold:true}); y=keep-20; }
+    rect(M,y-6,CW,22,RED); y+=1; T("Description",M+10,10,{bold:true,color:"1 1 1"}); T("Montant",W-M-10,10,{bold:true,color:"1 1 1",right:true}); y-=24;
+    for(const l of (d.lignes||[])){ const lines=wrapText(l.texte||"",10.5,CW-130,false); const top=y;
+      lines.forEach((t,i)=>{ T(t,M+10,10.5); if(i===0) T(eur(l.montant),W-M-10,10.5,{right:true}); if(i<lines.length-1) y-=14; });
+      y-=10; line(M,y,W-M,y); y-=16; }
+    y-=4; rect(W-M-220,y-8,220,26,CREAM); y+=1; T("Total à payer",W-M-210,11,{bold:true}); T(eur(doc.amount),W-M-10,13,{bold:true,color:RED,right:true}); y-=34;
+    if(d.tva) { T("Prestations exonérées de TVA (article 44 du Code de la TVA).",M,9.5,{color:GREY}); y-=18; }
+    if(d.notes){ P(d.notes,M,CW,10.5); y-=14; }
+    y-=6; rect(M,y-50,CW,62,CREAM); y-=2;
+    T("Paiement",M+12,10,{bold:true,color:RED}); y-=15;
+    T(`Par virement sur le compte ${C.iban}${C.bic?` (BIC ${C.bic})`:""} au nom de ${C.societe}`,M+12,10); y-=14;
+    T(`Communication : ${doc.number}`,M+12,10,{bold:true}); y-=14;
+    T(`Merci de payer ${d.echeance?"avant le "+fmtDate(d.echeance+"T12:00"):"à réception de la facture"}.`,M+12,10,{color:GREY});
+  }
+  // pied de page
+  y=M+10; line(M,M+22,W-M,M+22);
+  T(`${C.nom} · ${C.societe} · BCE ${C.bce} · IBAN ${C.iban}`,M,8.5,{color:GREY}); y-=11; T(`${C.adresse}, ${C.cp_ville} · ${C.telephone} · ${C.email}`,M,8.5,{color:GREY});
+  // assemblage
+  const parts=[], offs=[]; let len=0;
+  const bytes=s=>{ const u=new Uint8Array(s.length); for(let i=0;i<s.length;i++) u[i]=s.charCodeAt(i)&255; return u; };
+  const push=x=>{ const b=typeof x==="string"?bytes(x):x; parts.push(b); len+=b.length; };
+  const obj=(n,body)=>{ offs[n]=len; push(`${n} 0 obj\n`); body(); push("\nendobj\n"); };
+  push("%PDF-1.4\n%\xE2\xE3\xCF\xD3\n");
+  const cs=ops.join("\n"), total=logo?8:7;
+  obj(1,()=>push("<< /Type /Catalog /Pages 2 0 R >>"));
+  obj(2,()=>push("<< /Type /Pages /Kids [5 0 R] /Count 1 >>"));
+  obj(3,()=>push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>"));
+  obj(4,()=>push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>"));
+  obj(5,()=>push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${W} ${H}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >>${logo?" /XObject << /Im0 7 0 R >>":""} >> /Contents 6 0 R >>`));
+  obj(6,()=>push(`<< /Length ${cs.length} >>\nstream\n${cs}\nendstream`));
+  if(logo) obj(7,()=>{ push(`<< /Type /XObject /Subtype /Image /Width ${logo.w} /Height ${logo.h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${logo.data.length} >>\nstream\n`); push(logo.data); push("\nendstream"); });
+  const xref=len; let x=`xref\n0 ${total}\n0000000000 65535 f \n`; for(let n=1;n<total;n++) x+=String(offs[n]).padStart(10,"0")+" 00000 n \n";
+  push(x+`trailer\n<< /Size ${total} /Root 1 0 R /Info << /Title ${pdfStr(winText((isR?"Reçu ":"Facture ")+doc.number))} /Author ${pdfStr(winText(C.nom))} >> >>\nstartxref\n${xref}\n%%EOF`);
+  return new Blob(parts,{type:"application/pdf"});
+}
+// ouvrir pour imprimer (ordinateur : nouvel onglet ; téléphone : aperçu / partage)
+async function openPdf(blob,name){
+  if(IS_NATIVE&&SEC()){ try{ await nativePreview(blob,name); return; }catch(e){ console.error(e); } }
+  if(matchMedia("(pointer:coarse)").matches) return saveFile(blob,name);
+  const u=URL.createObjectURL(blob), w=window.open(u,"_blank","noopener"); if(!w) saveFile(blob,name); setTimeout(()=>URL.revokeObjectURL(u),120000);
+}
+const docFileName = d => `${d.kind==="recu"?"Recu":"Facture"}-${d.number}.pdf`;
+async function loadInfos(){
+  const [c,dc,pi,se]=await Promise.all([
+    sb.from("center_info").select("data").maybeSingle(),
+    sb.from("office_docs").select("id,kind,year,seq,number,doc_date,party,amount,method,data,created_by,created_at,cancelled_at,cancelled_by,cancel_reason").order("created_at",{ascending:false}).limit(500),
+    sb.from("provider_info").select("*"),
+    canOffice()?sb.from("office_secrets").select("id,label,url,username,notes,updated_by,updated_at").order("label"):Promise.resolve({data:[]})]);
+  S.infoOk=!c.error; if(c.data) S.centerInfo=c.data.data;
+  S.offDocs=dc.error?[]:(dc.data||[]); S.provInfo={}; (pi.data||[]).forEach(r=>S.provInfo[r.provider_id]=r);
+  S.secrets=se.error?[]:(se.data||[]); S.infoLoaded=true;
+}
+const INFO_TABS=()=>[["coord","🏥","Coordonnées"],["recu","🧾","Reçu"],["facture","📄","Facture"],["docs","🗂️","Documents"],["prest","👩‍⚕️","Prestataires"],...(canOffice()?[["mdp","🔑","Mots de passe"]]:[])];
+function infosHTML(){
+  const I=S.inf||(S.inf={tab:"coord"});
+  if(!INFO_TABS().some(t=>t[0]===I.tab)) I.tab="coord";
+  const head=`<div class="chead"><div><h1>Infos et documents</h1><p>Tout ce qu'il faut à l'accueil : coordonnées du centre, reçus et factures, infos des prestataires${canOffice()?", mots de passe":""}.</p></div></div>
+   <div class="stktabs inftabs" role="tablist">${INFO_TABS().map(([k,ic,l])=>`<button type="button" role="tab" class="stktab" data-inftab="${k}" aria-selected="${I.tab===k}"><span aria-hidden="true">${ic}</span>${l}${k==="docs"&&S.offDocs?.length?` <i>${S.offDocs.length}</i>`:""}</button>`).join("")}</div>`;
+  if(!S.infoLoaded) return head+`<div class="empty">Chargement…</div>`;
+  if(!S.infoOk) return head+`<p class="hint">Cette rubrique sera disponible après la mise à jour du serveur (migration 064).</p>`;
+  const body={coord:coordHTML,recu:recuHTML,facture:factureHTML,docs:docsHTML,prest:prestHTML,mdp:mdpHTML}[I.tab]();
+  return head+`<div class="infbody">${body}</div>`;
+}
+/* --- coordonnées --- */
+function coordHTML(){
+  const C=ci(), I=S.inf;
+  if(I.editCI) return `<section class="card"><h3>Modifier les coordonnées</h3><div class="stkform">${CI_FIELDS.map(([k,l])=>`<label class="fld ${k==="horaires"||k==="adresse"?"grow":""}">${l}<input data-ci="${k}" value="${esc(C[k]||"")}" maxlength="160"></label>`).join("")}</div>
+    <div class="btnrow"><button class="btn" id="ci-save">Enregistrer</button><button class="btn ghost" id="ci-x">Annuler</button></div>
+    <p class="hint">Ces informations apparaissent sur les reçus et les factures créés ensuite.</p></section>`;
+  const row=(l,v,mono)=>v?`<div class="cirow"><span>${l}</span><b class="${mono?"mono":""}">${esc(v)}</b><button type="button" class="mini ghostmini" data-copy="${esc(v)}">Copier</button></div>`:"";
+  return `<div class="cigrid">
+   <section class="card"><h3>Le centre</h3>${row("Nom",C.nom)}${row("Adresse",`${C.adresse}, ${C.cp_ville}`)}${row("Téléphone",C.telephone)}${row("E-mail",C.email)}${row("Site",C.site)}${row("Heures",C.horaires)}
+    <div class="btnrow"><button type="button" class="btn ghost" data-copy="${esc(`${C.nom}\n${C.adresse}\n${C.cp_ville}\nTél. ${C.telephone}\n${C.email}${C.site?"\n"+C.site:""}`)}">Copier l'adresse complète</button></div></section>
+   <section class="card"><h3>Société et banque</h3>${row("Société",C.societe)}${row("BCE",C.bce,true)}${row("N° de TVA",C.bce?"BE"+C.bce.replace(/\D/g,""):"",true)}${row("IBAN",C.iban,true)}${row("BIC",C.bic,true)}
+    <div class="btnrow"><button type="button" class="btn" data-copy="${esc(`${C.societe} (${C.nom})\nBCE ${C.bce}\nIBAN ${C.iban}${C.bic?"\nBIC "+C.bic:""}\n${C.adresse}, ${C.cp_ville}`)}">Copier pour un fournisseur ou un patient</button></div></section></div>
+   ${canEditCI()?`<button type="button" class="linkbtn" id="ci-edit">Modifier les coordonnées</button>`:`<p class="hint">Une erreur ? Demandez à l'administrateur de la corriger.</p>`}`;
+}
+/* --- reçu --- */
+const newRecu = () => ({party:"",adresse:"",amount:"",method:"Espèces",date:todayISO(),kind:"consultation",precision:"",prov:"",remarque:"",cash:true,q:[]});
+function recuHTML(){
+  const R=S.inf.recu||(S.inf.recu=newRecu());
+  if(S.inf.done) return doneHTML(S.inf.done);
+  const provs=(S.providers||[]).filter(p=>p.active!==false);
+  return `<section class="card docform"><h3>Nouveau reçu</h3>
+   <div class="stkform">
+    <label class="fld grow">Nom du patient<input id="rc-party" value="${esc(R.party)}" maxlength="120" autocomplete="off" placeholder="Prénom et nom"></label>
+    <label class="fld">Date<input id="rc-date" type="date" value="${esc(R.date)}" max="${todayISO()}"></label></div>
+   <div id="rc-sugg" class="rcsugg"></div>
+   <label class="fld">Adresse du patient (facultatif)<textarea id="rc-addr" rows="2" maxlength="200">${esc(R.adresse)}</textarea></label>
+   <div class="stkform">
+    <label class="fld">Montant (€)<input id="rc-amount" inputmode="decimal" value="${esc(R.amount)}" placeholder="0,00" class="bigin"></label>
+    <div class="fld grow">Moyen de paiement<div class="pchips">${PAY_METHODS.map(m=>`<button type="button" class="pchip" data-pay="${m}" aria-pressed="${R.method===m}">${m}</button>`).join("")}</div></div></div>
+   <div class="stkform">
+    <label class="fld">Objet<select id="rc-kind">${RC_KINDS.map(([k,l])=>`<option value="${k}" ${R.kind===k?"selected":""}>${l}</option>`).join("")}</select></label>
+    <label class="fld grow">Précision (facultatif)<input id="rc-prec" value="${esc(R.precision)}" maxlength="120" placeholder="Ex. consultation du 2 novembre"></label>
+    <label class="fld">Prestataire<select id="rc-prov"><option value="">—</option>${provs.map(p=>`<option value="${p.id}" ${R.prov===p.id?"selected":""}>${esc(p.display_name)}</option>`).join("")}</select></label></div>
+   <label class="fld">Remarque (facultatif)<input id="rc-rem" value="${esc(R.remarque)}" maxlength="200"></label>
+   ${R.method==="Espèces"&&canOffice()?`<label class="chk2"><input type="checkbox" id="rc-cash" ${R.cash?"checked":""}> <span>Ajouter aussi ce paiement à la <b>Caisse</b> du jour</span></label>`:""}
+   <div class="btnrow"><button class="btn" id="rc-go">🧾 Créer le reçu (PDF)</button><button type="button" class="linkbtn" id="rc-reset">Effacer</button></div>
+   <p class="hint">Le reçu reçoit un numéro (R-${new Date().getFullYear()}-…) et reste dans « Documents ». Il ne remplace pas l'attestation de soins pour la mutuelle.</p></section>`;
+}
+/* --- facture --- */
+const newFact = () => ({party:"",objet:"",date:todayISO(),echeance:addDays(todayISO(),30),lignes:[{texte:"",montant:""}],notes:"",tva:true});
+function factureHTML(){
+  const F=S.inf.fact||(S.inf.fact=newFact());
+  if(S.inf.done) return doneHTML(S.inf.done);
+  const tot=F.lignes.reduce((a,l)=>a+(numIn(l.montant)||0),0);
+  return `<section class="card docform"><h3>Nouvelle facture</h3>
+   <div class="stkform">
+    <label class="fld grow">Destinataire (nom, adresse, n° d'entreprise…)<textarea id="fc-party" rows="3" maxlength="300" placeholder="Ex. Mutualité X&#10;Rue …&#10;1000 Bruxelles">${esc(F.party)}</textarea></label>
+    <div class="fld"><label class="fld">Date<input id="fc-date" type="date" value="${esc(F.date)}"></label><label class="fld">Échéance<input id="fc-due" type="date" value="${esc(F.echeance)}"></label></div></div>
+   <label class="fld">Objet (facultatif)<input id="fc-obj" value="${esc(F.objet)}" maxlength="140" placeholder="Ex. Rapport médical demandé le …"></label>
+   <div class="fclines">${F.lignes.map((l,i)=>`<div class="fcline"><input data-fl="${i}" data-k="texte" value="${esc(l.texte)}" maxlength="200" placeholder="Description" aria-label="Description ligne ${i+1}"><input data-fl="${i}" data-k="montant" value="${esc(l.montant)}" inputmode="decimal" placeholder="0,00 €" aria-label="Montant ligne ${i+1}" class="fcamt">${F.lignes.length>1?`<button type="button" class="cbtn sm" data-fldel="${i}" aria-label="Retirer la ligne">✕</button>`:""}</div>`).join("")}
+    <div class="fcfoot">${F.lignes.length<12?`<button type="button" class="linkbtn" id="fc-add">+ Ajouter une ligne</button>`:"<span></span>"}<b id="fc-tot">Total : ${eur(tot)}</b></div></div>
+   <label class="fld">Texte libre (facultatif)<textarea id="fc-notes" rows="3" maxlength="800" placeholder="Conditions, précisions, référence du dossier…">${esc(F.notes)}</textarea></label>
+   <label class="chk2"><input type="checkbox" id="fc-tva" ${F.tva?"checked":""}> <span>Ajouter la mention « exonéré de TVA (article 44 du Code de la TVA) » <small class="hint">(prestations médicales)</small></span></label>
+   <div class="btnrow"><button class="btn" id="fc-go">📄 Créer la facture (PDF)</button><button type="button" class="linkbtn" id="fc-reset">Effacer</button></div>
+   <p class="hint">La facture reçoit un numéro (F-${new Date().getFullYear()}-…), la communication de paiement et l'IBAN du centre. Elle reste dans « Documents ».</p></section>`;
+}
+function doneHTML(dc){
+  return `<section class="card docdone"><div class="ddicon" aria-hidden="true">✓</div><h3>${dc.kind==="recu"?"Reçu":"Facture"} ${esc(dc.number)} créé${dc.kind==="facture"?"e":""}</h3>
+   <p>${esc(dc.party.split("\n")[0])} · <b>${eur(dc.amount)}</b>${dc.method?` · ${esc(dc.method)}`:""}</p>
+   <div class="btnrow"><button class="btn" data-docopen="${dc.id}">🖨️ Ouvrir pour imprimer</button><button class="btn ghost" data-docsave="${dc.id}">Enregistrer le PDF</button><button class="btn ghost" id="doc-new">${dc.kind==="recu"?"Nouveau reçu":"Nouvelle facture"}</button></div>
+   <p class="hint">Retrouvez-le à tout moment dans l'onglet « Documents ».${dc.cash?" Le paiement a aussi été ajouté à la Caisse.":""}</p></section>`;
+}
+/* --- documents créés --- */
+function docsHTML(){
+  const I=S.inf, f=I.dfil||"tout", q=norm(I.dq||"").split(/\s+/).filter(Boolean);
+  const L=(S.offDocs||[]).filter(d=>f==="tout"||d.kind===f).filter(d=>!q.length||q.every(w=>norm(`${d.number} ${d.party} ${d.method||""} ${eur(d.amount)}`).includes(w)));
+  return `<div class="stktools"><input id="doc-q" type="search" class="pcq" placeholder="Rechercher : nom, numéro, montant…" value="${esc(I.dq||"")}" aria-label="Rechercher un document">
+    <div class="pchips">${[["tout","Tous"],["recu","Reçus"],["facture","Factures"]].map(([k,l])=>`<button type="button" class="pchip" data-dfil="${k}" aria-pressed="${f===k}">${l}</button>`).join("")}</div></div>
+   <div class="list doclist">${L.map(d=>`<div class="docrow${d.cancelled_at?" cancelled":""}"><div class="dic" aria-hidden="true">${d.kind==="recu"?"🧾":"📄"}</div>
+     <div class="dtx"><b>${esc(d.number)} · ${esc(d.party.split("\n")[0])}</b><small>${fmtDate(d.doc_date+"T12:00")} · ${eur(d.amount)}${d.method?` · ${esc(d.method)}`:""} · par ${esc(teamName(d.created_by))}${d.cancelled_at?` · <b class="stkst exp">Annulé</b> ${esc(d.cancel_reason||"")}`:""}</small></div>
+     <div class="dacts"><button type="button" class="mini" data-docopen="${d.id}">Ouvrir</button>${d.cancelled_at?"":`<button type="button" class="linkbtn" data-doccancel="${d.id}">Annuler</button>`}</div>
+     ${I.cancel===d.id?`<div class="doccancel"><input id="dc-reason" maxlength="300" placeholder="Pourquoi ? (ex. erreur de montant)"><button type="button" class="btn ghost" id="dc-ok">Confirmer l'annulation</button></div>`:""}</div>`).join("")||`<div class="empty">${q.length?"Rien ne correspond.":"Aucun document pour l'instant."}</div>`}</div>
+   <p class="hint">Un reçu ou une facture ne s'efface pas : en cas d'erreur, annulez-le (il reste visible, barré) et créez-en un nouveau. Gardés 10 ans.</p>`;
+}
+/* --- prestataires --- */
+function prestHTML(){
+  const I=S.inf, provs=(S.providers||[]).filter(p=>p.active!==false).slice().sort((a,b)=>a.sort_order-b.sort_order);
+  const p=provs.find(x=>x.id===I.prov)||null, inf=p?(S.provInfo?.[p.id]?.data||{}):{};
+  const canEd=p&&(canOffice()||S.me.provider_id===p.id);
+  let card="";
+  if(p&&I.editProv===p.id) card=`<section class="card"><h3>${esc(p.display_name)} : modifier les infos</h3>${PI_FIELDS.map(([k,l])=>`<label class="fld">${l}<textarea data-pi="${k}" rows="2" maxlength="600">${esc(inf[k]||"")}</textarea></label>`).join("")}
+     <div class="btnrow"><button class="btn" id="pi-save">Enregistrer</button><button class="btn ghost" id="pi-x">Annuler</button></div></section>`;
+  else if(p){ const abs=typeof soonAbs==="function"?soonAbs(p.id):null, upd=S.provInfo?.[p.id];
+    card=`<section class="card provcard"><div class="pchead">${PAV.get(p.id)?avatarHTML(PAV.get(p.id),"",56):`<span class="tav" style="background:${avColor(p.id)};width:56px;height:56px">${esc(initials(p.display_name))}</span>`}
+      <div><h3>${esc(p.display_name)}</h3><p class="hint">${esc(p.job)} · ${esc(p.specialty)}</p></div></div>
+      <div class="pcflags">${p.direct_contact===false?`<span class="ipill">Les demandes des patients passent par le secrétariat</span>`:`<span class="ipill ok">Les patients peuvent lui écrire directement</span>`}${p.rosa_slug?`<a class="ipill" href="https://rosa.be/fr/org/org-el-mourad/" target="_blank" rel="noopener">Rendez-vous en ligne sur Rosa ↗</a>`:`<span class="ipill">Pas de rendez-vous en ligne (Rosa)</span>`}${abs?`<span class="ipill no">${esc(absSentence(p.display_name,abs))}</span>`:""}</div>
+      ${PI_FIELDS.some(([k])=>inf[k])?`<dl class="pidl">${PI_FIELDS.filter(([k])=>inf[k]).map(([k,l])=>`<dt>${l}</dt><dd>${esc(inf[k])}</dd>`).join("")}</dl>`:`<p class="hint">Aucune information encore.${canEd?" Touchez « Modifier » pour la compléter.":""}</p>`}
+      <div class="btnrow">${canEd?`<button class="btn ghost" id="pi-edit">Modifier</button>`:""}${upd?`<small class="hint">Mis à jour par ${esc(teamName(upd.updated_by))} ${fmt(upd.updated_at)}</small>`:""}</div></section>`; }
+  return `<label class="fld provpick">Choisissez un prestataire<select id="pi-sel"><option value="">— Prestataire —</option>${provs.map(x=>`<option value="${x.id}" ${x.id===I.prov?"selected":""}>${esc(x.display_name)} · ${esc(x.specialty)}</option>`).join("")}</select></label>${card}`;
+}
+/* --- mots de passe --- */
+function mdpHTML(){
+  const I=S.inf, E=I.mdpEdit;
+  const form=E?`<section class="card"><h3>${E.id?"Modifier":"Ajouter un site"}</h3><div class="stkform">
+     <label class="fld grow">Nom (site, logiciel…)<input id="pw-label" value="${esc(E.label||"")}" maxlength="80" placeholder="Ex. Rosa, MyCareNet, Brevo"></label>
+     <label class="fld grow">Adresse du site<input id="pw-url" value="${esc(E.url||"")}" maxlength="300" placeholder="https://…" inputmode="url"></label></div>
+    <div class="stkform"><label class="fld grow">Identifiant<input id="pw-user" value="${esc(E.username||"")}" maxlength="160" autocomplete="off"></label>
+     <label class="fld grow">Mot de passe${E.id?" (laisser vide pour ne pas le changer)":""}<input id="pw-pass" type="password" maxlength="300" autocomplete="new-password"></label></div>
+    <label class="fld">Remarque<input id="pw-notes" value="${esc(E.notes||"")}" maxlength="500" placeholder="Ex. code reçu par SMS sur le téléphone de l'accueil"></label>
+    <div class="btnrow"><button class="btn" id="pw-save">Enregistrer</button><button class="btn ghost" id="pw-x">Annuler</button></div></section>`:"";
+  return `${form}${E?"":`<div class="btnrow"><button class="btn" id="pw-new">+ Ajouter un site</button>${isAdmin()?`<button type="button" class="linkbtn" id="pw-log">Journal des consultations</button>`:""}</div>`}
+   <div class="pwlist">${(S.secrets||[]).map(s=>`<section class="card pwcard"><div class="pwhd"><b>${esc(s.label)}</b>${s.url?`<a href="${esc(/^https?:/.test(s.url)?s.url:"https://"+s.url)}" target="_blank" rel="noopener" class="linkbtn">Ouvrir le site ↗</a>`:""}</div>
+     ${s.username?`<div class="cirow"><span>Identifiant</span><b class="mono">${esc(s.username)}</b><button type="button" class="mini ghostmini" data-copy="${esc(s.username)}">Copier</button></div>`:""}
+     <div class="cirow"><span>Mot de passe</span><b class="mono" data-pwshow="${s.id}">••••••••</b><span class="pwbtns"><button type="button" class="mini ghostmini" data-pwreveal="${s.id}">Afficher</button><button type="button" class="mini ghostmini" data-pwcopy="${s.id}">Copier</button></span></div>
+     ${s.notes?`<p class="hint">${esc(s.notes)}</p>`:""}
+     <div class="btnrow"><button type="button" class="linkbtn" data-pwedit="${s.id}">Modifier</button><button type="button" class="linkbtn" data-pwdel="${s.id}">Supprimer</button><small class="hint">Modifié par ${esc(teamName(s.updated_by))} ${fmt(s.updated_at)}</small></div></section>`).join("")||(E?"":`<div class="empty">Aucun mot de passe enregistré.</div>`)}</div>
+   ${I.log?`<section class="card"><h3>Journal (50 dernières actions)</h3><div class="list">${I.log.map(l=>`<div class="medrow"><div></div><div><b>${esc(l.label||"")}</b><small>${esc(l.action)} par ${esc(teamName(l.user_id))} · ${fmt(l.at)}</small></div><span></span></div>`).join("")||`<p class="hint">Rien pour l'instant.</p>`}</div></section>`:""}
+   <p class="hint">Les mots de passe sont chiffrés dans le coffre-fort du serveur et ne sont visibles que par le secrétariat, l'administration et l'administrateur. Chaque affichage est noté. Ne les recopiez pas ailleurs.</p>`;
+}
+/* --- liaisons --- */
+async function copyText(t){ try{ await navigator.clipboard.writeText(t); toast("Copié"); }catch(e){ toast("La copie n'a pas pu être faite."); } }
+async function docPdfBlob(d){
+  const {data,error}=await sb.rpc("get_office_doc_pdf",{p_id:d.id});
+  if(!error&&data){ const bin=atob(data), u8=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u8[i]=bin.charCodeAt(i); return new Blob([u8],{type:"application/pdf"}); }
+  return officePdf(d);   // PDF pas encore enregistré : on le refait à partir des données
+}
+async function createDoc(kind,doc,extra){
+  const {data,error}=await sb.rpc("create_office_doc",{p_kind:kind,p_date:doc.doc_date,p_party:doc.party,p_amount:doc.amount,p_method:doc.method||null,p_data:doc.data});
+  if(error){ toast(frError(error)); return null; }
+  const row=Array.isArray(data)?data[0]:data, d={...doc,kind,id:row.id,number:row.number,created_by:S.me.id,created_at:new Date().toISOString()};
+  try{ const blob=await officePdf(d); d.blob=blob; const b64=await blobToB64(blob); const r=await sb.rpc("set_office_doc_pdf",{p_id:d.id,p_pdf:b64}); if(r.error) console.error(r.error); }
+  catch(e){ console.error(e); toast("Le document est créé, mais le PDF n'a pas pu être enregistré. Il sera refait à l'ouverture."); }
+  if(extra) await extra(d);
+  S.offDocs=[d,...(S.offDocs||[])]; return d;
+}
+function bindInfos(){
+  if(!S.infoLoaded){ loadInfos().then(()=>{ if(S.cscreen==="infos") render(); }); }
+  const I=S.inf;
+  $$("[data-inftab]").forEach(b=>b.onclick=()=>{ I.tab=b.dataset.inftab; I.done=null; render(); });
+  $$("[data-copy]").forEach(b=>b.onclick=()=>copyText(b.dataset.copy));
+  $$("[data-docopen],[data-docsave]").forEach(b=>b.onclick=async()=>{ const id=+(b.dataset.docopen||b.dataset.docsave), d=(S.offDocs||[]).find(x=>x.id===id); if(!d) return; b.disabled=true;
+    try{ const blob=d.blob||await docPdfBlob(d); if(b.dataset.docsave) await saveFile(blob,docFileName(d)); else await openPdf(blob,docFileName(d)); }catch(e){ toast("Le PDF n'a pas pu être ouvert."); } finally{ b.disabled=false; } });
+  const dn=$("#doc-new"); if(dn) dn.onclick=()=>{ I.done=null; if(I.tab==="recu") I.recu=newRecu(); else I.fact=newFact(); render(); };
+  if(!S.infoLoaded||!S.infoOk) return;
+  // coordonnées
+  const ce=$("#ci-edit"); if(ce) ce.onclick=()=>{ I.editCI=true; render(); };
+  const cx=$("#ci-x"); if(cx) cx.onclick=()=>{ I.editCI=false; render(); };
+  const cs=$("#ci-save"); if(cs) cs.onclick=async()=>{ const data={...ci()}; $$("[data-ci]").forEach(i=>data[i.dataset.ci]=i.value.trim());
+    if(await run(()=>sb.rpc("set_center_info",{p_data:data}),"Coordonnées enregistrées")){ S.centerInfo=data; I.editCI=false; render(); } };
+  // reçu
+  const R=I.recu;
+  if(I.tab==="recu"&&R&&!I.done){
+    const keep=()=>{ R.party=$("#rc-party").value; R.adresse=$("#rc-addr").value; R.amount=$("#rc-amount").value; R.date=$("#rc-date").value||todayISO(); R.kind=$("#rc-kind").value; R.precision=$("#rc-prec").value; R.prov=$("#rc-prov").value; R.remarque=$("#rc-rem").value; const c=$("#rc-cash"); if(c) R.cash=c.checked; };
+    $$("#rc-party,#rc-addr,#rc-amount,#rc-date,#rc-kind,#rc-prec,#rc-prov,#rc-rem,#rc-cash").forEach(el=>el.addEventListener("change",keep));
+    $$("[data-pay]").forEach(b=>b.onclick=()=>{ keep(); R.method=b.dataset.pay; render(); });
+    const pin=$("#rc-party"); let tm; pin.oninput=()=>{ R.party=pin.value; clearTimeout(tm); tm=setTimeout(async()=>{ const words=norm(pin.value).replace(/[*%,().]/g," ").split(/\s+/).filter(w=>w.length>=2), box=$("#rc-sugg"); if(!box) return;
+      if(!words.length){ box.innerHTML=""; return; } const rows=(await searchPatients(words))||[];
+      box.innerHTML=rows.slice(0,6).map((p,i)=>`<button type="button" class="pchip" data-sg="${i}">${esc(`${p.first_name||""} ${p.last_name||""}`)}${p.birth_date?` <small>${fmtDate(p.birth_date)}</small>`:""}</button>`).join("");
+      box.querySelectorAll("[data-sg]").forEach(b=>b.onclick=()=>{ const p=rows[+b.dataset.sg]; pin.value=R.party=`${p.first_name||""} ${p.last_name||""}`.trim(); box.innerHTML=""; $("#rc-amount").focus(); }); },300); };
+    $("#rc-reset").onclick=()=>{ I.recu=newRecu(); render(); };
+    $("#rc-go").onclick=async e=>{ keep(); const amt=numIn(R.amount);
+      if(!R.party.trim()) return toast("Indiquez le nom du patient.");
+      if(amt==null||Number.isNaN(amt)||amt<=0) return toast("Indiquez le montant reçu.");
+      const btn=e.target; btn.disabled=true; btn.textContent="Création…";
+      const pv=P.byId(R.prov), kl=(RC_KINDS.find(k=>k[0]===R.kind)||[])[1];
+      const doc={doc_date:R.date,party:R.party.trim(),amount:amt,method:R.method,data:{adresse:R.adresse.trim(),objet:R.kind,objet_label:kl,precision:R.precision.trim(),prestataire:pv?.display_name||"",provider_id:R.prov||null,remarque:R.remarque.trim(),par:`${S.me.first_name||""} ${S.me.last_name||""}`.trim()}};
+      const withCash=R.method==="Espèces"&&canOffice()&&R.cash;
+      const d=await createDoc("recu",doc,async d=>{ if(withCash){ const r=await sb.rpc("add_cash",{p_day:R.date,p_amount:amt,p_provider:R.prov||null,p_kind:R.kind,p_note:`Reçu ${d.number}`}); if(r.error) toast("Reçu créé, mais pas ajouté à la Caisse : "+frError(r.error)); else d.cash=true; } });
+      if(!d){ btn.disabled=false; btn.textContent="🧾 Créer le reçu (PDF)"; return; }
+      I.done=d; I.recu=newRecu(); render(); toast(`Reçu ${d.number} créé`); };
+  }
+  // facture
+  const F=I.fact;
+  if(I.tab==="facture"&&F&&!I.done){
+    const keep=()=>{ F.party=$("#fc-party").value; F.objet=$("#fc-obj").value; F.date=$("#fc-date").value||todayISO(); F.echeance=$("#fc-due").value; F.notes=$("#fc-notes").value; F.tva=$("#fc-tva").checked;
+      $$("[data-fl]").forEach(i=>{ F.lignes[+i.dataset.fl][i.dataset.k]=i.value; }); };
+    const tot=()=>{ keep(); const t=F.lignes.reduce((a,l)=>a+(numIn(l.montant)||0),0); $("#fc-tot").textContent="Total : "+eur(t); };
+    $$("[data-fl]").forEach(i=>i.oninput=tot);
+    $$("#fc-party,#fc-obj,#fc-date,#fc-due,#fc-notes,#fc-tva").forEach(el=>el.addEventListener("change",keep));
+    const ad=$("#fc-add"); if(ad) ad.onclick=()=>{ keep(); F.lignes.push({texte:"",montant:""}); render(); const l=$$("[data-k=texte]"); l[l.length-1]?.focus(); };
+    $$("[data-fldel]").forEach(b=>b.onclick=()=>{ keep(); F.lignes.splice(+b.dataset.fldel,1); render(); });
+    $("#fc-reset").onclick=()=>{ I.fact=newFact(); render(); };
+    $("#fc-go").onclick=async e=>{ keep();
+      const lignes=F.lignes.map(l=>({texte:l.texte.trim(),montant:numIn(l.montant)})).filter(l=>l.texte||l.montant);
+      if(!F.party.trim()) return toast("Indiquez le destinataire de la facture.");
+      if(!lignes.length) return toast("Ajoutez au moins une ligne (description et montant).");
+      if(lignes.some(l=>l.montant==null||Number.isNaN(l.montant))) return toast("Chaque ligne doit avoir un montant.");
+      if(lignes.some(l=>!l.texte)) return toast("Chaque ligne doit avoir une description.");
+      const total=Math.round(lignes.reduce((a,l)=>a+l.montant,0)*100)/100;
+      const btn=e.target; btn.disabled=true; btn.textContent="Création…";
+      const d=await createDoc("facture",{doc_date:F.date,party:F.party.trim(),amount:total,method:"Virement",data:{objet:F.objet.trim(),echeance:F.echeance||null,lignes,notes:F.notes.trim(),tva:F.tva,par:`${S.me.first_name||""} ${S.me.last_name||""}`.trim()}});
+      if(!d){ btn.disabled=false; btn.textContent="📄 Créer la facture (PDF)"; return; }
+      I.done=d; I.fact=newFact(); render(); toast(`Facture ${d.number} créée`); };
+  }
+  // documents
+  const dq=$("#doc-q"); if(dq){ let t; dq.oninput=()=>{ clearTimeout(t); t=setTimeout(()=>{ I.dq=dq.value; render(); const n=$("#doc-q"); n.focus(); n.setSelectionRange(n.value.length,n.value.length); },250); }; }
+  $$("[data-dfil]").forEach(b=>b.onclick=()=>{ I.dfil=b.dataset.dfil; render(); });
+  $$("[data-doccancel]").forEach(b=>b.onclick=()=>{ I.cancel=+b.dataset.doccancel; render(); $("#dc-reason")?.focus(); });
+  const dok=$("#dc-ok"); if(dok) dok.onclick=async()=>{ const r=$("#dc-reason").value.trim(); if(!r) return toast("Indiquez pourquoi.");
+    if(await run(()=>sb.rpc("cancel_office_doc",{p_id:I.cancel,p_reason:r}),"Document annulé")){ const d=S.offDocs.find(x=>x.id===I.cancel); if(d){ d.cancelled_at=new Date().toISOString(); d.cancel_reason=r; d.cancelled_by=S.me.id; } I.cancel=null; render(); } };
+  // prestataires
+  const ps=$("#pi-sel"); if(ps) ps.onchange=()=>{ I.prov=ps.value||null; I.editProv=null; render(); };
+  const pe=$("#pi-edit"); if(pe) pe.onclick=()=>{ I.editProv=I.prov; render(); };
+  const px=$("#pi-x"); if(px) px.onclick=()=>{ I.editProv=null; render(); };
+  const pv=$("#pi-save"); if(pv) pv.onclick=async()=>{ const data={}; $$("[data-pi]").forEach(t=>{ if(t.value.trim()) data[t.dataset.pi]=t.value.trim(); });
+    if(await run(()=>sb.rpc("set_provider_info",{p_provider:I.prov,p_data:data}),"Infos enregistrées")){ S.provInfo[I.prov]={provider_id:I.prov,data,updated_by:S.me.id,updated_at:new Date().toISOString()}; I.editProv=null; render(); } };
+  // mots de passe
+  const nw=$("#pw-new"); if(nw) nw.onclick=()=>{ I.mdpEdit={}; render(); $("#pw-label")?.focus(); };
+  const pwx=$("#pw-x"); if(pwx) pwx.onclick=()=>{ I.mdpEdit=null; render(); };
+  const pws=$("#pw-save"); if(pws) pws.onclick=async()=>{ const E=I.mdpEdit;
+    if(!$("#pw-label").value.trim()) return toast("Donnez un nom (ex. le site).");
+    if(!E.id&&!$("#pw-pass").value) return toast("Indiquez le mot de passe.");
+    if(await run(()=>sb.rpc("save_office_secret",{p_id:E.id||null,p_label:$("#pw-label").value,p_url:$("#pw-url").value,p_username:$("#pw-user").value,p_password:$("#pw-pass").value||null,p_notes:$("#pw-notes").value}),"Enregistré")){ I.mdpEdit=null; await loadInfos(); render(); } };
+  $$("[data-pwedit]").forEach(b=>b.onclick=()=>{ I.mdpEdit={...S.secrets.find(s=>s.id===+b.dataset.pwedit)}; render(); scrollTo(0,0); });
+  $$("[data-pwdel]").forEach(b=>b.onclick=async()=>{ if(!confirmInline(b,"Supprimer ?")) return; if(await run(()=>sb.rpc("delete_office_secret",{p_id:+b.dataset.pwdel}),"Supprimé")){ S.secrets=S.secrets.filter(s=>s.id!==+b.dataset.pwdel); render(); } });
+  const reveal=async id=>{ const {data,error}=await sb.rpc("reveal_office_secret",{p_id:id}); if(error){ toast(frError(error)); return null; } if(data==null){ toast("Aucun mot de passe enregistré."); return null; } return data; };
+  $$("[data-pwreveal]").forEach(b=>b.onclick=async()=>{ const id=+b.dataset.pwreveal, el=$(`[data-pwshow="${id}"]`);
+    if(b.dataset.on){ el.textContent="••••••••"; delete b.dataset.on; b.textContent="Afficher"; return; }
+    const pw=await reveal(id); if(pw==null) return; el.textContent=pw; b.dataset.on="1"; b.textContent="Masquer";
+    setTimeout(()=>{ if(document.body.contains(el)&&b.dataset.on){ el.textContent="••••••••"; delete b.dataset.on; b.textContent="Afficher"; } },30000); });
+  $$("[data-pwcopy]").forEach(b=>b.onclick=async()=>{ const pw=await reveal(+b.dataset.pwcopy); if(pw!=null) copyText(pw); });
+  const lg=$("#pw-log"); if(lg) lg.onclick=async()=>{ const {data}=await sb.from("office_secret_log").select("*").order("at",{ascending:false}).limit(50); I.log=data||[]; render(); };
 }
 
 /* ----- fiches patients (sans compte) ----- */
@@ -3292,7 +3883,7 @@ function tasksHTML(){
   const list=K==="pat"?listAll.filter(isPatTask):K==="org"?listAll.filter(t=>!isPatTask(t)):listAll;
   const others=S.team.filter(t=>t.id!==S.me.id&&t.status==="active");
   const pt=D.patient;
-  return `<div class="chead"><div><h1>Tâches</h1><p>Vos tâches et celles que vous confiez. Une tâche pour un collègue n'est visible que par vous et la ou les personnes qui doivent la faire. Une tâche pour « Secrétariat » va dans la liste commune de l'Accueil, visible par toute l'équipe.</p></div></div>
+  return `<div class="chead"><div><h1>Tâches</h1><p>Vos tâches et celles que vous confiez. Une tâche pour un collègue n'est visible que par vous et la ou les personnes qui doivent la faire, qui reçoivent une notification. Une tâche pour « Secrétariat » va dans la liste commune de l'Accueil, visible par toute l'équipe.</p></div></div>
   <div class="taskgrid">
   <section class="card taskform"><h3>Nouvelle tâche</h3>
    <label class="fld">Tâche<input id="tk-title" maxlength="200" autocomplete="off" placeholder="Ex. Changer les filtres de la ventilation" value="${esc(D.title)}"></label>
@@ -3698,12 +4289,15 @@ function settingsHTML(){
    ${faceIdCardHTML()}
    ${trustCardHTML()}
    ${textSizeHTML()}
+   ${bdayCardHTML()}
    <section class="card"><h3>Quand me prévenir</h3><div class="pgrid">
     <label class="fld">Haute priorité (à voir en moins de 24 h)${sel("s-haute",s.haute)}</label>
     <label class="fld">Pas pressé (à voir en moins de 72 h)${sel("s-normale",s.normale)}</label></div>
     <p class="hint">« 2 fois par jour » : à 11:00 et à 16:00. « Résumé du matin » : à 9:00.</p>
-    <label class="chk2"><input type="checkbox" id="s-after" ${s.after_hours?"checked":""}> Me prévenir aussi en dehors des heures d'ouverture (soirs, week-ends, jours de fermeture)</label>
-    <p class="hint">Décoché : rien n'est envoyé quand le centre est fermé ; les alertes arrivent à la réouverture.</p>
+    <label class="chk2"><input type="checkbox" id="s-after" ${s.after_hours?"checked":""}> <span><b>Patients</b> : me prévenir aussi en dehors des heures d'ouverture (soirs, week-ends, jours de fermeture)</span></label>
+    <p class="hint">Décoché : les nouvelles demandes et les messages de patients arrivent à la réouverture.</p>
+    <label class="chk2"><input type="checkbox" id="s-teamafter" ${s.team_after_hours!==false?"checked":""}> <span><b>Équipe</b> : recevoir aussi les messages et les tâches de mes collègues en dehors des heures d'ouverture</span></label>
+    <p class="hint">Coché par défaut. Décoché : ils arrivent à la réouverture.</p>
     <label class="chk2"><input type="checkbox" id="s-mail" ${s.by_email?"checked":""}> Aussi par e-mail</label>
     ${pushBlockHTML(true)}</section>
    ${S.me.provider_id?`<section class="card"><h3>Contact par les patients</h3>
@@ -3738,7 +4332,7 @@ function awayDefaultText(u=$("#s-until")?.value, fwId=$("#s-fw")?.value){
   return `Bonjour,\nJe suis absent(e)${until}. Votre message a bien été reçu${fw?` et sera traité par ${(fw.first_name||"")+" "+(fw.last_name||"")}`:" et sera traité à mon retour"}.\nPour une question qui ne peut pas attendre, appelez le secrétariat au 02 781 18 75. Urgence vitale : 112.`;
 }
 function bindSettings(){
-  bindPhotoCard(); bindPush(); bindTextSize(); bindFaceIdCard(); bindTrustCard();
+  bindPhotoCard(); bindPush(); bindTextSize(); bindFaceIdCard(); bindTrustCard(); bindBdayCard();
   const dc=$("#s-direct"); if(dc) dc.onchange=async()=>{ const v=dc.checked;
     if(await run(()=>sb.rpc("set_my_direct_contact",{p_ok:v}),v?"Les patients peuvent vous écrire directement":"Les demandes passeront d'abord par le secrétariat")){ const pr=P.byId(S.me.provider_id); if(pr) pr.direct_contact=v; } else dc.checked=!v; };
   $("#lv-add").onclick=async()=>{ const f=$("#lv-from").value, t=$("#lv-to").value;
@@ -3761,7 +4355,11 @@ function bindSettings(){
       away_message:am&&am.checked&&msg.value.trim()?msg.value.trim():null};
     if(row.away&&!row.forward_to&&!row.away_message) return toast(am?"Choisissez un collègue, ou activez le message automatique.":"Choisissez le collègue qui recevra vos notifications.");
     if(row.away_until&&row.away_until<new Date().toISOString().slice(0,10)) return toast("La date de retour est déjà passée.");
-    if(await run(()=>sb.from("staff_settings").upsert(row),"Enregistré")){ S.settings={...(S.settings||{}),...row}; render(); }
+    row.team_after_hours=$("#s-teamafter")?.checked!==false;
+    let res=await sb.from("staff_settings").upsert(row);
+    if(res.error&&/team_after_hours/.test(JSON.stringify(res.error))){ delete row.team_after_hours; res=await sb.from("staff_settings").upsert(row); }   // avant la migration 063
+    if(res.error){ toast(frError(res.error)); return; }
+    toast("Enregistré"); S.settings={...(S.settings||{}),...row}; render();
   };
 }
 
@@ -3799,6 +4397,7 @@ function navGroups(){
      ...(isAdmin()||isGestion()?[{cs:"team",ic:SI.team,t:"Comptes de l'équipe"}]:[])]},
    {h:"Secrétariat",it:[
      {cs:"desk",ic:SI.phone,t:"Accueil",n:isDesk()?deskTodayCount():0},
+     {cs:"infos",ic:SI.idcard,t:"Infos et documents"},
      ...(canOffice()?[{cs:"hours",ic:SI.clock,t:"Horaires"},{cs:"cash",ic:SI.euro,t:"Caisse"}]:[])]},
    {h:"Le centre",it:[
      ...(canPub()?[{cs:"news",ic:SI.news||IC.news,t:"Actualités"}]:[]),
