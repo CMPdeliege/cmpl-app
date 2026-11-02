@@ -2071,7 +2071,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261101b";
+const APP_VERSION="20261102a";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -2775,6 +2775,7 @@ function staffHelpHTML(){
    ["Le menu","Sur ordinateur, le menu est à gauche, rangé en 4 rubriques : Patients (demandes, écrire, fiches, listes d'attente), Équipe (messages, tâches, congés), Secrétariat (accueil, horaires, caisse) et Le centre (actualités, classeur, inventaire). Sur téléphone : la barre du bas, et « Plus » pour tout le reste. Le chiffre rouge indique ce qui attend."],
    ["Rechercher","La loupe (ou Ctrl K sur ordinateur) cherche partout : patients, demandes et leurs messages, messages de l'équipe, tâches, fiches, listes d'attente, inventaire, classeur, actualités, réponses types, caisse. Touchez un résultat pour l'ouvrir."],
    ["Épingler et classer les conversations","Messages : touchez « Épingler » en haut d'une conversation pour la garder tout en haut de votre liste (vos épingles ne changent rien pour les collègues). Les filtres Non lues · Prioritaires · Groupes · À deux · Patients trient la liste."],
+   ["Inventaire : le stock","Le centre → Inventaire → 📦 Stock : un onglet par famille (Administratif, Médicaments, Vaccins, Matériel médical, Cuisine, Entretien, Salle d'attente). Une ligne par article avec le total, où il est rangé et la péremption la plus proche (rouge : périmé, orange : bientôt ou en partie périmé). Touchez un article : quantité par local avec − / +, date de péremption, n° de lot (médicaments, vaccins), et « Ajouter à À commander ». « ⚠️ Alertes » ne montre que ce qui est périmé, bientôt périmé ou sous le stock minimum. « Excel » télécharge tout le stock. Toute l'équipe peut modifier."],
    ["Anniversaires","L'anniversaire vient de la date de naissance de votre compte (les collègues ne voient que le jour et le mois). Le jour J à 8 h, vous recevez un petit mot, et vos collègues un rappel ; les anniversaires du week-end sont annoncés le vendredi. Moi → Mon profil → « Mon anniversaire » : décochez « Prévenir mes collègues » si vous préférez rester discret. Ce jour-là, un bandeau dans Demandes et Messages propose « Lui écrire »."],
    ["Ne pas oublier de répondre","Messages : en haut d'une conversation, « Prioritaire » met un drapeau rouge ; la conversation reste tout en haut de votre liste jusqu'à ce que vous retiriez le drapeau. « Non lu » la remet en gras avec une pastille, comme si vous ne l'aviez pas ouverte, jusqu'à ce que vous la rouvriez. Ces repères sont personnels : les collègues ne voient rien changer."],
    ["Ce qui est gardé, ce qui est effacé","Gardé : messages de l'équipe sur l'organisation, inventaire, congés, tâches sans patient, classeur, horaires (5 ans), caisse (10 ans). Effacé : conversations avec les patients (15 jours après la clôture), conversations d'équipe marquées « Concerne des patients » et messages qui joignent une demande (90 jours), tâches liées à un patient (90 jours après)."],
@@ -3153,7 +3154,7 @@ const newInv = () => ({title:"",qty:"",notes:"",urgent:false,photos:[],tab:"a_co
 // Inventaire compact : une ligne par article, ajout rapide en une ligne, actions groupées
 function invSimilar(t){ const w=norm(t||"").split(/\s+/).filter(x=>x.length>2); if(!w.length) return null;
   return (S.inventory||[]).find(i=>i.status!=="recu"&&w.every(x=>norm(i.title).includes(x)))||null; }
-function inventoryHTML(){
+function orderHTML(){
   const I=S.inv||(S.inv=newInv()); I.sel=I.sel||[];
   const all=S.inventory||[], n=st=>all.filter(i=>i.status===st).length, since=Date.now()-60*864e5;
   const q=norm(I.q||"").split(/\s+/).filter(Boolean);
@@ -3176,7 +3177,7 @@ function inventoryHTML(){
        <small class="invmeta">Demandé par ${esc(teamName(it.created_by))} ${fmt(it.created_at)}${it.status!=="a_commander"&&it.status_at?` · ${INV_ST[it.status]} ${fmt(it.status_at)}${it.status_by?` (${esc(teamName(it.status_by))})`:""}`:""}</small>
        <div class="btnrow">${it.status!=="a_commander"?`<button class="btn ghost" data-invst="a_commander" data-id="${it.id}">Remettre à commander</button>`:""}${canDel(it)?`<button class="linkbtn" data-invdel="${it.id}">Supprimer</button>`:""}</div></div>`:""}
     </div>`; };
-  return `<div class="chead"><div><h1>Inventaire</h1><p>Ce qui manque au centre. Toute l'équipe ajoute ; le secrétariat coche ce qui est commandé puis reçu.</p></div></div>
+  return `<p class="hint invintro">Ce qui manque au centre. Toute l'équipe ajoute ; le secrétariat coche ce qui est commandé puis reçu.</p>
   <div class="inv">
    <section class="card invquick">
     <div class="invline"><input id="inv-title" maxlength="200" autocomplete="off" placeholder="Ce qu'il faut (ex. gel d'échographie)" value="${esc(I.title)}" aria-label="Ce qu'il faut">
@@ -3197,7 +3198,7 @@ function inventoryHTML(){
    ${hidden?`<button type="button" class="linkbtn" id="inv-all">Afficher l'historique complet (${hidden} plus ancien${hidden>1?"s":""})</button>`:""}
   </div>`;
 }
-function bindInventory(){
+function bindOrder(){
   const I=S.inv, t=$("#inv-title"), add=$("#inv-add");
   let dupT=null; t.oninput=()=>{ I.title=t.value; add.disabled=!I.title.trim(); clearTimeout(dupT); dupT=setTimeout(()=>{ const had=!!$(".invdup"), has=!!invSimilar(I.title); if(had!==has){ render(); const n=$("#inv-title"); n.focus(); n.setSelectionRange(n.value.length,n.value.length); } },400); };
   t.onkeydown=e=>{ if(e.key==="Enter"&&!add.disabled) add.click(); };
@@ -3234,6 +3235,210 @@ function bindInventory(){
     if(b.dataset.sure!=="1"){ b.dataset.sure="1"; b.textContent="Confirmer la suppression"; return; }
     b.disabled=true; if(await run(()=>sb.rpc("delete_inventory_item",{p_id:+b.dataset.invdel}),"Supprimé")){ I.open=null; await loadInventory(); render(); } else b.disabled=false; });
   $$("[data-invph]").forEach(async b=>{ try{ const u=await invPhoto(+b.dataset.invph); b.querySelector("img").src=u; b.onclick=()=>openViewer(u); }catch(e){ b.classList.add("failed"); } });
+}
+
+/* =====================================================================
+   INVENTAIRE · STOCK DU CENTRE (tableau par onglets, détail par local et date de péremption)
+   ===================================================================== */
+const STK_TABS=[["Administratif","🗂️"],["Médicaments","💊"],["Vaccins","💉"],["Matériel médical","🩺"],["Cuisine et alimentaire","☕"],["Entretien et ménage","🧽"],["Salle d'attente","🧸"]];
+const STK_SUBS={"Administratif":["Papeterie","Cartouches et toners","Courrier","Accueil","Piles"],"Médicaments":["Injectables","Désinfection et soins"],"Vaccins":[],
+  "Matériel médical":["Injections et prélèvements","Pansements et bandes","Petite chirurgie","Examens","Hygiène des soins"],"Cuisine et alimentaire":["Alimentaire","Vaisselle","Équipement"],
+  "Entretien et ménage":["Produits d'entretien","Papier","Sacs poubelle"],"Salle d'attente":[]};
+const STK_UNITS=["pièces","boîtes","paquets","flacons","rouleaux","doses","ampoules","bidons"];
+const STK_LOCS=["Accueil","Anas","Omar","Noura","Farah","Polyvalent","Cuisine","Couloir garage","Frigo"];
+const STK_MONTHS=["janv.","févr.","mars","avr.","mai","juin","juil.","août","sept.","oct.","nov.","déc."];
+const hasLotNo = tab => tab==="Médicaments"||tab==="Vaccins";
+async function loadStock(){
+  const [it,lo]=await Promise.all([sb.from("stock_items").select("*").order("name").limit(3000),sb.from("stock_lots").select("*").order("id").limit(10000)]);
+  S.stockOk=!it.error&&!lo.error; S.stock={items:it.error?[]:(it.data||[]),lots:lo.error?[]:(lo.data||[])}; S.stockLoaded=true;
+}
+// date de péremption : le 1er du mois = « mois/année », utilisable jusqu'à la fin du mois
+const expEnd = s => { if(!s) return null; const d=new Date(s+"T12:00"); return d.getDate()===1?new Date(d.getFullYear(),d.getMonth()+1,0,23,59):d; };
+const expTxt = s => { if(!s) return ""; const d=new Date(s+"T12:00"); return d.getDate()===1?`${String(d.getMonth()+1).padStart(2,"0")}/${d.getFullYear()}`:d.toLocaleDateString("fr-BE"); };
+function expState(s){ const e=expEnd(s); if(!e) return ""; const days=(e-Date.now())/864e5; return days<0?"exp":days<=90?"soon":"ok"; }
+const stkLots = id => (S.stock?.lots||[]).filter(l=>l.item_id===id);
+const nfmt = n => n==null?"":(Math.round(n*100)/100).toLocaleString("fr-BE");
+function stkInfo(it){
+  const L=stkLots(it.id), known=L.filter(l=>l.qty!=null), total=known.reduce((a,l)=>a+Number(l.qty),0), unknown=L.some(l=>l.qty==null)||!L.length;
+  const withQty=L.filter(l=>l.expiry&&Number(l.qty||0)>0), states=withQty.map(l=>expState(l.expiry));
+  const first=withQty.slice().sort((a,b)=>a.expiry.localeCompare(b.expiry))[0];
+  const expQty=withQty.filter(l=>expState(l.expiry)==="exp").reduce((a,l)=>a+Number(l.qty),0);
+  let st=""; if(states.length&&states.every(s=>s==="exp")) st="exp"; else if(states.includes("exp")) st="part"; else if(states.includes("soon")) st="soon";
+  const low=it.min_qty!=null&&total<Number(it.min_qty);
+  const byloc={}; L.forEach(l=>{ const k=l.location||"?"; byloc[k]=(byloc[k]||0)+Number(l.qty||0); });
+  return {L,total,unknown,first,st,expQty,low,byloc};
+}
+const stkAlert = it => { const i=stkInfo(it); return i.low||i.st==="exp"||i.st==="part"; };
+const stkAlertCount = () => (S.stock?.items||[]).filter(stkAlert).length;
+const ST_LABEL={exp:"Périmé",part:"En partie périmé",soon:"Périme bientôt"};
+function monthYearSel(id,val,cls){
+  const d=val?new Date(val+"T12:00"):null, y0=new Date().getFullYear()-2;
+  return `<span class="mysel ${cls||""}"><select data-mym="${id}" aria-label="Mois de péremption"><option value="">—</option>${STK_MONTHS.map((m,i)=>`<option value="${i+1}" ${d&&d.getMonth()===i?"selected":""}>${m}</option>`).join("")}</select><select data-myy="${id}" aria-label="Année de péremption"><option value="">—</option>${Array.from({length:14},(_,i)=>y0+i).map(y=>`<option ${d&&d.getFullYear()===y?"selected":""}>${y}</option>`).join("")}</select></span>`; }
+function readMY(id){ const m=$(`[data-mym="${id}"]`)?.value, y=$(`[data-myy="${id}"]`)?.value; return m&&y?`${y}-${String(m).padStart(2,"0")}-01`:null; }
+function stockHTML(){
+  if(!S.stockLoaded) return `<div class="empty">Chargement…</div>`;
+  if(!S.stockOk) return `<p class="hint">Le tableau du stock sera disponible après la mise à jour du serveur (migration 061).</p>`;
+  const K=S.stk||(S.stk={tab:"Matériel médical",q:"",alert:false,open:null,add:null}), items=S.stock.items;
+  const q=norm(K.q||"").split(/\s+/).filter(Boolean);
+  let list=items.filter(it=>q.length?q.every(w=>norm(`${it.name} ${it.subcat||""} ${it.supplier||""} ${stkLots(it.id).map(l=>l.location||"").join(" ")}`).includes(w)):it.tab===K.tab);
+  if(K.alert) list=list.filter(it=>{ const i=stkInfo(it); return i.low||i.st; });
+  const subs=STK_SUBS[K.tab]||[];
+  list.sort((a,b)=>(q.length?STK_TABS.findIndex(t=>t[0]===a.tab)-STK_TABS.findIndex(t=>t[0]===b.tab):0)||((subs.indexOf(a.subcat)+1||99)-(subs.indexOf(b.subcat)+1||99))||(a.subcat||"").localeCompare(b.subcat||"")||a.name.localeCompare(b.name,"fr"));
+  const tabCount=t=>items.filter(it=>it.tab===t).length, tabAl=t=>items.filter(it=>it.tab===t&&stkAlert(it)).length;
+  let rows="", g=null;
+  for(const it of list){
+    const key=q.length?`${it.tab} · ${it.subcat||""}`:(it.subcat||"Autres");
+    if(key!==g){ g=key; rows+=`<div class="stksub">${esc(key)}</div>`; }
+    const i=stkInfo(it), op=K.open===it.id;
+    const where=Object.entries(i.byloc).map(([k,v])=>Object.keys(i.byloc).length>1?`${esc(k)} ${nfmt(v)}`:esc(k)).join(" · ");
+    rows+=`<div class="stkrow${op?" open":""}${i.st==="exp"?" exp":i.st?" warn":""}${i.low?" low":""}" data-stkid="${it.id}">
+      <button type="button" class="stkmain" data-stkopen="${it.id}" aria-expanded="${op}">
+       <span class="stkname"><b>${esc(it.name)}</b>${it.notes?`<small>${esc(it.notes)}</small>`:""}</span>
+       <span class="stktot">${i.unknown&&!i.total?"?":nfmt(i.total)}<small>${esc(it.unit||"")}</small>${i.low?`<em class="stklow">sous le minimum (${nfmt(it.min_qty)})</em>`:""}</span>
+       <span class="stkwhere">${where||"—"}</span>
+       <span class="stkexp">${i.first?expTxt(i.first.expiry):""}${i.st?`<em class="stkst ${i.st}">${ST_LABEL[i.st]}${i.st==="part"?` (${nfmt(i.expQty)} à jeter)`:""}</em>`:""}</span>
+       <span class="stkchev" aria-hidden="true">›</span></button>
+      ${op?stkDetailHTML(it,i):""}</div>`;
+  }
+  const A=K.add;
+  return `<div class="stkbar">
+    <div class="stktabs" role="tablist">${STK_TABS.map(([t,ic])=>`<button type="button" role="tab" class="stktab" data-stktab="${esc(t)}" aria-selected="${!q.length&&K.tab===t}"><span aria-hidden="true">${ic}</span>${esc(t)} <i>${tabCount(t)}</i>${tabAl(t)?`<b class="stkal" title="${tabAl(t)} alerte(s)">${tabAl(t)}</b>`:""}</button>`).join("")}</div>
+    <div class="stktools"><input id="stk-q" type="search" class="pcq" placeholder="Rechercher dans tout le stock…" value="${esc(K.q||"")}" aria-label="Rechercher dans le stock">
+     <button type="button" class="tpinbtn" id="stk-alert" aria-pressed="${!!K.alert}">⚠️ <span>Alertes</span></button>
+     <button type="button" class="btn ghost" id="stk-xls">${IC.doc} Excel</button>
+     <button type="button" class="btn" id="stk-new">+ Ajouter un article</button></div></div>
+   ${A?stkAddHTML(A):""}
+   <div class="stktable">
+    <div class="stkhead"><span>Article</span><span>Total</span><span>Où</span><span>Péremption</span><span></span></div>
+    ${rows||`<div class="empty">${q.length?"Rien ne correspond.":K.alert?"Aucune alerte dans cet onglet.":K.tab==="Vaccins"?"Aucun vaccin encore. « + Ajouter un article » pour commencer (avec le n° de lot et la péremption).":"Aucun article dans cet onglet."}</div>`}
+   </div>
+   <p class="hint">Touchez un article pour le détail par local et par date de péremption, et pour corriger les quantités. Toute l'équipe peut modifier. Rouge : périmé · orange : périme dans les 3 mois ou en partie périmé.</p>`;
+}
+function stkDetailHTML(it,i){
+  const lot=hasLotNo(it.tab), L=i.L.slice().sort((a,b)=>(a.location||"").localeCompare(b.location||"")||(a.expiry||"9").localeCompare(b.expiry||"9"));
+  return `<div class="stkdet">
+   <div class="stklots">${L.map(l=>{ const es=expState(l.expiry); return `<div class="stklot ${es}" data-lot="${l.id}">
+     <label class="fld"><span>Local</span><input data-lotf="location" value="${esc(l.location||"")}" list="stk-locs" maxlength="60"></label>
+     <div class="fld"><span>Quantité</span><div class="stkqty"><button type="button" class="cbtn sm" data-adj="-1" aria-label="Retirer 1">−</button><input data-lotf="qty" inputmode="decimal" value="${l.qty==null?"":nfmt(l.qty)}" aria-label="Quantité"><button type="button" class="cbtn sm" data-adj="1" aria-label="Ajouter 1">+</button></div></div>
+     <div class="fld"><span>Péremption${es==="exp"?" · <b class=\"stkst exp\">périmé</b>":es==="soon"?" · <b class=\"stkst soon\">bientôt</b>":""}</span>${monthYearSel("l"+l.id,l.expiry)}</div>
+     ${lot?`<label class="fld"><span>N° de lot</span><input data-lotf="lot_no" value="${esc(l.lot_no||"")}" maxlength="60"></label>`:""}
+     <label class="fld grow"><span>Note</span><input data-lotf="note" value="${esc(l.note||"")}" maxlength="200"></label>
+     <button type="button" class="linkbtn stkdel" data-lotdel="${l.id}" aria-label="Supprimer cette ligne">Supprimer</button></div>`; }).join("")||`<p class="hint">Aucune quantité enregistrée.</p>`}
+    <button type="button" class="linkbtn" data-lotadd="${it.id}">+ Ajouter un local ou une autre date de péremption</button></div>
+   <details class="stkedit"><summary>Modifier l'article (nom, onglet, minimum, fournisseur…)</summary>
+    <div class="stkform">
+     <label class="fld">Nom<input id="se-name" value="${esc(it.name)}" maxlength="120"></label>
+     <label class="fld">Onglet<select id="se-tab">${STK_TABS.map(([t])=>`<option ${t===it.tab?"selected":""}>${esc(t)}</option>`).join("")}</select></label>
+     <label class="fld">Sous-catégorie<input id="se-sub" value="${esc(it.subcat||"")}" list="stk-subs-${esc(it.tab).replace(/\W/g,"")}" maxlength="60"></label>
+     <label class="fld">Unité<input id="se-unit" value="${esc(it.unit||"")}" list="stk-units" maxlength="30"></label>
+     <label class="fld">Stock minimum<input id="se-min" inputmode="decimal" value="${it.min_qty==null?"":nfmt(it.min_qty)}" placeholder="ex. 2"></label>
+     <label class="fld">Fournisseur / référence<input id="se-sup" value="${esc(it.supplier||"")}" maxlength="160"></label>
+     <label class="fld grow">Remarque<input id="se-notes" value="${esc(it.notes||"")}" maxlength="500"></label>
+    </div>
+    <div class="btnrow"><button type="button" class="btn ghost" id="se-save">Enregistrer</button><button type="button" class="linkbtn" id="se-del">Supprimer l'article</button></div></details>
+   <div class="btnrow"><button type="button" class="btn ghost" data-stkorder="${it.id}">🛒 Ajouter à « À commander »</button>${it.updated_by?`<small class="hint">Modifié par ${esc(teamName(it.updated_by))} ${fmt(it.updated_at)}</small>`:""}</div>
+  </div>`;
+}
+function stkAddHTML(A){
+  return `<section class="card stkadd"><h3>Nouvel article</h3>
+   <div class="stkform">
+    <label class="fld grow">Nom<input id="sa-name" value="${esc(A.name)}" maxlength="120" placeholder="Ex. Compresses stériles 10 × 10 cm" autocomplete="off"></label>
+    <label class="fld">Onglet<select id="sa-tab">${STK_TABS.map(([t])=>`<option ${t===A.tab?"selected":""}>${esc(t)}</option>`).join("")}</select></label>
+    <label class="fld">Sous-catégorie<input id="sa-sub" value="${esc(A.sub)}" list="stk-subs-${esc(A.tab).replace(/\W/g,"")}" maxlength="60"></label>
+    <label class="fld">Unité<input id="sa-unit" value="${esc(A.unit)}" list="stk-units" maxlength="30" placeholder="pièces"></label>
+   </div>
+   <div class="stkform">
+    <label class="fld">Local<input id="sa-loc" value="${esc(A.loc)}" list="stk-locs" maxlength="60"></label>
+    <label class="fld">Quantité<input id="sa-qty" inputmode="decimal" value="${esc(A.qty)}"></label>
+    <div class="fld">Péremption (facultatif)${monthYearSel("new",A.exp)}</div>
+    ${hasLotNo(A.tab)?`<label class="fld">N° de lot<input id="sa-lot" value="${esc(A.lot||"")}" maxlength="60"></label>`:""}
+    <label class="fld">Stock minimum<input id="sa-min" inputmode="decimal" value="${esc(A.min)}" placeholder="facultatif"></label>
+   </div>
+   <div class="btnrow"><button type="button" class="btn" id="sa-save">Ajouter</button><button type="button" class="btn ghost" id="sa-x">Annuler</button></div></section>`;
+}
+const stkDatalists = () => `<datalist id="stk-locs">${[...new Set([...STK_LOCS,...(S.stock?.lots||[]).map(l=>l.location).filter(Boolean)])].map(x=>`<option value="${esc(x)}">`).join("")}</datalist>
+  <datalist id="stk-units">${STK_UNITS.map(x=>`<option value="${x}">`).join("")}</datalist>
+  ${STK_TABS.map(([t])=>`<datalist id="stk-subs-${esc(t).replace(/\W/g,"")}">${[...new Set([...(STK_SUBS[t]||[]),...(S.stock?.items||[]).filter(i=>i.tab===t).map(i=>i.subcat).filter(Boolean)])].map(x=>`<option value="${esc(x)}">`).join("")}</datalist>`).join("")}`;
+const numIn = v => { const s=String(v??"").trim().replace(",","."); if(!s) return null; const n=Number(s); return isFinite(n)&&n>=0?n:NaN; };
+function bindStock(){
+  if(!S.stockLoaded){ loadStock().then(()=>{ if(S.cscreen==="inventory") render(); }); return; }
+  const K=S.stk; if(!K) return;
+  $$("[data-stktab]").forEach(b=>b.onclick=()=>{ K.tab=b.dataset.stktab; K.q=""; K.open=null; render(); });
+  const qi=$("#stk-q"); if(qi){ let t; qi.oninput=()=>{ clearTimeout(t); t=setTimeout(()=>{ K.q=qi.value; K.open=null; render(); const n=$("#stk-q"); n.focus(); n.setSelectionRange(n.value.length,n.value.length); },250); }; }
+  const al=$("#stk-alert"); if(al) al.onclick=()=>{ K.alert=!K.alert; render(); };
+  const nw=$("#stk-new"); if(nw) nw.onclick=()=>{ K.add={name:K.q||"",tab:K.tab,sub:"",unit:"",loc:"",qty:"",exp:null,min:""}; K.q=""; render(); $("#sa-name")?.focus(); };
+  const xl=$("#stk-xls"); if(xl) xl.onclick=()=>stockExport();
+  $$("[data-stkopen]").forEach(b=>b.onclick=()=>{ const id=+b.dataset.stkopen; K.open=K.open===id?null:id; render(); });
+  // nouvel article
+  const A=K.add; if(A){
+    const keep=()=>{ A.name=$("#sa-name").value; A.sub=$("#sa-sub").value; A.unit=$("#sa-unit").value; A.loc=$("#sa-loc").value; A.qty=$("#sa-qty").value; A.min=$("#sa-min").value; A.lot=$("#sa-lot")?.value||""; A.exp=readMY("new"); };
+    $("#sa-tab").onchange=e=>{ keep(); A.tab=e.target.value; render(); };
+    $("#sa-x").onclick=()=>{ K.add=null; render(); };
+    $("#sa-save").onclick=async e=>{ keep(); const qty=numIn(A.qty), min=numIn(A.min);
+      if(!A.name.trim()) return toast("Donnez un nom à l'article.");
+      if(Number.isNaN(qty)||Number.isNaN(min)) return toast("Quantité ou minimum : un nombre, s'il vous plaît.");
+      e.target.disabled=true;
+      const r=await run(()=>sb.rpc("stock_save_item",{p_id:null,p_tab:A.tab,p_subcat:A.sub,p_name:A.name,p_unit:A.unit,p_min:min,p_supplier:null,p_notes:null}));
+      if(!r){ e.target.disabled=false; return; }
+      if(A.loc||qty!=null||A.exp) await run(()=>sb.rpc("stock_save_lot",{p_id:null,p_item:r.data,p_location:A.loc,p_qty:qty,p_expiry:A.exp,p_lot_no:A.lot||null,p_note:null}));
+      toast("Article ajouté"); K.add=null; K.tab=A.tab; K.open=r.data; await loadStock(); render(); };
+  }
+  const it=(S.stock.items||[]).find(x=>x.id===K.open); if(!it) return;
+  const saveLot=async row=>{ const id=+row.dataset.lot, l=S.stock.lots.find(x=>x.id===id); const f=k=>row.querySelector(`[data-lotf="${k}"]`)?.value;
+    const qty=numIn(f("qty")); if(Number.isNaN(qty)){ toast("La quantité doit être un nombre."); return; }
+    const exp=readMY("l"+id);
+    const ok=await run(()=>sb.rpc("stock_save_lot",{p_id:id,p_item:it.id,p_location:f("location")||null,p_qty:qty,p_expiry:exp,p_lot_no:f("lot_no")??l.lot_no,p_note:f("note")||null}),"Enregistré");
+    if(ok){ Object.assign(l,{location:f("location")||null,qty,expiry:exp,lot_no:f("lot_no")??l.lot_no,note:f("note")||null}); render(); } };
+  $$(".stklot").forEach(row=>{
+    row.querySelectorAll("[data-lotf]").forEach(inp=>inp.onchange=()=>saveLot(row));
+    row.querySelectorAll("[data-mym],[data-myy]").forEach(s=>s.onchange=()=>{ const id=row.dataset.lot; const m=$(`[data-mym="l${id}"]`).value, y=$(`[data-myy="l${id}"]`).value; if((m&&y)||(!m&&!y)) saveLot(row); });
+    row.querySelectorAll("[data-adj]").forEach(b=>b.onclick=async()=>{ const id=+row.dataset.lot, l=S.stock.lots.find(x=>x.id===id); b.disabled=true;
+      const {data,error}=await sb.rpc("stock_adjust",{p_lot:id,p_delta:+b.dataset.adj}); b.disabled=false;
+      if(error){ toast(frError(error)); return; } l.qty=data; render(); });
+  });
+  $$("[data-lotdel]").forEach(b=>b.onclick=async()=>{ if(!confirmInline(b,"Supprimer ?")) return;
+    if(await run(()=>sb.rpc("stock_delete_lot",{p_id:+b.dataset.lotdel}),"Ligne supprimée")){ S.stock.lots=S.stock.lots.filter(l=>l.id!==+b.dataset.lotdel); render(); } });
+  $$("[data-lotadd]").forEach(b=>b.onclick=async()=>{ b.disabled=true;
+    const r=await run(()=>sb.rpc("stock_save_lot",{p_id:null,p_item:it.id,p_location:null,p_qty:0,p_expiry:null,p_lot_no:null,p_note:null}));
+    if(r){ await loadStock(); render(); const last=[...document.querySelectorAll(".stklot")].find(x=>+x.dataset.lot===r.data); last?.querySelector('[data-lotf="location"]')?.focus(); } else b.disabled=false; });
+  const sv=$("#se-save"); if(sv) sv.onclick=async()=>{ const min=numIn($("#se-min").value); if(Number.isNaN(min)) return toast("Le minimum doit être un nombre.");
+    if(await run(()=>sb.rpc("stock_save_item",{p_id:it.id,p_tab:$("#se-tab").value,p_subcat:$("#se-sub").value,p_name:$("#se-name").value,p_unit:$("#se-unit").value,p_min:min,p_supplier:$("#se-sup").value,p_notes:$("#se-notes").value}),"Article modifié")){ K.tab=$("#se-tab").value; await loadStock(); render(); } };
+  const dl=$("#se-del"); if(dl) dl.onclick=async()=>{ if(!confirmInline(dl,"Supprimer l'article et tout son stock ?")) return;
+    if(await run(()=>sb.rpc("stock_delete_item",{p_id:it.id}),"Article supprimé")){ K.open=null; await loadStock(); render(); } };
+  $$("[data-stkorder]").forEach(b=>b.onclick=async()=>{ b.disabled=true; const i=stkInfo(it);
+    const qty=it.min_qty!=null&&i.total<it.min_qty?`${nfmt(it.min_qty-i.total)} ${it.unit||""}`.trim():null;
+    if(await run(()=>sb.rpc("add_inventory_item",{p_title:it.name,p_quantity:qty,p_notes:it.supplier||null,p_urgent:false}),"Ajouté à la liste « À commander »")) await loadInventory(); else b.disabled=false; });
+}
+// export Excel : un tableau par onglet, à la suite
+function stockExport(){
+  const cells=new Map(), set=(r,c,o)=>cells.set(`${r},${c}`,o); let r=0;
+  const H=["Onglet","Sous-catégorie","Article","Local","Quantité","Unité","Péremption","État","N° de lot","Stock minimum","Fournisseur","Remarque"];
+  set(r,0,{v:`Inventaire du centre – ${new Date().toLocaleDateString("fr-BE")}`,bold:true,size:14}); r+=2;
+  H.forEach((h,c)=>set(r,c,{v:h,bold:true,fill:"#e7e6e6",border:true,wrap:true})); r++;
+  for(const [t] of STK_TABS){
+    const its=S.stock.items.filter(i=>i.tab===t).sort((a,b)=>(a.subcat||"").localeCompare(b.subcat||"")||a.name.localeCompare(b.name,"fr"));
+    for(const it of its){ const L=stkLots(it.id); (L.length?L:[{}]).forEach(l=>{ const es=expState(l.expiry), fill=es==="exp"?"#f8d7d3":es==="soon"?"#fce8c8":null;
+      [t,it.subcat||"",it.name,l.location||"",l.qty==null?"":Number(l.qty),it.unit||"",expTxt(l.expiry),es==="exp"?"Périmé":es==="soon"?"Bientôt":"",l.lot_no||"",it.min_qty==null?"":Number(it.min_qty),it.supplier||"",[it.notes,l.note].filter(Boolean).join(" ; ")]
+        .forEach((v,c)=>set(r,c,{v,border:true,fill:c>=3&&c<=7?fill:null,wrap:c===2||c===11})); r++; }); }
+  }
+  const blob=buildXlsx("Inventaire",{cells,widths:[20,22,36,16,10,10,12,12,14,12,24,30]});
+  saveFile(blob,`inventaire-cmpl-${todayISO()}.xlsx`);
+}
+
+// Inventaire : « Stock » (tableau du stock par onglets) et « À commander » (liste de courses)
+function inventoryHTML(){
+  const m=S.invMode||"stock";
+  return `<div class="chead"><div><h1>Inventaire</h1><p>Le stock du centre, et la liste de ce qu'il faut commander.</p></div></div>
+  <div class="invmode" role="tablist"><button type="button" role="tab" data-invmode="stock" aria-selected="${m==="stock"}">📦 Stock${S.stockLoaded&&stkAlertCount()?` <b class="stkal">${stkAlertCount()}</b>`:""}</button><button type="button" role="tab" data-invmode="order" aria-selected="${m==="order"}">🛒 À commander${invOpen()?` <i>${invOpen()}</i>`:""}</button></div>
+  ${m==="stock"?stockHTML()+stkDatalists():orderHTML()}`;
+}
+function bindInventory(){
+  $$("[data-invmode]").forEach(b=>b.onclick=()=>{ S.invMode=b.dataset.invmode; render(); });
+  if((S.invMode||"stock")==="stock"){
+    if(S.stockLoaded&&Date.now()-(S.stockAt||0)>60000&&!S.stk?.add){ S.stockAt=Date.now(); loadStock().then(()=>{ const el=document.activeElement; if(S.cscreen==="inventory"&&!(el&&/INPUT|SELECT|TEXTAREA/.test(el.tagName))) render(); }); }
+    if(!S.stockAt) S.stockAt=Date.now();
+    bindStock();
+  } else bindOrder();
 }
 
 /* ----- fiches patients (sans compte) ----- */
