@@ -1630,3 +1630,14 @@ button.hcell.hasc:hover{background:color-mix(in srgb,var(--hc) 55%,transparent)}
 .cirow.ciedit input{font:inherit;font-size:15px;border:1.5px solid var(--accent);border-radius:9px;padding:8px 10px;width:100%;box-sizing:border-box}
 .ciins{display:flex;flex-direction:column;gap:6px}
 @media (max-width:600px){ .cirow.ciedit{grid-template-columns:1fr;grid-template-areas:none} .cirow.ciedit>*{grid-area:auto!important} }
+
+/* ---------- suivi des examens ---------- */
+.tkmode{margin-bottom:12px}
+.ipill.examtag{background:var(--t-prescription,#e4efe3);color:var(--t-prescription-i,#2e6b2f)}
+.exchips{display:flex;flex-wrap:wrap;gap:5px;margin:6px 0 4px}
+.exchips span{background:var(--surface-2);border:1px solid var(--line);border-radius:999px;padding:2px 10px;font-size:13px;font-weight:700}
+.exstate{margin:6px 0 4px;font-size:13.5px;display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.exwait{color:var(--muted)}.exlate{color:var(--danger)}.exok{color:var(--ok)}
+.examrow.late{box-shadow:inset 4px 0 0 var(--danger)}
+.exampick{margin-top:4px}
+.exdue{margin:-4px 0 10px}.exdue .pchip{font-size:12.5px;padding:4px 10px}

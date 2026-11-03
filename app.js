@@ -2071,7 +2071,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261102e";
+const APP_VERSION="20261103a";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -2775,6 +2775,7 @@ function staffHelpHTML(){
    ["Le menu","Sur ordinateur, le menu est à gauche, rangé en 4 rubriques : Patients (demandes, écrire, fiches, listes d'attente), Équipe (messages, tâches, congés), Secrétariat (accueil, horaires, caisse) et Le centre (actualités, classeur, inventaire). Sur téléphone : la barre du bas, et « Plus » pour tout le reste. Le chiffre rouge indique ce qui attend."],
    ["Rechercher","La loupe (ou Ctrl K sur ordinateur) cherche partout : patients, demandes et leurs messages, messages de l'équipe, tâches, fiches, listes d'attente, inventaire, classeur, actualités, réponses types, caisse. Touchez un résultat pour l'ouvrir."],
    ["Épingler et classer les conversations","Messages : touchez « Épingler » en haut d'une conversation pour la garder tout en haut de votre liste (vos épingles ne changent rien pour les collègues). Les filtres Non lues · Prioritaires · Groupes · À deux · Patients trient la liste."],
+   ["Suivi des examens demandés","Tâches → « 🧪 Examen demandé » (prestataires) : choisissez le patient, cochez les examens (prise de sang, échographie, IRM…), ajoutez une précision et la date où les résultats sont attendus (raccourcis 3 jours, 1 semaine…). L'examen reste dans vos tâches : « Résultats reçus » quand ils arrivent, puis cochez la case quand le patient a été contacté. Rappel le jour prévu ; en rouge si les résultats tardent. Filtre « 🧪 Examens » pour tout voir d'un coup. Effacé 90 jours après avoir été coché, comme les autres tâches liées à un patient."],
    ["Notification de nouvelle tâche","Quand un collègue vous confie une tâche ou vous ajoute dans « Aussi concernés », vous recevez une notification (sans le titre ni le nom du patient) ; elle arrive aussi le soir et le week-end, sauf si vous avez décoché « Équipe » dans Mon profil. Le secrétariat est prévenu quand quelqu'un d'autre ajoute quelque chose à la liste de l'Accueil."],
    ["Infos et documents (accueil)","Secrétariat → Infos et documents. Coordonnées : nom, adresse, BCE, IBAN, avec des boutons « Copier » (ex. pour un fournisseur) ; l'administrateur les modifie avec le crayon. Reçu : nom du patient, montant, moyen de paiement, objet → « Créer le reçu » fait un PDF numéroté (R-2026-0001) à imprimer ; en espèces, il peut aussi aller dans la Caisse. Facture : destinataire, lignes et montants, texte libre → PDF numéroté (F-2026-0001) avec l'IBAN et la communication. Documents : tous les reçus et factures, à rouvrir ou imprimer ; une erreur se corrige en annulant (jamais en effaçant). Prestataires : choisissez un prestataire pour voir ses infos (jours, tarifs, à savoir…). Mots de passe (secrétariat et administration) : chiffrés, « Afficher » ou « Copier » ; chaque affichage est noté."],
    ["Inventaire : le stock","Le centre → Inventaire → 📦 Stock : un onglet par famille (Administratif, Médicaments, Vaccins, Matériel médical, Cuisine, Entretien, Salle d'attente). Une ligne par article avec le total, où il est rangé et la péremption la plus proche (rouge : périmé, orange : bientôt ou en partie périmé). Touchez un article : quantité par local avec − / +, date de péremption, n° de lot (médicaments, vaccins), et « Ajouter à À commander ». « ⚠️ Alertes » ne montre que ce qui est périmé, bientôt périmé ou sous le stock minimum. « Excel » télécharge tout le stock. Toute l'équipe peut modifier."],
@@ -3864,7 +3865,25 @@ function dueGroup(t){ if(!t.due_date) return 4; const td=todayISO(); if(t.due_da
   const w=new Date(); w.setDate(w.getDate()+7); const wk=`${w.getFullYear()}-${String(w.getMonth()+1).padStart(2,"0")}-${String(w.getDate()).padStart(2,"0")}`;
   return t.due_date<=wk?2:3; }
 const DUE_GROUPS=["En retard","Aujourd'hui","Dans les 7 jours","Plus tard","Sans échéance"];
+const EXAMS=["Prise de sang","Analyse d'urines","Radiographie","Échographie","Scanner","IRM","Mammographie","ECG / Holter","Avis spécialiste","Autre"];
+const isExam = t => t.kind==="exam";
+const canExam = () => !!S.me.provider_id||isAdmin();
+function examRowHTML(t){
+  const td=todayISO(), got=!!t.exam_results_at, late=!got&&t.due_date&&t.due_date<td;
+  const d=x=>new Date(x+"T12:00").toLocaleDateString(LOC,{day:"numeric",month:"short"});
+  return `<div class="taskrow examrow ${t.done_at?"done":""}${late?" late":""}">
+   <button class="tcheck" data-tdone="${t.id}" aria-pressed="${!!t.done_at}" aria-label="${t.done_at?"Remettre à suivre":"Patient contacté : terminé"}" title="${t.done_at?"Remettre à suivre":"Patient contacté"}">${t.done_at?"✓":""}</button>
+   <div><span class="ipill examtag">🧪 Examen</span> ${taskLinkHTML(t)}
+    <div class="exchips">${(t.exam_types||[]).map(x=>`<span>${esc(x)}</span>`).join("")}</div>
+    ${t.notes?`<p class="tnotes">${esc(t.notes)}</p>`:""}${tkFilesHTML(t)}
+    <div class="exstate">${t.done_at?`<b class="exok">✓ Patient contacté</b> ${fmt(t.done_at)}`
+      :got?`<b class="exok">✅ Résultats reçus</b> ${fmt(t.exam_results_at)} · <b>à communiquer au patient</b> <button type="button" class="linkbtn" data-exres="${t.id}" data-on="0">annuler</button>`
+      :`<b class="${late?"exlate":"exwait"}">${late?"⚠️ Résultats attendus depuis le "+d(t.due_date):"⏳ En attente des résultats"+(t.due_date?" (vers le "+d(t.due_date)+")":"")}</b> <button type="button" class="mini" data-exres="${t.id}" data-on="1">Résultats reçus</button>`}</div>
+    <small>Demandé le ${t.exam_requested?d(t.exam_requested):fmt(t.created_at)} · pour ${esc(taskForLabel(t))}${t.created_by!==S.me.id?` · par ${esc(teamName(t.created_by))}`:""}</small></div>
+   ${t.created_by===S.me.id?`<button class="linkbtn tdel" data-tdel="${t.id}">Supprimer</button>`:"<span></span>"}</div>`;
+}
 function taskRowHTML(t){
+  if(isExam(t)) return examRowHTML(t);
   const canRem=!t.done_at&&t.due_date&&t.due_date>=todayISO();
   return `<div class="taskrow ${t.done_at?"done":""}">
      <button class="tcheck" data-tdone="${t.id}" aria-pressed="${!!t.done_at}" aria-label="${t.done_at?"Marquer comme à faire":"Marquer comme faite"}">${t.done_at?"✓":""}</button>
@@ -3894,12 +3913,27 @@ function tasksHTML(){
         done=all.filter(t=>t.done_at).sort((a,b)=>new Date(b.done_at)-new Date(a.done_at));
   const K=S.tkind||"all", listAll=V==="todo"?todo:V==="given"?given:done;
   const nP=listAll.filter(isPatTask).length, nO=listAll.length-nP;
-  const list=K==="pat"?listAll.filter(isPatTask):K==="org"?listAll.filter(t=>!isPatTask(t)):listAll;
+  const nE=listAll.filter(isExam).length;
+  const list=K==="pat"?listAll.filter(isPatTask):K==="org"?listAll.filter(t=>!isPatTask(t)):K==="exam"?listAll.filter(isExam):listAll;
   const others=S.team.filter(t=>t.id!==S.me.id&&t.status==="active");
   const pt=D.patient;
   return `<div class="chead"><div><h1>Tâches</h1><p>Vos tâches et celles que vous confiez. Une tâche pour un collègue n'est visible que par vous et la ou les personnes qui doivent la faire, qui reçoivent une notification. Une tâche pour « Secrétariat » va dans la liste commune de l'Accueil, visible par toute l'équipe.</p></div></div>
   <div class="taskgrid">
-  <section class="card taskform"><h3>Nouvelle tâche</h3>
+  <section class="card taskform">${canExam()?`<div class="seg tkmode" role="group" aria-label="Type"><button type="button" data-tkmode="task" aria-pressed="${D.mode!=="exam"}">📝 Tâche</button><button type="button" data-tkmode="exam" aria-pressed="${D.mode==="exam"}">🧪 Examen demandé</button></div>`:`<h3>Nouvelle tâche</h3>`}
+  ${D.mode==="exam"?`
+   <p class="hint">Notez l'examen demandé au patient : il reste dans vos tâches jusqu'à ce que vous ayez reçu les résultats et contacté le patient. Rappel le jour où les résultats sont attendus.</p>
+   <div class="fld">Patient
+   ${pt?`<div class="recipient">${`<div class="ic">${IC.user}</div>`}<div><b>${esc(`${pt.first_name||""} ${pt.last_name||""}`)}</b><small>Né(e) le ${fmtDate(pt.birth_date)}${pt.child?" · enfant":""}</small></div><button type="button" class="linkbtn" id="tk-unpick">Retirer</button></div>`
+   :`<input id="tk-q" type="text" autocomplete="off" placeholder="Nom ou prénom (au moins 2 lettres)" value="${esc(D.q)}"><div id="tk-res"></div>`}</div>
+
+   <div class="fld">Examens demandés<div class="pchips exampick">${EXAMS.map(x=>`<button type="button" class="pchip" data-exam="${esc(x)}" aria-pressed="${(D.exams||[]).includes(x)}">${esc(x)}</button>`).join("")}</div></div>
+   <label class="fld">Précision (facultatif)<textarea id="tk-notes" rows="2" maxlength="2000" placeholder="Ex. bilan thyroïdien, écho abdominale, labo …">${esc(D.notes)}</textarea></label>
+   <div class="row2"><label class="fld">Demandé le<input id="ex-req" type="date" value="${esc(D.req||todayISO())}" max="${todayISO()}"></label>
+    <label class="fld">Résultats attendus vers<input id="tk-due" type="date" value="${esc(D.due)}"></label></div>
+   <div class="pchips exdue">${[["3 jours",3],["1 semaine",7],["2 semaines",14],["1 mois",30]].map(([l,n])=>`<button type="button" class="pchip" data-exdue="${n}">${l}</button>`).join("")}</div>
+   <div class="row2"><label class="fld">Pour<select id="tk-to"><option value="me" ${D.to==="me"?"selected":""}>Moi</option><option value="secretariat" ${D.to==="secretariat"?"selected":""}>Secrétariat (liste de l'Accueil)</option>${others.map(t=>`<option value="${t.id}" ${D.to===t.id?"selected":""}>${esc(`${t.first_name||""} ${t.last_name||""}`.trim())} · ${ROLE_LABEL[t.role]}</option>`).join("")}</select></label></div>
+   ${TFILES_OK()?`<div class="fld">Demande d'examen ou bon (facultatif : photo, PDF ou scan)${tkPendHTML(D,"tasks")}</div>`:""}
+   <div class="btnrow"><button class="btn" id="tk-add" ${(D.exams||[]).length&&pt?"":"disabled"}>Enregistrer l'examen</button></div>`:`
    <label class="fld">Tâche<input id="tk-title" maxlength="200" autocomplete="off" placeholder="Ex. Changer les filtres de la ventilation" value="${esc(D.title)}"></label>
    <label class="fld">Note (facultatif)<textarea id="tk-notes" rows="3" maxlength="2000" placeholder="Ex. Vérifier sa prise de sang et l'appeler si anomalie">${esc(D.notes)}</textarea></label>
    <div class="row2"><label class="fld">Pour<select id="tk-to"><option value="me" ${D.to==="me"?"selected":""}>Moi</option><option value="secretariat" ${D.to==="secretariat"?"selected":""}>Secrétariat (liste de l'Accueil)</option>${others.map(t=>`<option value="${t.id}" ${D.to===t.id?"selected":""}>${esc(`${t.first_name||""} ${t.last_name||""}`.trim())} · ${ROLE_LABEL[t.role]}</option>`).join("")}</select></label>
@@ -3912,22 +3946,26 @@ function tasksHTML(){
    ${pt?`<div class="recipient">${`<div class="ic">${IC.user}</div>`}<div><b>${esc(`${pt.first_name||""} ${pt.last_name||""}`)}</b><small>Né(e) le ${fmtDate(pt.birth_date)}${pt.child?" · enfant":""}</small></div><button type="button" class="linkbtn" id="tk-unpick">Retirer</button></div>`
    :`<input id="tk-q" type="text" autocomplete="off" placeholder="Nom ou prénom (au moins 2 lettres)" value="${esc(D.q)}"><div id="tk-res"></div>`}</div>
    ${TFILES_OK()?`<div class="fld">Documents (facultatif : photo, PDF ou scan)${tkPendHTML(D,"tasks")}</div>`:""}
-   <div class="btnrow"><button class="btn" id="tk-add" ${D.title.trim()?"":"disabled"}>Ajouter la tâche</button></div>
+   <div class="btnrow"><button class="btn" id="tk-add" ${D.title.trim()?"":"disabled"}>Ajouter la tâche</button></div>`}
   </section>
   <section>
    <div class="seg" role="group" aria-label="Afficher" style="margin-bottom:10px"><button data-tv="todo" aria-pressed="${V==="todo"}">À faire (${todo.length})</button><button data-tv="given" aria-pressed="${V==="given"}">Confiées (${given.length})</button><button data-tv="done" aria-pressed="${V==="done"}">Terminées</button></div>
-   <div class="ichips tkinds" role="group" aria-label="Type de tâche"><button class="ichip all" data-tk="all" aria-pressed="${K==="all"}">Toutes <i>${listAll.length}</i></button><button class="ichip t-question" data-tk="pat" aria-pressed="${K==="pat"}">👤 Patients <i>${nP}</i></button><button class="ichip t-rapport" data-tk="org" aria-pressed="${K==="org"}">🏥 Organisation <i>${nO}</i></button></div>
+   <div class="ichips tkinds" role="group" aria-label="Type de tâche"><button class="ichip all" data-tk="all" aria-pressed="${K==="all"}">Toutes <i>${listAll.length}</i></button><button class="ichip t-question" data-tk="pat" aria-pressed="${K==="pat"}">👤 Patients <i>${nP}</i></button><button class="ichip t-rapport" data-tk="org" aria-pressed="${K==="org"}">🏥 Organisation <i>${nO}</i></button>${nE||canExam()?`<button class="ichip t-prescription" data-tk="exam" aria-pressed="${K==="exam"}">🧪 Examens <i>${nE}</i></button>`:""}</div>
    <div class="list tasks">${list.length?taskListHTML(list,V!=="done")
      :`<div class="empty">${V==="todo"?`<span class="yay" aria-hidden="true">✨</span>Rien à faire pour l'instant.`:V==="given"?"Aucune tâche confiée en cours.":"Aucune tâche terminée. Celles qui concernent un patient sont effacées 90 jours après."}</div>`}</div>
   </section></div>`;
 }
 function bindTasks(){
-  const D=S.tdraft, add=$("#tk-add");
-  const upd=()=>{ add.disabled=!D.title.trim(); };
-  $("#tk-title").oninput=e=>{ D.title=e.target.value; upd(); };
+  const D=S.tdraft, add=$("#tk-add"), EX=D.mode==="exam";
+  const upd=()=>{ add.disabled=EX?!((D.exams||[]).length&&D.patient):!D.title.trim(); };
+  $$("[data-tkmode]").forEach(b=>b.onclick=()=>{ D.mode=b.dataset.tkmode; if(D.mode==="exam"&&!D.due) D.due=addDays(todayISO(),7); render(); });
+  const ti=$("#tk-title"); if(ti) ti.oninput=e=>{ D.title=e.target.value; upd(); };
   $("#tk-notes").oninput=e=>{ D.notes=e.target.value; };
   $("#tk-to").onchange=e=>{ D.to=e.target.value; if(D.due&&D.remind!=null) render(); };
-  $("#tk-extra").onclick=()=>pickColleagues("Aussi concernés par cette tâche",[],async ids=>{ D.extra=ids; render(); return true; },false,D.extra||[]);
+  $$("[data-exam]").forEach(b=>b.onclick=()=>{ const x=b.dataset.exam; D.exams=D.exams||[]; D.exams=D.exams.includes(x)?D.exams.filter(y=>y!==x):[...D.exams,x]; b.setAttribute("aria-pressed",D.exams.includes(x)); upd(); });
+  const er=$("#ex-req"); if(er) er.onchange=()=>{ D.req=er.value; };
+  $$("[data-exdue]").forEach(b=>b.onclick=()=>{ D.due=addDays(D.req||todayISO(),+b.dataset.exdue); $("#tk-due").value=D.due; });
+  const tex=$("#tk-extra"); if(tex) tex.onclick=()=>pickColleagues("Aussi concernés par cette tâche",[],async ids=>{ D.extra=ids; render(); return true; },false,D.extra||[]);
   $("#tk-due").onchange=e=>{ const had=!!D.due; D.due=e.target.value; if(!D.due) D.remind=null; if(had!==!!D.due) render(); };
   const ron=$("#tk-remon"); if(ron) ron.onchange=()=>{ D.remind=ron.checked?1:null; render(); };
   const rs=$("#tk-rem"); if(rs) rs.onchange=()=>{ D.remind=+rs.value; };
@@ -3942,7 +3980,19 @@ function bindTasks(){
       out.querySelectorAll("[data-pick]").forEach(b=>b.onclick=()=>{ D.patient=rows.find(p=>p.id===b.dataset.pick); render(); });
       $("#tk-newrec").onclick=()=>{ S.recBack="tasks"; S.recDraft={first:"",last:"",birth:"",phone:"",email:""}; S.cscreen="patients"; render(); scrollTo(0,0); }; };
     q.oninput=()=>{ clearTimeout(tm); tm=setTimeout(go,300); }; if(D.q) go(); }
-  add.onclick=async()=>{ add.disabled=true; const pt=D.patient;
+  if(EX) add.onclick=async()=>{ add.disabled=true; const pt=D.patient; if(!pt){ upd(); return toast("Choisissez le patient."); }
+    const title="Examens : "+D.exams.join(", ");
+    const r=await run(()=>sb.rpc("create_task",{p_title:title.slice(0,200),p_notes:D.notes.trim()||null,p_due:D.due||null,
+      p_assignee:D.to==="me"?S.me.id:D.to==="secretariat"?null:D.to,p_group:D.to==="secretariat"?"secretariat":null,
+      p_patient:!pt.child&&!pt.record?pt.id:null,p_child:pt.child?pt.id:null,p_record:pt.record?pt.id:null}));
+    if(!r){ upd(); return; }
+    const e=await sb.rpc("set_task_exam",{p_id:r.data,p_types:D.exams,p_requested:D.req||todayISO()});
+    if(e.error){ toast(/set_task_exam|function/i.test(JSON.stringify(e.error))?"Tâche ajoutée. Le suivi des examens sera complet après la mise à jour du serveur (migration 065).":frError(e.error)); }
+    if(D.due) await sb.rpc("set_task_reminder",{p_id:r.data,p_days:0});
+    if((D.files||[]).length) await uploadTaskFiles(r.data,D.files);
+    if(!pt.record){ if(pt.child) S.children[pt.id]=pt; else S.profiles[pt.id]=pt; }
+    toast("Examen enregistré : il reste dans vos tâches jusqu'aux résultats"); S.tdraft={title:"",notes:"",due:addDays(todayISO(),7),to:"me",patient:null,q:"",remind:null,mode:"exam"}; S.tview=D.to==="me"?"todo":"given"; S.tkind="exam"; await refresh(); };
+  else add.onclick=async()=>{ add.disabled=true; const pt=D.patient;
     const r=await run(()=>sb.rpc("create_task",{p_title:D.title.trim(),p_notes:D.notes.trim()||null,p_due:D.due||null,
       p_assignee:D.to==="me"?S.me.id:D.to==="secretariat"?null:D.to,p_group:D.to==="secretariat"?"secretariat":null,
       p_patient:pt&&!pt.child&&!pt.record?pt.id:null,p_child:pt&&pt.child?pt.id:null,p_record:pt&&pt.record?pt.id:null}),D.due&&D.remind!=null?null:"Tâche ajoutée");
@@ -3957,6 +4007,8 @@ function bindTasks(){
   $$("[data-tppl]").forEach(b=>b.onclick=()=>{ const t=S.tasks.find(x=>x.id===+b.dataset.tppl);
     pickColleagues("Personnes concernées par cette tâche",t.assigned_to?[t.assigned_to]:[],async ids=>{ if(await run(()=>sb.rpc("set_task_people",{p_id:t.id,p_users:ids}),ids.length?"Personnes mises à jour":"Plus personne en plus")){ t.task_people=ids.map(user_id=>({user_id})); render(); return true; } return false; },false,taskPeople(t)); });
   $$("[data-tk]").forEach(b=>b.onclick=()=>{ S.tkind=b.dataset.tk; render(); });
+  $$("[data-exres]").forEach(b=>b.onclick=async()=>{ const t=S.tasks.find(x=>x.id===+b.dataset.exres), on=b.dataset.on==="1"; b.disabled=true;
+    if(await run(()=>sb.rpc("set_exam_results",{p_id:t.id,p_received:on}),on?"Résultats reçus : pensez à contacter le patient":"Remis en attente")){ t.exam_results_at=on?new Date().toISOString():null; render(); } else b.disabled=false; });
   $$("[data-trem]").forEach(sl=>sl.onchange=async()=>{ const t=S.tasks.find(x=>x.id===+sl.dataset.trem), v=sl.value===""?null:+sl.value;
     if(await run(()=>sb.rpc("set_task_reminder",{p_id:t.id,p_days:v}),v==null?"Rappel retiré":"Rappel : "+REMIND[v].toLowerCase())){ t.remind_days=v; t.reminded_at=null; render(); } else render(); });
   $$("[data-tdone]").forEach(b=>b.onclick=async()=>{ const t=S.tasks.find(x=>x.id===+b.dataset.tdone), d=!t.done_at;
