@@ -1641,3 +1641,32 @@ button.hcell.hasc:hover{background:color-mix(in srgb,var(--hc) 55%,transparent)}
 .examrow.late{box-shadow:inset 4px 0 0 var(--danger)}
 .exampick{margin-top:4px}
 .exdue{margin:-4px 0 10px}.exdue .pchip{font-size:12.5px;padding:4px 10px}
+
+/* ----- annonces importantes (066) ----- */
+.annban{display:grid;gap:8px;margin:0 0 16px}
+.staff .annban{margin:0 0 14px}
+.annitem{all:unset;box-sizing:border-box;display:flex;gap:12px;align-items:flex-start;width:100%;padding:12px 14px;border-radius:14px;cursor:pointer;
+  background:var(--warn-soft);border:1px solid color-mix(in srgb,var(--warn) 35%,transparent);border-left:5px solid var(--warn);color:var(--ink)}
+.annitem:hover{filter:brightness(.98)}
+.annitem:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.annic{font-size:22px;line-height:1.1}
+.anntx{display:grid;gap:2px;min-width:0}
+.anntx small{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--warn)}
+.anntx b{font-size:15px;overflow-wrap:anywhere}
+.annbody{font-size:14px;color:var(--muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-line}
+.annbox{max-width:480px;border-top:6px solid var(--warn)}
+.annkick{margin:0 0 4px;font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--warn)}
+.annbox h2{margin:0 0 10px;font-size:22px;overflow-wrap:anywhere}
+.annmsg{white-space:pre-line;font-size:16px;line-height:1.5;margin:0 0 12px;overflow-wrap:anywhere;max-height:50vh;overflow:auto}
+.annbox .btnrow .btn{min-width:150px}
+.annform .fldl{margin:12px 0 6px;font-weight:600;font-size:14px}
+.annform .seg{flex-wrap:wrap}
+.annform .annd{max-width:220px;margin-top:8px}
+.annrow{display:flex;gap:12px;justify-content:space-between;align-items:flex-start;padding:12px 0;border-top:1px solid var(--line)}
+.annrow:first-of-type{border-top:0}
+.annrow p{margin:2px 0 4px;white-space:pre-line;font-size:14px;color:var(--muted)}
+.annrow small{color:var(--muted);font-size:12.5px}
+.annrow.on b:first-child{color:var(--ink)}
+.annrow .acts{display:flex;gap:6px;flex-shrink:0}
+@media (max-width:560px){ .annrow{flex-direction:column} }
+.mini.annstop{border-color:var(--danger);color:var(--danger)}.mini.annstop:hover{background:var(--danger-soft)}

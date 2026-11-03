@@ -938,7 +938,7 @@ async function refresh(){
     markActive();
     if(!lockDone){ lockDone=true; setTimeout(lockApp,0); }   // app rouverte avec une session encore valide : Face ID d'abord
   }
-  if(S.me.status==="active"){ if(S.me.role==="patient") await loadPatient(); else await loadStaff(); }
+  if(S.me.status==="active"){ await Promise.all([S.me.role==="patient"?loadPatient():loadStaff(), loadAnns().catch(e=>console.error(e))]); }
   render();
   if(S.me.status==="active") startRealtime();
   if(IS_NATIVE&&S.me.status==="active"&&!pushSynced){ pushSynced=true; nativePushInit().then(()=>{ if(nativePush!=="unsupported") render(); }); }
@@ -1203,6 +1203,7 @@ function render(){
     for(const k in UNREAD){ if((k[0]==="r"&&k!=="r"+rid)||(k.startsWith("s:chat:")&&k!=="s:chat:"+rid)||(k[0]==="t"&&k!=="t"+tid)||(k.startsWith("s:tmsgs:")&&k!=="s:tmsgs:"+tid)) delete UNREAD[k]; } }
   if($("#chat")) requestAnimationFrame(scrollChat);
   updateBadges();
+  clearTimeout(render.ann); render.ann=setTimeout(annCheck,250);
 }
 
 /* ---------- pastille « nouveau » : titre de l'onglet, icône de l'onglet, icône de l'app ---------- */
@@ -1496,7 +1497,7 @@ function renderPatient(a){
   a.className="wrap";
   const sc=S.screen, bar=PBAR_SCREENS.includes(sc)&&S.me.status==="active";
   document.body.classList.toggle("pbaron",bar);
-  _renderPatient(a);
+  _renderPatient(a); bindAnnBanner();
   if(bar){ a.insertAdjacentHTML("beforeend",patientBarHTML()); bindPatientBar(); }
 }
 function _renderPatient(a){
@@ -1561,6 +1562,7 @@ function patientHome(a){
   a.innerHTML=`<div class="phero">${topBar()}
   <div class="phello"><div><h1 class="hello">${eve?"Bonsoir":"Bonjour"} ${esc(S.me.first_name||"")}</h1>
   <p class="sub openst ${isOpen(new Date())?"on":""}"><span class="odot" aria-hidden="true"></span>${esc(openStatusText())}</p></div>${eve?MOON_SVG:SUN_SVG}</div></div>
+  ${annBannerHTML()}
   ${photosCarouselHTML()}
   ${S.me.news_choice_at?"":`<section class="consent" aria-labelledby="cq"><h2 id="cq">Annonces du centre</h2><p>Souhaitez-vous recevoir une notification pour les annonces importantes du centre (fermetures exceptionnelles, campagnes de vaccination) ?</p><p class="hint">Les réponses à vos demandes vous sont toujours notifiées. Vous pourrez changer d'avis à tout moment dans Notifications.</p><div class="btnrow"><button class="btn" data-consent="1">Oui, me prévenir</button><button class="btn ghost" data-consent="0">Non merci</button></div></section>`}
   <div class="urgent compact">${IC.alert}<div><strong>Urgence vitale : appelez le 112.</strong><br>Les demandes envoyées ici sont lues pendant les heures d'ouverture, pas en urgence.</div></div>
@@ -2071,7 +2073,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261103a";
+const APP_VERSION="20261103b";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -2083,6 +2085,7 @@ const canPub = () => isDesk()||isGestion();
 /* ----- navigation de l'équipe : 3 onglets + « Écrire » + menu de la photo -----
    Ordinateur : onglets en haut. Téléphone : barre en bas (comme les apps habituelles). */
 const SI={
+ mega:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11v3a1 1 0 0 0 1 1h3l5 4V6L7 10H4a1 1 0 0 0-1 1Z"/><path d="M16 8.5a5 5 0 0 1 0 7"/><path d="M19 6a8.5 8.5 0 0 1 0 12"/></svg>',
  inbox:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>',
  tasks:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>',
  centre:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-6h6v6"/><path d="M10 9h4"/></svg>',
@@ -2517,6 +2520,116 @@ function bindFeedback(){
     if(await run(()=>sb.rpc("set_feedback_status",{p_id:f.id,p_status:f.status,p_note:i.value}),"Note enregistrée")) f.admin_note=i.value.trim()||null; });
 }
 
+/* ----- annonces importantes (réservées aux administrateurs) — migration 066 -----
+   Fenêtre à l'ouverture de l'app jusqu'à « J'ai compris », puis bandeau épinglé jusqu'à la date de fin. */
+S.anns=[]; S.annSeen=new Set(); S.annStats={};
+const ANN_AUD={staff:"Équipe",patients:"Patients",all:"Tout le monde"};
+const annActive = b => !b.stopped_at && new Date(b.starts_at)<=new Date() && new Date(b.ends_at)>new Date();
+const annForMe = b => b.audience==="all" || (b.audience==="staff")===(S.me.role!=="patient");
+const myAnns = () => S.me&&S.me.status==="active" ? (S.anns||[]).filter(b=>annActive(b)&&annForMe(b)) : [];
+async function loadAnns(){
+  if(!S.me||S.me.status!=="active") return;
+  const adm=isAdmin();
+  const [b,s]=await Promise.all([sb.from("broadcasts").select("*").order("created_at",{ascending:false}).limit(adm?100:20),
+    sb.from("broadcast_seen").select("broadcast_id").eq("user_id",S.me.id)]);
+  S.annOk=!b.error; S.anns=b.error?[]:(b.data||[]); if(!s.error) S.annSeen=new Set((s.data||[]).map(x=>x.broadcast_id));
+  if(adm&&S.annOk){ const r=await sb.rpc("broadcast_stats"); if(!r.error) S.annStats=Object.fromEntries((r.data||[]).map(x=>[x.broadcast_id,x.seen])); }
+  S.annLoaded=true;
+}
+const annWhen = d => new Date(d).toLocaleString("fr-BE",{weekday:"long",day:"numeric",month:"long",hour:"2-digit",minute:"2-digit"});
+function annBannerHTML(){
+  const list=myAnns(); if(!list.length) return "";
+  return `<div class="annban" role="region" aria-label="Annonces importantes">${list.map(b=>`<button type="button" class="annitem" data-annopen="${b.id}">
+    <span class="annic" aria-hidden="true">📢</span><span class="anntx"><small>Annonce importante</small><b dir="auto">${esc(b.title)}</b>${b.body?`<span class="annbody" dir="auto">${esc(b.body)}</span>`:""}</span></button>`).join("")}</div>`;
+}
+function bindAnnBanner(){ $$("[data-annopen]").forEach(x=>x.onclick=()=>{ const b=S.anns.find(y=>y.id===+x.dataset.annopen); if(b) openAnn(b,{}); }); }
+// fenêtre : à l'ouverture (« J'ai compris » obligatoire), depuis le bandeau (« Fermer ») ou en aperçu pour l'administrateur
+function openAnn(b,{mustAck=false,preview=false}={}){
+  if($(".annmodal")) return;
+  const v=document.createElement("div"); v.className="modal annmodal"; v.setAttribute("role",mustAck?"alertdialog":"dialog"); v.setAttribute("aria-modal","true"); v.setAttribute("aria-labelledby","ann-t");
+  v.innerHTML=`<div class="mbox annbox"><p class="annkick"><span aria-hidden="true">📢</span> <span>Annonce importante</span></p>
+    <h2 id="ann-t" dir="auto">${esc(b.title)}</h2>${b.body?`<p class="annmsg" dir="auto">${esc(b.body)}</p>`:""}
+    ${S.me.role!=="patient"&&b.ends_at?`<p class="hint">Affichée jusqu'au ${esc(annWhen(b.ends_at))}${preview&&!b.id?" (aperçu : rien n'est envoyé)":""}</p>`:""}
+    <div class="btnrow"><button type="button" class="btn" id="ann-ok">${mustAck?"J'ai compris":"Fermer"}</button></div></div>`;
+  const close=()=>{ v.remove(); removeEventListener("keydown",k); setTimeout(annCheck,300); };
+  const k=e=>{ if(e.key==="Escape"&&!mustAck) close(); };
+  v.querySelector("#ann-ok").onclick=async e=>{
+    if(mustAck){ e.target.disabled=true; S.annSeen.add(b.id); const {error}=await sb.rpc("mark_broadcast_seen",{p_id:b.id}); if(error) console.error(error); }
+    close(); };
+  if(!mustAck) v.onclick=e=>{ if(e.target===v) close(); };
+  document.body.appendChild(v); addEventListener("keydown",k); v.querySelector("#ann-ok").focus();
+}
+// une annonce « en fenêtre » pas encore confirmée : on l'affiche dès que l'écran est libre
+function annCheck(){
+  if(!S.me||S.me.status!=="active"||S.mfa||S.loading) return;
+  if(document.hidden||$(".modal")||$("#lock")||document.querySelector(".viewer,.scanner,.tour")||REC||CREC) return;
+  const el=document.activeElement; if(el&&/TEXTAREA|INPUT|SELECT/.test(el.tagName)&&el.value) return;
+  const b=myAnns().find(x=>x.popup&&!S.annSeen.has(x.id)); if(b) openAnn(b,{mustAck:true});
+}
+document.addEventListener("visibilitychange",()=>{ if(!document.hidden) setTimeout(annCheck,600); });
+function annRt(){ clearTimeout(annRt.t); annRt.t=setTimeout(async()=>{ try{ await loadAnns(); }catch(e){ console.error(e); return; }
+  const el=document.activeElement, typing=el&&/TEXTAREA|INPUT|SELECT/.test(el.tagName);
+  if(!typing&&!S.pend&&!REC&&!CREC&&!$(".modal")&&S.screen!=="flow"&&!(S.me.role!=="patient"&&["compose","tasks","inventory"].includes(S.cscreen))) render(); else annCheck(); },500); }
+
+// ----- écran de l'administrateur -----
+S.annForm={aud:"staff",title:"",body:"",dur:"today",date:"",popup:true,push:true};
+function annEnd(f){ const d=new Date(); d.setHours(23,59,0,0);
+  if(f.dur==="date"){ if(!f.date) return null; const x=new Date(f.date+"T23:59:00"); return isNaN(x)?null:x; }
+  d.setDate(d.getDate()+({today:0,tomorrow:1,d3:2,w1:6}[f.dur]||0)); return d; }
+function annoncesHTML(){
+  if(!isAdmin()) return "";
+  if(S.annLoaded&&!S.annOk) return `<div class="chead"><div><h1>Annonces importantes</h1></div></div><div class="err">Cette rubrique sera disponible après la mise à jour de la base de données (migration 066).</div>`;
+  const f=S.annForm, end=annEnd(f), max=new Date(Date.now()+60*864e5).toISOString().slice(0,10);
+  const all=S.anns||[], cur=all.filter(annActive), past=all.filter(b=>!annActive(b)).slice(0,30);
+  const row=b=>{ const on=annActive(b), n=S.annStats[b.id]||0;
+    return `<div class="annrow${on?" on":""}"><div><b dir="auto">${esc(b.title)}</b>${b.body?`<p dir="auto">${esc(b.body)}</p>`:""}
+      <small><span class="pill">${ANN_AUD[b.audience]}</span> ${b.popup?"Fenêtre + bandeau":"Bandeau seul"} · publiée le ${fmtDate(b.created_at)} · ${b.stopped_at?`arrêtée le ${fmtDate(b.stopped_at)}`:on?`jusqu'au ${esc(annWhen(b.ends_at))}`:`terminée le ${fmtDate(b.ends_at)}`}${b.popup?` · <b>${Math.max(0,n-1)}</b> personne${n-1>1?"s ont":" a"} confirmé la lecture`:""}</small></div>
+      <div class="acts"><button type="button" class="mini ghostmini" data-annview="${b.id}">Voir</button>${on?`<button type="button" class="mini annstop" data-annstop="${b.id}">Arrêter</button>`:""}</div></div>`; };
+  const durs=[["today","Aujourd'hui"],["tomorrow","Jusqu'à demain"],["d3","3 jours"],["w1","1 semaine"],["date","Jusqu'au…"]];
+  return `<div class="chead"><div><h1>Annonces importantes</h1><p>Une information à faire voir à tout le monde : elle s'affiche en grand à l'ouverture de l'app, puis reste épinglée en haut de l'écran jusqu'à la date choisie.</p></div></div>
+  <div class="settings">
+  <section class="card annform"><h3>Nouvelle annonce</h3>
+    <p class="fldl">Pour qui ?</p>
+    <div class="seg" role="group" aria-label="Pour qui">${Object.entries(ANN_AUD).map(([k,l])=>`<button type="button" data-annaud="${k}" aria-pressed="${f.aud===k}">${k==="staff"?"👥 ":k==="patients"?"🧑 ":"🌐 "}${l}</button>`).join("")}</div>
+    <label class="fld">Titre<input type="text" id="ann-title" maxlength="120" value="${esc(f.title)}" placeholder="Ex. Centre fermé ce vendredi après-midi"></label>
+    <label class="fld">Message (facultatif)<textarea id="ann-body" rows="4" maxlength="1500" placeholder="Les détails utiles : quoi, quand, que faire.">${esc(f.body)}</textarea></label>
+    <p class="fldl">Affichée</p>
+    <div class="pchips" role="group" aria-label="Durée">${durs.map(([k,l])=>`<button type="button" class="pchip" data-anndur="${k}" aria-pressed="${f.dur===k}">${l}</button>`).join("")}</div>
+    ${f.dur==="date"?`<label class="fld annd">Dernier jour<input type="date" id="ann-date" min="${todayISO()}" max="${max}" value="${esc(f.date)}"></label>`:""}
+    <p class="hint">${end?`Jusqu'au ${esc(annWhen(end))}.`:"Choisissez le dernier jour (60 jours au maximum)."}</p>
+    <label class="chk2"><input type="checkbox" id="ann-popup" ${f.popup?"checked":""}> Afficher en grand à l'ouverture de l'app (chacun doit toucher « J'ai compris »)</label>
+    <label class="chk2"><input type="checkbox" id="ann-push" ${f.push?"checked":""}> Envoyer aussi une notification sur le téléphone, tout de suite</label>
+    ${f.push&&f.aud!=="staff"?`<p class="hint">Les patients ne reçoivent la notification que s'ils ont accepté les « annonces importantes du centre ». Tous la verront dans l'app.</p>`:""}
+    <p class="hint">Pas de nom de patient ni d'information médicale dans une annonce.</p>
+    <div class="btnrow"><button type="button" class="btn" id="ann-go">📢 Publier</button><button type="button" class="btn ghost" id="ann-prev">Aperçu</button></div></section>
+  <section class="card"><h3>En cours${cur.length?` (${cur.length})`:""}</h3>${cur.length?cur.map(row).join(""):`<p class="hint">Aucune annonce affichée en ce moment.</p>`}</section>
+  ${past.length?`<section class="card"><h3>Terminées</h3>${past.map(row).join("")}<p class="hint">Effacées automatiquement 6 mois après leur fin.</p></section>`:""}
+  </div>`;
+}
+function bindAnnonces(){
+  if(!S.annLoaded&&!S.annLoading){ S.annLoading=true; loadAnns().finally(()=>{ S.annLoading=false; if(S.cscreen==="annonces") render(); }); }
+  const f=S.annForm, t=$("#ann-title"), bd=$("#ann-body"); if(!t) return;
+  const keep=()=>{ f.title=t.value; f.body=bd.value; };
+  t.oninput=keep; bd.oninput=keep;
+  $$("[data-annaud]").forEach(b=>b.onclick=()=>{ keep(); f.aud=b.dataset.annaud; render(); });
+  $$("[data-anndur]").forEach(b=>b.onclick=()=>{ keep(); f.dur=b.dataset.anndur; render(); if(f.dur==="date") $("#ann-date")?.focus(); });
+  const dt=$("#ann-date"); if(dt) dt.onchange=()=>{ keep(); f.date=dt.value; render(); };
+  $("#ann-popup").onchange=e=>{ f.popup=e.target.checked; };
+  $("#ann-push").onchange=e=>{ keep(); f.push=e.target.checked; render(); };
+  $("#ann-prev").onclick=()=>{ keep(); if(!f.title.trim()){ toast("Donnez un titre à l'annonce."); t.focus(); return; } openAnn({title:f.title.trim(),body:f.body.trim(),ends_at:annEnd(f)},{preview:true}); };
+  $("#ann-go").onclick=async e=>{ keep();
+    if(!f.title.trim()){ toast("Donnez un titre à l'annonce."); t.focus(); return; }
+    const end=annEnd(f); if(!end){ toast("Choisissez le dernier jour."); return; }
+    if(end>new Date(Date.now()+60*864e5)){ toast("Une annonce dure 60 jours au maximum."); return; }
+    if(!confirmInline(e.target,`Publier pour : ${ANN_AUD[f.aud].toLowerCase()} ?`)) return;
+    e.target.disabled=true;
+    const ok=await run(()=>sb.rpc("publish_broadcast",{p_audience:f.aud,p_title:f.title.trim(),p_body:f.body.trim(),p_popup:f.popup,p_ends:end.toISOString(),p_push:f.push}),"Annonce publiée");
+    if(ok){ S.annForm={aud:f.aud,title:"",body:"",dur:"today",date:"",popup:true,push:true}; await loadAnns(); render(); } else e.target.disabled=false; };
+  $$("[data-annview]").forEach(b=>b.onclick=()=>{ const x=S.anns.find(y=>y.id===+b.dataset.annview); if(x) openAnn(x,{preview:true}); });
+  $$("[data-annstop]").forEach(b=>b.onclick=async()=>{ if(!confirmInline(b,"Arrêter ?")) return; b.disabled=true;
+    if(await run(()=>sb.rpc("stop_broadcast",{p_id:+b.dataset.annstop}),"Annonce arrêtée : elle n'est plus affichée")){ await loadAnns(); render(); } else b.disabled=false; });
+}
+
 /* ----- anniversaires de l'équipe ----- */
 const MOIS=["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"];
 // anniversaires : d'après la date de naissance des comptes (migration 060), sinon dates indiquées à la main (059)
@@ -2800,6 +2913,7 @@ function staffHelpHTML(){
    ["Rappel avant l'échéance d'une tâche","Équipe → Tâches : mettez une échéance, cochez « Recevoir un rappel par e-mail » et choisissez quand (le jour même, la veille, 48 h, 72 h ou 1 semaine avant). L'e-mail part à 8 h vers la personne qui doit faire la tâche. Vous pouvez changer le rappel d'une tâche existante avec la petite cloche 🔔. Les tâches sont classées de la plus urgente à la moins urgente."],
    ["Ordinateur de confiance (accueil)","Au moment du code de sécurité, cochez « Faire confiance à cet ordinateur » : pendant 90 jours, l'e-mail et le mot de passe suffisent sur cet ordinateur, avec déconnexion après 2 heures d'inactivité. Uniquement sur un ordinateur du centre. Pour le retirer : Mon profil et notifications → Ordinateurs de confiance."],
    ["Valider les comptes des patients","Seul un administrateur valide les nouveaux comptes et les enfants ajoutés par un parent (Patients → Comptes à valider). Un administrateur peut donner ces droits à n'importe quel membre de l'équipe (secrétariat compris) : Équipe → Comptes de l'équipe → case « Administrateur ». La personne garde son rôle."],
+   ["Annonces importantes (administrateurs)","Le centre → Annonces importantes : choisissez pour qui (équipe, patients ou tout le monde), un titre, un message et jusqu'à quand. L'annonce s'affiche en grand à l'ouverture de l'app (chacun touche « J'ai compris »), puis reste épinglée en haut de l'écran jusqu'au dernier jour choisi. Vous voyez combien de personnes l'ont lue et pouvez l'arrêter à tout moment. Notification sur le téléphone en option ; les patients ne la reçoivent que s'ils ont accepté les annonces du centre."],
    ["Face ID sur l'iPhone","Dans l'app iPhone : Mon profil et notifications → Face ID. Ensuite l'app se déverrouille avec votre visage, sans code."],
    ["Un problème avec l'app","Prévenez l'administrateur du centre en précisant l'écran concerné (une capture d'écran aide beaucoup)."]];
   return `<div class="chead"><div><h1>Aide</h1><p>Les réponses aux questions les plus fréquentes de l'équipe.</p></div></div>
@@ -2810,9 +2924,10 @@ function renderStaff(a){
   const sc=S.cscreen;
   const nav=staffNavHTML(sc);
   let body="";
-  if(sc==="compose") body=composeHTML(); else if(sc==="inventory") body=inventoryHTML(); else if(sc==="tasks") body=tasksHTML(); else if(sc==="accounts") body=accountsHTML(); else if(sc==="news") body=newsAdminHTML(); else if(sc==="team") body=teamHTML(); else if(sc==="settings") body=settingsHTML(); else if(sc==="help") body=staffHelpHTML(); else if(sc==="leaves") body=leavesHTML(); else if(sc==="patients") body=patientsHTML(); else if(sc==="messages") body=teamHTML2(); else if(sc==="templates") body=templatesHTML(); else if(sc==="binder") body=binderHTML(); else if(sc==="desk") body=deskHTML(); else if(sc==="waitlist") body=waitlistHTML(); else if(sc==="fiches") body=fichesHTML(); else if(sc==="infos") body=infosHTML(); else if(sc==="feedback"&&isAdmin()) body=feedbackHTML(); else if(sc==="hours"&&canOffice()) body=hoursHTML(); else if(sc==="cash"&&canOffice()) body=cashHTML(); else body=inboxHTML();
+  if(sc==="compose") body=composeHTML(); else if(sc==="inventory") body=inventoryHTML(); else if(sc==="tasks") body=tasksHTML(); else if(sc==="accounts") body=accountsHTML(); else if(sc==="news") body=newsAdminHTML(); else if(sc==="team") body=teamHTML(); else if(sc==="settings") body=settingsHTML(); else if(sc==="help") body=staffHelpHTML(); else if(sc==="leaves") body=leavesHTML(); else if(sc==="patients") body=patientsHTML(); else if(sc==="messages") body=teamHTML2(); else if(sc==="templates") body=templatesHTML(); else if(sc==="binder") body=binderHTML(); else if(sc==="desk") body=deskHTML(); else if(sc==="waitlist") body=waitlistHTML(); else if(sc==="fiches") body=fichesHTML(); else if(sc==="infos") body=infosHTML(); else if(sc==="feedback"&&isAdmin()) body=feedbackHTML(); else if(sc==="annonces"&&isAdmin()) body=annoncesHTML(); else if(sc==="hours"&&canOffice()) body=hoursHTML(); else if(sc==="cash"&&canOffice()) body=cashHTML(); else body=inboxHTML();
   document.body.classList.add("hasbar","sidenav"); document.body.classList.remove("ddopen");
-  a.innerHTML=nav+urgBannerHTML()+(sc==="inbox"||sc==="messages"?bdayBannerHTML():"")+body;
+  a.innerHTML=nav+urgBannerHTML()+annBannerHTML()+(sc==="inbox"||sc==="messages"?bdayBannerHTML():"")+body;
+  bindAnnBanner();
   $$("[data-bdwrite]").forEach(b=>b.onclick=()=>writeTo(b.dataset.bdwrite));
   if(!S.bdLoaded&&!S.bdLoading){ S.bdLoading=true; loadBirthdays().then(()=>{ S.bdLoading=false; const el=document.activeElement;
     if((S.bdays||[]).some(b=>isBdayOn(b,new Date()))||S.cscreen==="settings"){ if(!(el&&/TEXTAREA|INPUT|SELECT/.test(el.tagName))&&!S.pend&&!$(".modal")) render(); } }).catch(()=>{ S.bdLoading=false; }); }
@@ -2827,7 +2942,7 @@ function renderStaff(a){
   $$("[data-dd]").forEach(b=>b.onclick=e=>{ e.stopPropagation(); openDD(b.dataset.dd); });
   const bk=$(".ddback"); if(bk) bk.onclick=closeDD;
   $$("[data-cs]").forEach(b=>b.onclick=()=>{ closeDD(); if(CREC&&b.dataset.cs!=="compose") composeRecStop(false); S.cscreen=b.dataset.cs; render(); window.scrollTo(0,0); });
-  if(sc==="compose") bindCompose(); else if(sc==="inventory") bindInventory(); else if(sc==="tasks") bindTasks(); else if(sc==="accounts") bindAccounts(); else if(sc==="news") bindNewsAdmin(); else if(sc==="team") bindTeam(); else if(sc==="settings") bindSettings(); else if(sc==="help"||sc==="leaves") {} else if(sc==="patients") bindPatients(); else if(sc==="messages") bindTeam2(); else if(sc==="templates") bindTemplates(); else if(sc==="binder") bindBinder(); else if(sc==="desk") bindDesk(); else if(sc==="waitlist"){ if(S.waitlist) bindWaitlist(); } else if(sc==="fiches") bindFiches(); else if(sc==="infos") bindInfos(); else if(sc==="feedback"&&isAdmin()) bindFeedback(); else if(sc==="hours"&&canOffice()) bindHours(); else if(sc==="cash"&&canOffice()) bindCash(); else bindInbox();
+  if(sc==="compose") bindCompose(); else if(sc==="inventory") bindInventory(); else if(sc==="tasks") bindTasks(); else if(sc==="accounts") bindAccounts(); else if(sc==="news") bindNewsAdmin(); else if(sc==="team") bindTeam(); else if(sc==="settings") bindSettings(); else if(sc==="help"||sc==="leaves") {} else if(sc==="patients") bindPatients(); else if(sc==="messages") bindTeam2(); else if(sc==="templates") bindTemplates(); else if(sc==="binder") bindBinder(); else if(sc==="desk") bindDesk(); else if(sc==="waitlist"){ if(S.waitlist) bindWaitlist(); } else if(sc==="fiches") bindFiches(); else if(sc==="infos") bindInfos(); else if(sc==="feedback"&&isAdmin()) bindFeedback(); else if(sc==="annonces"&&isAdmin()) bindAnnonces(); else if(sc==="hours"&&canOffice()) bindHours(); else if(sc==="cash"&&canOffice()) bindCash(); else bindInbox();
 }
 
 /* ----- durée estimée des rendez-vous de médecine générale (visible par l'équipe seulement) ----- */
@@ -4470,7 +4585,7 @@ function navGroups(){
      {cs:"binder",ic:SI.book,t:"Classeur"},
      {cs:"fiches",ic:IC.doc,t:"Fiches conseils"},
      {cs:"inventory",ic:SI.box,t:"Inventaire",n:invOpen()},
-     ...(isAdmin()?[{cs:"feedback",ic:SI.idea,t:"Suggestions",n:fbNew()}]:[])]}];
+     ...(isAdmin()?[{cs:"annonces",ic:SI.mega,t:"Annonces"},{cs:"feedback",ic:SI.idea,t:"Suggestions",n:fbNew()}]:[])]}];
   return G;
 }
 const ME_SCREENS=["settings","help","templates"];
@@ -5075,6 +5190,7 @@ function startRealtime(){
       .on("postgres_changes",{event:"INSERT",schema:"public",table:"team_messages"},()=>teamRt())
       .on("postgres_changes",{event:"*",schema:"public",table:"message_reactions"},p=>rtQueue((p.new&&p.new.request_id)||(p.old&&p.old.request_id)))
       .on("postgres_changes",{event:"*",schema:"public",table:"team_message_reactions"},()=>teamRt())
+      .on("postgres_changes",{event:"*",schema:"public",table:"broadcasts"},()=>annRt())
       .subscribe();
   }catch(e){ console.error(e); RT=null; }
 }
