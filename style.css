@@ -1670,3 +1670,61 @@ button.hcell.hasc:hover{background:color-mix(in srgb,var(--hc) 55%,transparent)}
 .annrow .acts{display:flex;gap:6px;flex-shrink:0}
 @media (max-width:560px){ .annrow{flex-direction:column} }
 .mini.annstop{border-color:var(--danger);color:var(--danger)}.mini.annstop:hover{background:var(--danger-soft)}
+
+/* ----- tâches en tableau (067) ----- */
+.taskstack{display:grid;gap:14px;align-items:start}
+.taskstack>.taskform{max-width:760px}
+.tfhead{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.tknew{display:flex;gap:8px;flex-wrap:wrap}
+.prioseg{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.prioseg button{border:1.5px solid var(--line);background:var(--surface);border-radius:999px;padding:6px 12px;font-weight:700;font-size:13.5px;color:var(--ink);cursor:pointer}
+.prioseg button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.prioseg button.pr-haute[aria-pressed="true"]{background:var(--danger);border-color:var(--danger);color:#fff}
+.tsort{display:flex;align-items:center;gap:8px;justify-content:flex-end;margin:0 0 8px}
+.tsort .seg button{padding:5px 12px;font-size:13px}
+.ttable{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.trow{display:grid;grid-template-columns:40px 112px minmax(0,1fr) 150px 140px 34px;gap:10px;align-items:center;padding:9px 12px;border-top:1px solid var(--line);border-left:4px solid transparent}
+.trow.thead{border-top:0;background:var(--surface-2);font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);padding:8px 12px}
+.trow.pr-haute{border-left-color:var(--danger)}
+.trow.pr-basse .tct b{font-weight:600;color:var(--muted)}
+.trow:not(.thead):hover{background:color-mix(in srgb,var(--surface-2) 45%,var(--surface))}
+.trow.open{background:var(--surface-2)}
+.trow.done .tct b{text-decoration:line-through;color:var(--muted)}
+.trow .tcheck{margin:0}
+.tct{all:unset;cursor:pointer;min-width:0;display:grid;gap:2px}
+.tct:focus-visible,.tcx:focus-visible{outline:3px solid var(--accent);outline-offset:2px;border-radius:6px}
+.tct b{font-size:14.5px;line-height:1.3;overflow-wrap:anywhere}
+.tct small{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+.tcw{font-size:13px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tcw i{display:none;font-style:normal;color:var(--muted)}
+.tcd{font-size:13px;font-weight:600;white-space:nowrap}
+.tcd.late{color:var(--danger)}
+.tcd.today{color:var(--warn)}
+.tcx{all:unset;cursor:pointer;width:30px;height:30px;display:grid;place-items:center;border-radius:8px;color:var(--muted);font-size:14px}
+.tcx:hover{background:var(--surface-2)}
+select.tprio,span.tprio{font:inherit;font-size:12.5px;font-weight:700;border:1.5px solid var(--line);border-radius:999px;padding:4px 8px;background:var(--surface);color:var(--ink);max-width:100%}
+.tprio.pr-haute{border-color:var(--danger);color:var(--danger);background:var(--danger-soft)}
+.tprio.pr-basse{color:var(--muted)}
+.tdetail{display:flex;gap:14px;justify-content:space-between;align-items:flex-start;padding:4px 16px 14px 66px;background:var(--surface-2);border-left:4px solid transparent}
+.trow.pr-haute+.tdetail{border-left-color:var(--danger)}
+.tdetail>div{display:grid;gap:8px;min-width:0}
+.tdetail .tnotes{margin:0;white-space:pre-line}
+.tdetail small{color:var(--muted);font-size:12px}
+.tdigest{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 12px;margin:0 0 10px;border:1px dashed var(--line);border-radius:12px;font-size:14px;color:var(--muted)}
+.tdigest.on{border-style:solid;background:var(--info-soft);color:var(--ink);border-color:color-mix(in srgb,var(--info) 30%,transparent)}
+.tdigest.tdedit{display:block;border-style:solid;background:var(--surface);color:var(--ink)}
+.tdigest.tdedit h3{margin:0 0 8px;font-size:16px}
+.tdigest .fldl{margin:10px 0 6px;font-weight:600;font-size:14px}
+.tdigest .pchips{display:flex;gap:6px;flex-wrap:wrap}
+@media (max-width:760px){
+  .trow.thead{display:none}
+  .trow{grid-template-columns:34px minmax(0,1fr) 30px;grid-template-areas:"c t x" "c m m";row-gap:6px;padding:10px 10px}
+  .tcc{grid-area:c;align-self:start}
+  .tct{grid-area:t}
+  .tcx{grid-area:x;align-self:start}
+  .tcp,.tcw,.tcd{grid-row:2}
+  .trow>.tcp{grid-column:2;justify-self:start}
+  .trow>.tcw{display:none}
+  .trow>.tcd{grid-column:2 / 4;justify-self:end}
+  .tdetail{padding:4px 12px 12px 48px;flex-direction:column}
+}

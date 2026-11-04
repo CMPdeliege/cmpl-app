@@ -2073,7 +2073,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261103b";
+const APP_VERSION="20261104a";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -2913,6 +2913,7 @@ function staffHelpHTML(){
    ["Rappel avant l'échéance d'une tâche","Équipe → Tâches : mettez une échéance, cochez « Recevoir un rappel par e-mail » et choisissez quand (le jour même, la veille, 48 h, 72 h ou 1 semaine avant). L'e-mail part à 8 h vers la personne qui doit faire la tâche. Vous pouvez changer le rappel d'une tâche existante avec la petite cloche 🔔. Les tâches sont classées de la plus urgente à la moins urgente."],
    ["Ordinateur de confiance (accueil)","Au moment du code de sécurité, cochez « Faire confiance à cet ordinateur » : pendant 90 jours, l'e-mail et le mot de passe suffisent sur cet ordinateur, avec déconnexion après 2 heures d'inactivité. Uniquement sur un ordinateur du centre. Pour le retirer : Mon profil et notifications → Ordinateurs de confiance."],
    ["Valider les comptes des patients","Seul un administrateur valide les nouveaux comptes et les enfants ajoutés par un parent (Patients → Comptes à valider). Un administrateur peut donner ces droits à n'importe quel membre de l'équipe (secrétariat compris) : Équipe → Comptes de l'équipe → case « Administrateur ». La personne garde son rôle."],
+   ["Priorité des tâches et récapitulatif par e-mail","Équipe → Tâches : chaque tâche a une priorité (haute, normale, basse), modifiable directement dans le tableau. Triez par priorité ou par échéance ; touchez une ligne pour voir ses détails (note, documents, rappel, personnes). En haut de la liste, « Récapitulatif de mes tâches par e-mail » : choisissez les jours et une ou plusieurs heures pour recevoir la liste de vos tâches à faire. Rien n'est envoyé s'il n'y a rien à faire, et l'e-mail ne contient jamais de nom de patient."],
    ["Annonces importantes (administrateurs)","Le centre → Annonces importantes : choisissez pour qui (équipe, patients ou tout le monde), un titre, un message et jusqu'à quand. L'annonce s'affiche en grand à l'ouverture de l'app (chacun touche « J'ai compris »), puis reste épinglée en haut de l'écran jusqu'au dernier jour choisi. Vous voyez combien de personnes l'ont lue et pouvez l'arrêter à tout moment. Notification sur le téléphone en option ; les patients ne la reçoivent que s'ils ont accepté les annonces du centre."],
    ["Face ID sur l'iPhone","Dans l'app iPhone : Mon profil et notifications → Face ID. Ensuite l'app se déverrouille avec votre visage, sans code."],
    ["Un problème avec l'app","Prévenez l'administrateur du centre en précisant l'écran concerné (une capture d'écran aide beaucoup)."]];
@@ -3611,7 +3612,7 @@ async function officePdf(doc){
     const rows=[["Objet",[d.objet_label,d.precision].filter(Boolean).join(" · ")||"—"],["Prestataire",d.prestataire||"—"],["Moyen de paiement",doc.method||"—"],["Date du paiement",fmtDate(doc.doc_date+"T12:00")]];
     for(const [k,v] of rows){ T(k,M,10.5,{color:GREY}); T(v,M+150,10.5,{bold:true}); y-=8; line(M,y,W-M,y); y-=16; }
     if(d.remarque){ y-=4; T("Remarque",M,10,{color:GREY}); P(d.remarque,M,CW,10.5); y-=10; }
-    y-=18; T(`Pour le ${C.nom}`,M,10.5); y-=14; T(d.par||"",M,10.5,{bold:true});
+    y-=18; T("Pour la société,",M,10.5,{color:GREY}); y-=14; T(`Administration du ${C.nom}`,M,10.5,{bold:true});
     T("Signature et cachet",W-M-170,9,{color:GREY}); ops.push(`0.80 0.75 0.70 RG 0.7 w ${W-M-170} ${(y-62).toFixed(2)} 170 56 re S`);
     y-=96; P("Ce reçu atteste du paiement de la somme indiquée ci-dessus. Il ne remplace pas l'attestation de soins (ou l'eAttest) nécessaire au remboursement par la mutuelle.",M,CW,9,{color:GREY});
   } else {
@@ -3631,6 +3632,7 @@ async function officePdf(doc){
     T(`Par virement sur le compte ${C.iban}${C.bic?` (BIC ${C.bic})`:""} au nom de ${C.societe}`,M+12,10); y-=14;
     T(`Communication : ${doc.number}`,M+12,10,{bold:true}); y-=14;
     T(`Merci de payer ${d.echeance?"avant le "+fmtDate(d.echeance+"T12:00"):"à réception de la facture"}.`,M+12,10,{color:GREY});
+    y-=44; T(`Administration du ${C.nom}`,M,10.5,{bold:true});
   }
   // pied de page
   y=M+10; line(M,M+22,W-M,M+22);
@@ -3953,7 +3955,7 @@ function bindPatients(){
     if(await run(()=>sb.rpc("delete_patient_record",{p_id:b.dataset.rdel}),"Fiche supprimée")){ S.records=S.records.filter(x=>x.id!==b.dataset.rdel); render(); } });
   $$("[data-rinv]").forEach(b=>b.onclick=async()=>{ b.disabled=true; if(await run(()=>sb.rpc("invite_patient_record",{p_id:b.dataset.rinv}),"Invitation envoyée par e-mail")){ const r=S.records.find(x=>x.id===b.dataset.rinv); if(r) r.invited_at=new Date().toISOString(); render(); } else b.disabled=false; });
   $$("[data-rtask]").forEach(b=>b.onclick=()=>{ const r=S.records.find(x=>x.id===b.dataset.rtask);
-    S.tdraft={title:"",notes:"",due:"",to:"me",patient:{...r,record:true},q:"",remind:null}; S.tview="todo"; S.cscreen="tasks"; render(); scrollTo(0,0); $("#tk-title")?.focus(); });
+    S.tdraft={title:"",notes:"",due:"",to:"me",patient:{...r,record:true},q:"",remind:null}; S.tformOpen=true; S.tview="todo"; S.cscreen="tasks"; render(); scrollTo(0,0); $("#tk-title")?.focus(); });
   $$("[data-rmsg]").forEach(b=>b.onclick=()=>{ const r=S.records.find(x=>x.id===b.dataset.rmsg);
     pickColleagues("En parler avec…",[],async(ids,name)=>{ const {data,error}=await sb.rpc("team_start",{p_members:ids,p_title:name||null}); if(error){ toast(frError(error)); return false; }
       await loadTeam(); S.tthread=data; S.drafts["t"+data]=`À propos de ${r.first_name} ${r.last_name} (né(e) le ${fmtDate(r.birth_date)}, fiche sans compte) : `; S.cscreen="messages"; render(); const c=$("#c-text"); if(c){ c.focus(); c.setSelectionRange(c.value.length,c.value.length); } return true; },true); });
@@ -4022,6 +4024,85 @@ function taskLinkHTML(t){
   if(!t.patient_id&&!t.child_id) return "";
   const nm=t.child_id?kidName(t.child_id):patientName(t.patient_id), bd=t.child_id?S.children[t.child_id]?.birth_date:S.profiles[t.patient_id]?.birth_date;
   return `<span class="tasklink">${IC.user}<b>${esc(nm)}</b>${bd?` · né(e) le ${fmtDate(bd)}`:""}${t.child_id?" · enfant":""}</span>`; }
+/* ----- tâches en tableau : priorité, échéance, détails dépliables (067) ----- */
+const PRIO={haute:["Haute",0],normale:["Normale",1],basse:["Basse",2]};
+const prioOf = t => PRIO[t.priority]?t.priority:"normale";
+const byPrio = (a,b) => PRIO[prioOf(a)][1]-PRIO[prioOf(b)][1] || byDue(a,b);
+const byDueP = (a,b) => (a.due_date||"9999")<(b.due_date||"9999")?-1:(a.due_date||"9999")>(b.due_date||"9999")?1:PRIO[prioOf(a)][1]-PRIO[prioOf(b)][1]||new Date(b.created_at)-new Date(a.created_at);
+const prioPicker = (v,attr) => `<div class="prioseg" role="group" aria-label="Priorité">${Object.entries(PRIO).map(([k,[l]])=>`<button type="button" class="pr-${k}" ${attr}="${k}" aria-pressed="${v===k}">${k==="haute"?"🔴 ":""}${l}</button>`).join("")}</div>`;
+function examStateHTML(t){
+  const td=todayISO(), got=!!t.exam_results_at, late=!got&&t.due_date&&t.due_date<td, d=x=>new Date(x+"T12:00").toLocaleDateString(LOC,{day:"numeric",month:"short"});
+  return `<div class="exstate">${t.done_at?`<b class="exok">✓ Patient contacté</b> ${fmt(t.done_at)}`
+    :got?`<b class="exok">✅ Résultats reçus</b> ${fmt(t.exam_results_at)} · <b>à communiquer au patient</b> <button type="button" class="linkbtn" data-exres="${t.id}" data-on="0">annuler</button>`
+    :`<b class="${late?"exlate":"exwait"}">${late?"⚠️ Résultats attendus depuis le "+d(t.due_date):"⏳ En attente des résultats"+(t.due_date?" (vers le "+d(t.due_date)+")":"")}</b> <button type="button" class="mini" data-exres="${t.id}" data-on="1">Résultats reçus</button>`}</div>`; }
+function taskPatShort(t){ if(t.record_id) return recName(t.record_id); if(t.child_id) return kidName(t.child_id); if(t.patient_id) return patientName(t.patient_id); return ""; }
+function taskTRowHTML(t,V){
+  const open=!!(S.topen&&S.topen.has(t.id)), ex=isExam(t), p=prioOf(t), td=todayISO();
+  const late=!t.done_at&&t.due_date&&t.due_date<td, today=!t.done_at&&t.due_date===td;
+  const dd=t.due_date?new Date(t.due_date+"T12:00").toLocaleDateString(LOC,{weekday:"short",day:"numeric",month:"short"}):"";
+  const tm=t.due_time?` · ${String(t.due_time).slice(0,5).replace(":","h")}`:"";
+  const who=V==="given"?taskForLabel(t):t.created_by===S.me.id?"Moi":teamName(t.created_by);
+  const title=ex?"🧪 "+((t.exam_types||[]).join(", ")||"Examen"):t.title;
+  const pat=taskPatShort(t), nf=(t.task_files||[]).length;
+  const tags=[pat?`👤 ${esc(pat)}`:ex?"":"🏥 Organisation",
+    ex?(t.done_at?"✓ patient contacté":t.exam_results_at?"<b class=\"exok\">✅ résultats reçus, à communiquer</b>":"⏳ en attente des résultats"):"",
+    nf?`📎 ${nf}`:"", t.notes&&!ex?"🗒️ note":"", t.remind_days!=null&&!t.done_at?"🔔 rappel":"", taskPeople(t).filter(id=>id!==t.assigned_to).length?"👥 "+taskPeople(t).filter(id=>id!==t.assigned_to).length:""].filter(Boolean);
+  const canRem=!ex&&!t.done_at&&t.due_date&&t.due_date>=td;
+  const detail=`<div class="tdetail" role="row"><div>
+    ${t.notes?`<p class="tnotes">${esc(t.notes)}</p>`:""}${taskLinkHTML(t)}${ex?examStateHTML(t):""}${tkFilesHTML(t)}
+    ${canRem?`<label class="tremind${t.remind_days!=null?" on":""}" title="Rappel par e-mail à 8 h à la personne qui doit faire la tâche"><span aria-hidden="true">🔔</span><select data-trem="${t.id}" aria-label="Rappel par e-mail"><option value="">Pas de rappel avant l'échéance</option>${remindOpts(t.remind_days)}</select>${t.reminded_at?`<em>envoyé</em>`:""}</label>`:""}
+    <small>Pour : ${esc(taskForLabel(t))}${t.created_by===S.me.id&&!t.done_at?` <button type="button" class="linkbtn tppl" data-tppl="${t.id}">👥 Personnes</button>`:""} · de ${esc(teamName(t.created_by))} · ${ex&&t.exam_requested?"demandé le "+fmtDate(t.exam_requested+"T12:00"):"créée "+fmt(t.created_at)}${t.done_at?` · faite ${fmt(t.done_at)} par ${esc(teamName(t.done_by))}`:""}</small></div>
+    ${t.created_by===S.me.id?`<button class="linkbtn tdel" data-tdel="${t.id}">Supprimer</button>`:""}</div>`;
+  return `<div class="trow pr-${p}${t.done_at?" done":""}${late?" late":""}${open?" open":""}" role="row">
+    <span class="tcc" role="cell"><button class="tcheck" data-tdone="${t.id}" aria-pressed="${!!t.done_at}" aria-label="${t.done_at?"Remettre à faire":ex?"Patient contacté : terminé":"Marquer comme faite"}" title="${t.done_at?"Remettre à faire":ex?"Patient contacté : terminé":"Faite"}">${t.done_at?"✓":""}</button></span>
+    <span class="tcp" role="cell">${t.done_at?`<span class="tprio pr-${p}">${PRIO[p][0]}</span>`:`<select class="tprio pr-${p}" data-tprio="${t.id}" aria-label="Priorité">${Object.entries(PRIO).map(([k,[l]])=>`<option value="${k}" ${p===k?"selected":""}>${k==="haute"?"🔴 ":""}${l}</option>`).join("")}</select>`}</span>
+    <button type="button" class="tct" role="cell" data-topen="${t.id}" aria-expanded="${open}"><b>${esc(title)}</b>${tags.length?`<small>${tags.join(" · ")}</small>`:""}</button>
+    <span class="tcw" role="cell"><i>${V==="given"?"Pour":"De"} </i>${esc(who)}</span>
+    <span class="tcd${late?" late":today?" today":""}" role="cell">${t.done_at?`<span class="hint">faite ${fmtDate(t.done_at)}</span>`:late?`⚠️ ${dd}${tm}`:today?`Aujourd'hui${tm}`:dd?dd+tm:`<span class="hint">—</span>`}</span>
+    <button type="button" class="tcx" data-topen="${t.id}" aria-label="${open?"Masquer les détails":"Voir les détails"}" aria-expanded="${open}">${open?"▴":"▾"}</button>
+  </div>${open?detail:""}`;
+}
+function taskTableHTML(list,V){
+  const so=S.tsort||"prio", L=V==="done"?list:[...list].sort(so==="due"?byDueP:byPrio);
+  return `${V!=="done"?`<div class="tsort"><span class="hint">Trier par</span><div class="seg" role="group" aria-label="Trier par"><button type="button" data-tsort="prio" aria-pressed="${so==="prio"}">Priorité</button><button type="button" data-tsort="due" aria-pressed="${so==="due"}">Échéance</button></div></div>`:""}
+  <div class="ttable" role="table" aria-label="Tâches"><div class="trow thead" role="row"><span role="columnheader"></span><span role="columnheader">Priorité</span><span role="columnheader">Tâche</span><span role="columnheader">${V==="given"?"Pour":"De"}</span><span role="columnheader">Échéance</span><span></span></div>
+  ${L.map(t=>taskTRowHTML(t,V)).join("")}</div>`;
+}
+// ----- récapitulatif des tâches par e-mail (067) -----
+const DIG_DAYS=[[1,"Lun"],[2,"Mar"],[3,"Mer"],[4,"Jeu"],[5,"Ven"],[6,"Sam"],[7,"Dim"]], DIG_HOURS=[7,8,9,12,13,14,17,18,19];
+async function loadDigest(){ const {data,error}=await sb.from("task_digest").select("*").eq("user_id",S.me.id).maybeSingle();
+  S.tdigOk=!error; S.tdig=data||null; S.tdigLoaded=true; }
+function digestLabel(d){ if(!d||!d.enabled) return "désactivé";
+  const J=["lundi","mardi","mercredi","jeudi","vendredi","samedi","dimanche"], ds=[...d.days].sort((a,b)=>a-b), run=ds.length>=3&&ds[ds.length-1]-ds[0]===ds.length-1;
+  const w=ds.length===7?"tous les jours":run?`du ${J[ds[0]-1]} au ${J[ds[ds.length-1]-1]}`:ds.length===1?`le ${J[ds[0]-1]}`:`le ${ds.slice(0,-1).map(x=>J[x-1]).join(", ")} et le ${J[ds[ds.length-1]-1]}`;
+  return `${w} à ${[...d.hours].sort((a,b)=>a-b).map(h=>h+" h").join(" et ")}`; }
+function digestHTML(){
+  if(!S.tdigLoaded||!S.tdigOk) return "";
+  const d=S.tdig, on=!!(d&&d.enabled);
+  if(!S.tdigEdit) return `<div class="tdigest${on?" on":""}"><span aria-hidden="true">📧</span><span>Récapitulatif de mes tâches par e-mail : <b>${digestLabel(d)}</b></span><button type="button" class="linkbtn" id="dig-edit">${on?"Modifier":"Activer"}</button></div>`;
+  const E=S.tdigEdit;
+  return `<div class="tdigest tdedit"><h3>📧 Récapitulatif de mes tâches par e-mail</h3>
+    <label class="chk2"><input type="checkbox" id="dig-on" ${E.enabled?"checked":""}> Recevoir par e-mail la liste de mes tâches encore à faire</label>
+    ${E.enabled?`<p class="fldl">Quels jours ?</p><div class="pchips">${DIG_DAYS.map(([k,l])=>`<button type="button" class="pchip" data-digd="${k}" aria-pressed="${E.days.includes(k)}">${l}</button>`).join("")}</div>
+    <p class="fldl">À quelle heure ? <span class="hint">(une ou plusieurs, 4 au maximum)</span></p><div class="pchips">${DIG_HOURS.map(h=>`<button type="button" class="pchip" data-digh="${h}" aria-pressed="${E.hours.includes(h)}">${h} h</button>`).join("")}</div>`:""}
+    <p class="hint">Seulement les tâches qui vous sont confiées (pas la liste de l'Accueil), classées par échéance et par priorité. Rien n'est envoyé s'il n'y a rien à faire. Pas de nom de patient dans l'e-mail : ces tâches y apparaissent comme « Tâche liée à un patient ».</p>
+    <div class="btnrow"><button type="button" class="btn" id="dig-save">Enregistrer</button><button type="button" class="btn ghost" id="dig-x">Annuler</button></div></div>`;
+}
+function bindDigest(){
+  if(!S.tdigLoaded&&!S.tdigLoading){ S.tdigLoading=true; loadDigest().catch(()=>{ S.tdigOk=false; }).finally(()=>{ S.tdigLoading=false; if(S.cscreen==="tasks"&&!(document.activeElement&&/TEXTAREA|INPUT|SELECT/.test(document.activeElement.tagName))) render(); }); }
+  const ed=$("#dig-edit"); if(ed) ed.onclick=()=>{ const d=S.tdig; S.tdigEdit={enabled:true,days:d?[...d.days]:[1,2,3,4,5],hours:d?[...d.hours]:[8]}; render(); };
+  const E=S.tdigEdit; if(!E||!$("#dig-on")) return;
+  $("#dig-on").onchange=e=>{ E.enabled=e.target.checked; render(); };
+  $$("[data-digd]").forEach(b=>b.onclick=()=>{ const k=+b.dataset.digd; E.days=E.days.includes(k)?E.days.filter(x=>x!==k):[...E.days,k]; render(); });
+  $$("[data-digh]").forEach(b=>b.onclick=()=>{ const h=+b.dataset.digh; if(!E.hours.includes(h)&&E.hours.length>=4) return toast("4 envois par jour au maximum.");
+    E.hours=E.hours.includes(h)?E.hours.filter(x=>x!==h):[...E.hours,h]; render(); });
+  $("#dig-x").onclick=()=>{ S.tdigEdit=null; render(); };
+  $("#dig-save").onclick=async e=>{ if(E.enabled&&(!E.days.length||!E.hours.length)) return toast("Choisissez au moins un jour et une heure.");
+    e.target.disabled=true;
+    if(await run(()=>sb.rpc("set_task_digest",{p_enabled:E.enabled,p_days:E.days,p_hours:E.hours}),E.enabled?"Récapitulatif activé":"Récapitulatif désactivé")){
+      S.tdig={...(S.tdig||{}),enabled:E.enabled,days:E.days.length?E.days:[1,2,3,4,5],hours:E.hours.length?E.hours:[8]}; S.tdigEdit=null; render(); } else e.target.disabled=false; };
+}
+
 function tasksHTML(){
   const D=S.tdraft||(S.tdraft={title:"",notes:"",due:"",to:"me",patient:null,q:"",remind:null}), V=S.tview||"todo";
   const all=S.tasks||[], todo=myTasks().sort(byDue), given=all.filter(t=>!t.done_at&&t.created_by===S.me.id&&!forMe(t)).sort(byDue),
@@ -4031,10 +4112,10 @@ function tasksHTML(){
   const nE=listAll.filter(isExam).length;
   const list=K==="pat"?listAll.filter(isPatTask):K==="org"?listAll.filter(t=>!isPatTask(t)):K==="exam"?listAll.filter(isExam):listAll;
   const others=S.team.filter(t=>t.id!==S.me.id&&t.status==="active");
-  const pt=D.patient;
+  const pt=D.patient, FO=S.tformOpen||!!(D.title.trim()||D.patient||D.notes.trim()||(D.files||[]).length);
   return `<div class="chead"><div><h1>Tâches</h1><p>Vos tâches et celles que vous confiez. Une tâche pour un collègue n'est visible que par vous et la ou les personnes qui doivent la faire, qui reçoivent une notification. Une tâche pour « Secrétariat » va dans la liste commune de l'Accueil, visible par toute l'équipe.</p></div></div>
-  <div class="taskgrid">
-  <section class="card taskform">${canExam()?`<div class="seg tkmode" role="group" aria-label="Type"><button type="button" data-tkmode="task" aria-pressed="${D.mode!=="exam"}">📝 Tâche</button><button type="button" data-tkmode="exam" aria-pressed="${D.mode==="exam"}">🧪 Examen demandé</button></div>`:`<h3>Nouvelle tâche</h3>`}
+  <div class="taskstack">
+  ${FO?`<section class="card taskform"><div class="tfhead">${canExam()?`<div class="seg tkmode" role="group" aria-label="Type"><button type="button" data-tkmode="task" aria-pressed="${D.mode!=="exam"}">📝 Tâche</button><button type="button" data-tkmode="exam" aria-pressed="${D.mode==="exam"}">🧪 Examen demandé</button></div>`:`<h3>Nouvelle tâche</h3>`}<button type="button" class="linkbtn" id="tk-close">Fermer</button></div>
   ${D.mode==="exam"?`
    <p class="hint">Notez l'examen demandé au patient : il reste dans vos tâches jusqu'à ce que vous ayez reçu les résultats et contacté le patient. Rappel le jour où les résultats sont attendus.</p>
    <div class="fld">Patient
@@ -4048,6 +4129,7 @@ function tasksHTML(){
    <div class="pchips exdue">${[["3 jours",3],["1 semaine",7],["2 semaines",14],["1 mois",30]].map(([l,n])=>`<button type="button" class="pchip" data-exdue="${n}">${l}</button>`).join("")}</div>
    <div class="row2"><label class="fld">Pour<select id="tk-to"><option value="me" ${D.to==="me"?"selected":""}>Moi</option><option value="secretariat" ${D.to==="secretariat"?"selected":""}>Secrétariat (liste de l'Accueil)</option>${others.map(t=>`<option value="${t.id}" ${D.to===t.id?"selected":""}>${esc(`${t.first_name||""} ${t.last_name||""}`.trim())} · ${ROLE_LABEL[t.role]}</option>`).join("")}</select></label></div>
    ${TFILES_OK()?`<div class="fld">Demande d'examen ou bon (facultatif : photo, PDF ou scan)${tkPendHTML(D,"tasks")}</div>`:""}
+   <div class="fld">Priorité${prioPicker(D.prio||"normale","data-tkprio")}</div>
    <div class="btnrow"><button class="btn" id="tk-add" ${(D.exams||[]).length&&pt?"":"disabled"}>Enregistrer l'examen</button></div>`:`
    <label class="fld">Tâche<input id="tk-title" maxlength="200" autocomplete="off" placeholder="Ex. Changer les filtres de la ventilation" value="${esc(D.title)}"></label>
    <label class="fld">Note (facultatif)<textarea id="tk-notes" rows="3" maxlength="2000" placeholder="Ex. Vérifier sa prise de sang et l'appeler si anomalie">${esc(D.notes)}</textarea></label>
@@ -4061,17 +4143,30 @@ function tasksHTML(){
    ${pt?`<div class="recipient">${`<div class="ic">${IC.user}</div>`}<div><b>${esc(`${pt.first_name||""} ${pt.last_name||""}`)}</b><small>Né(e) le ${fmtDate(pt.birth_date)}${pt.child?" · enfant":""}</small></div><button type="button" class="linkbtn" id="tk-unpick">Retirer</button></div>`
    :`<input id="tk-q" type="text" autocomplete="off" placeholder="Nom ou prénom (au moins 2 lettres)" value="${esc(D.q)}"><div id="tk-res"></div>`}</div>
    ${TFILES_OK()?`<div class="fld">Documents (facultatif : photo, PDF ou scan)${tkPendHTML(D,"tasks")}</div>`:""}
+   <div class="fld">Priorité${prioPicker(D.prio||"normale","data-tkprio")}</div>
    <div class="btnrow"><button class="btn" id="tk-add" ${D.title.trim()?"":"disabled"}>Ajouter la tâche</button></div>`}
-  </section>
+  </section>`:`<div class="tknew"><button type="button" class="btn" data-tknew="task">＋ Nouvelle tâche</button>${canExam()?`<button type="button" class="btn ghost" data-tknew="exam">🧪 Examen demandé</button>`:""}</div>`}
   <section>
+   ${digestHTML()}
    <div class="seg" role="group" aria-label="Afficher" style="margin-bottom:10px"><button data-tv="todo" aria-pressed="${V==="todo"}">À faire (${todo.length})</button><button data-tv="given" aria-pressed="${V==="given"}">Confiées (${given.length})</button><button data-tv="done" aria-pressed="${V==="done"}">Terminées</button></div>
    <div class="ichips tkinds" role="group" aria-label="Type de tâche"><button class="ichip all" data-tk="all" aria-pressed="${K==="all"}">Toutes <i>${listAll.length}</i></button><button class="ichip t-question" data-tk="pat" aria-pressed="${K==="pat"}">👤 Patients <i>${nP}</i></button><button class="ichip t-rapport" data-tk="org" aria-pressed="${K==="org"}">🏥 Organisation <i>${nO}</i></button>${nE||canExam()?`<button class="ichip t-prescription" data-tk="exam" aria-pressed="${K==="exam"}">🧪 Examens <i>${nE}</i></button>`:""}</div>
-   <div class="list tasks">${list.length?taskListHTML(list,V!=="done")
-     :`<div class="empty">${V==="todo"?`<span class="yay" aria-hidden="true">✨</span>Rien à faire pour l'instant.`:V==="given"?"Aucune tâche confiée en cours.":"Aucune tâche terminée. Celles qui concernent un patient sont effacées 90 jours après."}</div>`}</div>
+   ${list.length?taskTableHTML(list,V):`<div class="list tasks"><div class="empty">${V==="todo"?`<span class="yay" aria-hidden="true">✨</span>Rien à faire pour l'instant.`:V==="given"?"Aucune tâche confiée en cours.":"Aucune tâche terminée. Celles qui concernent un patient sont effacées 90 jours après."}</div></div>`}
   </section></div>`;
 }
 function bindTasks(){
   const D=S.tdraft, add=$("#tk-add"), EX=D.mode==="exam";
+  bindDigest();
+  $$("[data-tknew]").forEach(b=>b.onclick=()=>{ S.tformOpen=true; D.mode=b.dataset.tknew; if(D.mode==="exam"&&!D.due) D.due=addDays(todayISO(),7); render(); (D.mode==="exam"?$("#tk-q"):$("#tk-title"))?.focus(); });
+  $$("[data-tsort]").forEach(b=>b.onclick=()=>{ S.tsort=b.dataset.tsort; render(); });
+  $$("[data-topen]").forEach(b=>b.onclick=()=>{ const id=+b.dataset.topen; S.topen=S.topen||new Set(); S.topen.has(id)?S.topen.delete(id):S.topen.add(id); render(); });
+  $$("[data-tprio]").forEach(sl=>sl.onchange=async()=>{ const t=S.tasks.find(x=>x.id===+sl.dataset.tprio), v=sl.value;
+    const {error}=await sb.rpc("set_task_priority",{p_id:t.id,p_priority:v});
+    if(error){ toast(/set_task_priority|function/i.test(JSON.stringify(error))?"La priorité sera disponible après la mise à jour du serveur (migration 067).":frError(error)); render(); return; }
+    t.priority=v; toast("Priorité : "+PRIO[v][0].toLowerCase()); render(); });
+  if(add){
+  $("#tk-close").onclick=()=>{ S.tformOpen=false; S.tdraft=null; render(); };
+  $$("[data-tkprio]").forEach(b=>b.onclick=()=>{ D.prio=b.dataset.tkprio; $$("[data-tkprio]").forEach(x=>x.setAttribute("aria-pressed",x===b)); });
+  const setPrio=async id=>{ if(D.prio&&D.prio!=="normale"){ const {error}=await sb.rpc("set_task_priority",{p_id:id,p_priority:D.prio}); if(error) console.error(error); } };
   const upd=()=>{ add.disabled=EX?!((D.exams||[]).length&&D.patient):!D.title.trim(); };
   $$("[data-tkmode]").forEach(b=>b.onclick=()=>{ D.mode=b.dataset.tkmode; if(D.mode==="exam"&&!D.due) D.due=addDays(todayISO(),7); render(); });
   const ti=$("#tk-title"); if(ti) ti.oninput=e=>{ D.title=e.target.value; upd(); };
@@ -4103,21 +4198,24 @@ function bindTasks(){
     if(!r){ upd(); return; }
     const e=await sb.rpc("set_task_exam",{p_id:r.data,p_types:D.exams,p_requested:D.req||todayISO()});
     if(e.error){ toast(/set_task_exam|function/i.test(JSON.stringify(e.error))?"Tâche ajoutée. Le suivi des examens sera complet après la mise à jour du serveur (migration 065).":frError(e.error)); }
+    await setPrio(r.data);
     if(D.due) await sb.rpc("set_task_reminder",{p_id:r.data,p_days:0});
     if((D.files||[]).length) await uploadTaskFiles(r.data,D.files);
     if(!pt.record){ if(pt.child) S.children[pt.id]=pt; else S.profiles[pt.id]=pt; }
-    toast("Examen enregistré : il reste dans vos tâches jusqu'aux résultats"); S.tdraft={title:"",notes:"",due:addDays(todayISO(),7),to:"me",patient:null,q:"",remind:null,mode:"exam"}; S.tview=D.to==="me"?"todo":"given"; S.tkind="exam"; await refresh(); };
+    toast("Examen enregistré : il reste dans vos tâches jusqu'aux résultats"); S.tformOpen=false; S.tdraft={title:"",notes:"",due:addDays(todayISO(),7),to:"me",patient:null,q:"",remind:null,mode:"exam"}; S.tview=D.to==="me"?"todo":"given"; S.tkind="exam"; await refresh(); };
   else add.onclick=async()=>{ add.disabled=true; const pt=D.patient;
     const r=await run(()=>sb.rpc("create_task",{p_title:D.title.trim(),p_notes:D.notes.trim()||null,p_due:D.due||null,
       p_assignee:D.to==="me"?S.me.id:D.to==="secretariat"?null:D.to,p_group:D.to==="secretariat"?"secretariat":null,
       p_patient:pt&&!pt.child&&!pt.record?pt.id:null,p_child:pt&&pt.child?pt.id:null,p_record:pt&&pt.record?pt.id:null}),D.due&&D.remind!=null?null:"Tâche ajoutée");
     if(!r){ upd(); return; }
+    await setPrio(r.data);
     if((D.extra||[]).length){ const {error}=await sb.rpc("set_task_people",{p_id:r.data,p_users:D.extra}); if(error) toast("Tâche ajoutée, mais les autres personnes n'ont pas pu être ajoutées : "+frError(error)); }
     if(D.due&&D.remind!=null){ const {error}=await sb.rpc("set_task_reminder",{p_id:r.data,p_days:D.remind});
       toast(error?"Tâche ajoutée, mais le rappel n'a pas pu être enregistré : "+frError(error):"Tâche ajoutée · rappel "+REMIND[D.remind].toLowerCase()); }
     if((D.files||[]).length){ toast("Envoi des documents…"); if(await uploadTaskFiles(r.data,D.files)) toast("Tâche ajoutée avec ses documents"); }
     if(pt&&!pt.record){ if(pt.child) S.children[pt.id]=pt; else S.profiles[pt.id]=pt; }
-    S.tdraft=null; S.tview=D.to==="me"?"todo":"given"; await refresh(); };
+    S.tdraft=null; S.tformOpen=false; S.tview=D.to==="me"?"todo":"given"; await refresh(); };
+  }
   $$("[data-tv]").forEach(b=>b.onclick=()=>{ S.tview=b.dataset.tv; render(); });
   $$("[data-tppl]").forEach(b=>b.onclick=()=>{ const t=S.tasks.find(x=>x.id===+b.dataset.tppl);
     pickColleagues("Personnes concernées par cette tâche",t.assigned_to?[t.assigned_to]:[],async ids=>{ if(await run(()=>sb.rpc("set_task_people",{p_id:t.id,p_users:ids}),ids.length?"Personnes mises à jour":"Plus personne en plus")){ t.task_people=ids.map(user_id=>({user_id})); render(); return true; } return false; },false,taskPeople(t)); });
