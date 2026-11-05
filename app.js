@@ -1205,6 +1205,7 @@ function render(){
     for(const k in UNREAD){ if((k[0]==="r"&&k!=="r"+rid)||(k.startsWith("s:chat:")&&k!=="s:chat:"+rid)||(k[0]==="t"&&k!=="t"+tid)||(k.startsWith("s:tmsgs:")&&k!=="s:tmsgs:"+tid)) delete UNREAD[k]; } }
   if($("#chat")) requestAnimationFrame(scrollChat);
   updateBadges();
+  if(S.me&&S.me.role!=="patient"&&$("[data-pfpeek]")) fillPfPeeks().catch(e=>console.error(e));
   clearTimeout(render.ann); render.ann=setTimeout(annCheck,250);
 }
 
@@ -2077,7 +2078,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261105c";
+const APP_VERSION="20261106a";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -2918,6 +2919,7 @@ function staffHelpHTML(){
    ["Ordinateur de confiance (accueil)","Au moment du code de sécurité, cochez « Faire confiance à cet ordinateur » : pendant 90 jours, l'e-mail et le mot de passe suffisent sur cet ordinateur, avec déconnexion après 2 heures d'inactivité. Uniquement sur un ordinateur du centre. Pour le retirer : Mon profil et notifications → Ordinateurs de confiance."],
    ["Valider les comptes des patients","Seul un administrateur valide les nouveaux comptes et les enfants ajoutés par un parent (Patients → Comptes à valider). Un administrateur peut donner ces droits à n'importe quel membre de l'équipe (secrétariat compris) : Équipe → Comptes de l'équipe → case « Administrateur ». La personne garde son rôle."],
    ["Priorité des tâches et récapitulatif par e-mail","Équipe → Tâches : chaque tâche a une priorité (haute, normale, basse), modifiable directement dans le tableau. Triez par priorité ou par échéance ; touchez une ligne pour voir ses détails (note, documents, rappel, personnes). En haut de la liste, « Récapitulatif de mes tâches par e-mail » : choisissez les jours et une ou plusieurs heures pour recevoir la liste de vos tâches à faire. Rien n'est envoyé s'il n'y a rien à faire, et l'e-mail ne contient jamais de nom de patient."],
+   ["Page patient (adresse, infos pratiques, contacts)","Chaque patient a sa page, visible uniquement par l'équipe : ouvrez-la avec « 👤 Page patient » dans une demande ou une tâche, avec la recherche (Ctrl K) ou depuis Fiches patients. Notez l'adresse, les infos pratiques (étage, sonnette, code de la porte, maison de repos…) et les contacts utiles (infirmière, famille, aidant…). L'adresse et les infos pratiques s'affichent aussi en résumé dans ses demandes. Jamais d'informations médicales : le dossier reste dans CareConnect."],
    ["Tableau de bord","Sur ordinateur, l'app s'ouvre sur le tableau de bord : vos demandes à traiter (les urgentes en premier), vos tâches, les messages de l'équipe non lus, les examens à suivre et ce qui se passe aujourd'hui au centre (absences, anniversaires, annonces, inventaire). Touchez un compteur ou une ligne pour y aller. Sur téléphone, l'app s'ouvre toujours sur les demandes ; le tableau de bord est dans « Plus »."],
    ["Annonces importantes (administrateurs)","Le centre → Annonces importantes : choisissez pour qui (équipe, patients ou tout le monde), un titre, un message et jusqu'à quand. L'annonce s'affiche en grand à l'ouverture de l'app (chacun touche « J'ai compris »), puis reste épinglée en haut de l'écran jusqu'au dernier jour choisi. Vous voyez combien de personnes l'ont lue et pouvez l'arrêter à tout moment. Notification sur le téléphone en option ; les patients ne la reçoivent que s'ils ont accepté les annonces du centre."],
    ["Face ID sur l'iPhone","Dans l'app iPhone : Mon profil et notifications → Face ID. Ensuite l'app se déverrouille avec votre visage, sans code."],
@@ -2950,7 +2952,7 @@ function dashHTML(){
   const thRow=t=>{ const last=tMsgs(t.id).slice(-1)[0], u=tUnread(t); return `<button type="button" class="drow" data-dthread="${t.id}">${tAvatar(t)}<span class="dtx"><b>${tFlagged(t)?"🚩 ":""}${esc(tTitle(t))}</b><small>${esc(tPreview(last))}</small></span>${u?`<span class="dnum">${u}</span>`:""}</button>`; };
   const card=(ic,title,go,body,empty,extra="")=>`<section class="card dcard"><header><h3>${ic} ${title}</h3>${go?`<button type="button" class="linkbtn" data-dgo="${go}">Tout voir ›</button>`:""}</header>${body||`<p class="dempty">${empty}</p>`}${extra}</section>`;
   const adm=isAdmin(), nAcc=adm?S.pending.length+(S.pendingKids||[]).length:0, nInv=invOpen(), nFb=adm?fbNew():0;
-  return `<div class="dhead"><div><p class="greet">${greetWord()} ${esc(S.me.first_name||"")} 👋</p>
+  return `<div class="dbhead"><div><p class="greet">${greetWord()} ${esc(S.me.first_name||"")} 👋</p>
     <h1>${now.toLocaleDateString(LOC,{weekday:"long",day:"numeric",month:"long"}).replace(/^./,c=>c.toUpperCase())}</h1>
     <p>${isOpen(now)?'<span class="state on">Centre ouvert</span>':`<span class="state off">Fermé · réouverture ${fmtWhen(nextOpen(now))}</span>`}${abs.length?` · ${abs.length} absent${abs.length>1?"s":""} aujourd'hui`:""}</p></div>
     <div class="dquick"><button type="button" class="btn" data-cs="compose">${SI.pen}<span>Écrire à un patient</span></button><button type="button" class="btn ghost" data-dnew="task">＋ Tâche</button>${canExam()?`<button type="button" class="btn ghost" data-dnew="exam">🧪 Examen</button>`:""}<button type="button" class="btn ghost" data-rosa>${SI.cal}<span>Agenda Rosa</span></button></div></div>
@@ -2989,12 +2991,135 @@ function bindDash(){
     if(S.tdraft.mode==="exam"&&!S.tdraft.due) S.tdraft.due=addDays(todayISO(),7); render(); scrollTo(0,0); });
 }
 
+/* =====================================================================
+   PAGE PATIENT (équipe) — adresse, infos pratiques, contacts utiles (068)
+   Visible uniquement par l'équipe. Pas d'informations médicales (dossier dans CareConnect).
+   ===================================================================== */
+S.pfInfo={};
+const PF_COL={p:"patient_id",c:"child_id",r:"record_id"};
+const PF_ROLES=["Infirmière à domicile","Maison de repos","Famille","Aidant / personne de confiance","Kiné","Pharmacie","Médecin spécialiste","Assistante sociale","Autre"];
+function pfPerson(k,id){
+  if(k==="p") return S.profiles[id]||null;
+  if(k==="c") return S.children?.[id]||null;
+  return (S.records||[]).find(x=>x.id===id)||null; }
+const pfName = (k,id) => { const p=pfPerson(k,id); return p?`${p.first_name||""} ${p.last_name||""}`.trim():"Patient"; };
+const pfAge = d => { if(!d) return ""; const b=new Date(d+"T12:00"), n=new Date(); let a=n.getFullYear()-b.getFullYear(); if(n<new Date(n.getFullYear(),b.getMonth(),b.getDate())) a--; return a; };
+async function loadPfInfo(k,id){
+  const key=k+":"+id, {data,error}=await sb.from("patient_info").select("*").eq(PF_COL[k],id).maybeSingle();
+  if(error){ S.pfOk=false; return null; } S.pfOk=true; S.pfInfo[key]=data||{}; return S.pfInfo[key]; }
+// ouvre la page (p : patient avec compte, c : enfant, r : fiche sans compte) ; person = objet déjà connu (recherche)
+async function openPatientFile(k,id,person){
+  if(person){ if(k==="p") S.profiles[id]={...(S.profiles[id]||{}),...person}; else if(k==="c") S.children[id]={...(S.children[id]||{}),...person}; }
+  if(S.cscreen!=="pfile") S.pfBack=S.cscreen;
+  S.pf={k,id}; S.pfEdit=null; S.cscreen="pfile"; render(); scrollTo(0,0);
+  const need=[];
+  if(k==="p"&&!(S.profiles[id]&&"extra_contacts" in S.profiles[id])) need.push(sb.from("profiles").select("id,first_name,last_name,birth_date,phone,extra_contacts,contact_note").eq("id",id).maybeSingle().then(r=>{ if(r.data) S.profiles[id]=r.data; }));
+  if(k==="c"&&!S.children[id]) need.push(sb.from("children").select("id,first_name,last_name,birth_date,status,created_by").eq("id",id).maybeSingle().then(r=>{ if(r.data) S.children[id]=r.data; }));
+  need.push(loadPfInfo(k,id));
+  await Promise.all(need);
+  if(k==="c"){ const par=S.children[id]?.created_by; if(par&&!S.profiles[par]){ const r=await sb.from("profiles").select("id,first_name,last_name,birth_date,phone,extra_contacts,contact_note").eq("id",par).maybeSingle(); if(r.data) S.profiles[par]=r.data; } }
+  if(S.cscreen==="pfile"&&S.pf&&S.pf.id===id&&!S.pfEdit) render();
+}
+document.addEventListener("click",e=>{ const b=e.target.closest("[data-pfopen]"); if(!b||!S.me||S.me.role==="patient") return;
+  e.preventDefault(); e.stopPropagation(); const [k,id]=b.dataset.pfopen.split(":"); closeDD&&closeDD(); $(".srch")?.remove(); openPatientFile(k,id); },true);
+const pfBtn = (k,id,label="Fiche") => id?`<button type="button" class="linkbtn pfbtn" data-pfopen="${k}:${id}" title="Ouvrir la page du patient">👤 ${label}</button>`:"";
+const telHref = t => "tel:"+String(t||"").replace(/[^\d+]/g,"");
+function pfAddr(i){ return [i.street,[i.postal_code,i.city].filter(Boolean).join(" ")].filter(Boolean).join(", "); }
+// aperçu discret dans une demande ou une tâche : adresse + infos pratiques
+function pfPeekHTML(k,id){ return id?`<div class="pfpeek" data-pfpeek="${k}:${id}"></div>`:""; }
+async function fillPfPeeks(){
+  for(const el of $$("[data-pfpeek]")){ if(el.dataset.done) continue; el.dataset.done="1"; const [k,id]=el.dataset.pfpeek.split(":");
+    const i=S.pfInfo[k+":"+id]||await loadPfInfo(k,id); if(!i||!document.body.contains(el)) continue;
+    const a=pfAddr(i), n=(i.contacts||[]).length;
+    if(a||i.note||n) el.innerHTML=`<span>📍 ${a?esc(a):"<i>adresse non notée</i>"}</span>${i.note?`<span class="pfnote">ℹ︎ ${esc(i.note.length>160?i.note.slice(0,160)+"…":i.note)}</span>`:""}${n?`<span>📞 ${n} contact${n>1?"s":""} utile${n>1?"s":""}</span>`:""}`; } }
+
+function pfileHTML(){
+  const {k,id}=S.pf||{}, p=pfPerson(k,id);
+  if(!p) return `<div class="chead"><div><h1>Page patient</h1></div></div><div class="empty">Chargement…</div>`;
+  const i=S.pfInfo[k+":"+id], E=S.pfEdit, nm=pfName(k,id), age=pfAge(p.birth_date);
+  const parent=k==="c"?S.profiles[p.created_by]:null;
+  const reqs=(S.reqs||[]).filter(r=>!r.purged_at&&r.status!=="traite"&&(k==="p"?r.patient_id===id&&!r.child_id:k==="c"?r.child_id===id:false));
+  const tasks=(S.tasks||[]).filter(t=>!t.done_at&&t[PF_COL[k]]===id);
+  const kind=k==="p"?`<span class="pftag ok">Compte dans l'app</span>`:k==="c"?`<span class="pftag">Enfant · via le compte de ${esc(parent?`${parent.first_name} ${parent.last_name}`:"ses parents")}</span>`:`<span class="pftag none">Sans compte dans l'app</span>`;
+  const contactRow=c=>`<div class="pfc"><span class="pfrole">${esc(c.role||"Contact")}</span><div><b>${esc(c.name||"")}</b>${c.note?`<small>${esc(c.note)}</small>`:""}</div>
+    <div class="pfcl">${c.phone?`<a href="${telHref(c.phone)}">📞 ${esc(c.phone)}</a>`:""}${c.email?`<a href="mailto:${esc(c.email)}">✉️ ${esc(c.email)}</a>`:""}</div></div>`;
+  const addr=i?pfAddr(i):"";
+  const view=i===undefined?`<p class="hint">Chargement…</p>`:S.pfOk===false?`<div class="err">Cette partie sera disponible après la mise à jour de la base de données (migration 068).</div>`:`
+    <section class="card pfcard"><header><h3>📍 Adresse et accès</h3><button type="button" class="linkbtn" id="pf-edit">✏️ ${addr||i.note||(i.contacts||[]).length?"Modifier":"Compléter"}</button></header>
+      ${addr?`<p class="pfaddr">${esc(i.street||"")}${i.street?"<br>":""}${esc([i.postal_code,i.city].filter(Boolean).join(" "))}</p>
+        <p class="pfmap"><a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addr+", Belgique")}" target="_blank" rel="noopener">🗺️ Voir sur la carte</a><button type="button" class="linkbtn" data-copy="${esc(addr)}">Copier l'adresse</button></p>`:`<p class="hint">Aucune adresse notée.</p>`}
+      ${i.note?`<div class="pfinfo"><b>Infos pratiques</b><p>${esc(i.note)}</p></div>`:""}
+    </section>
+    <section class="card pfcard"><header><h3>📞 Contacts utiles</h3></header>
+      ${(i.contacts||[]).length?(i.contacts||[]).map(contactRow).join(""):`<p class="hint">Infirmière, maison de repos, famille… <button type="button" class="linkbtn" id="pf-edit2">Ajouter un contact</button></p>`}
+    </section>
+    ${i.updated_at?`<p class="hint pfmeta">Modifié par ${esc(teamName(i.updated_by))} · ${fmt(i.updated_at)}</p>`:""}`;
+  const edit=E?`<section class="card pfcard pfform"><h3>📍 Adresse et accès</h3>
+      <label class="fld">Rue et numéro<input type="text" id="pf-street" maxlength="200" value="${esc(E.street)}" placeholder="Rue du Potaerdenberg 21, boîte 4"></label>
+      <div class="row2"><label class="fld">Code postal<input type="text" id="pf-postal" maxlength="12" inputmode="numeric" value="${esc(E.postal_code)}"></label><label class="fld">Commune<input type="text" id="pf-city" maxlength="80" value="${esc(E.city)}"></label></div>
+      <label class="fld">Infos pratiques<textarea id="pf-note" rows="4" maxlength="2000" placeholder="Ex. 2e étage sans ascenseur, sonnette « Dupont », code porte 1234, chien à la maison, préfère être appelé le matin…">${esc(E.note)}</textarea></label>
+      <h3>📞 Contacts utiles</h3>
+      <datalist id="pf-roles">${PF_ROLES.map(r=>`<option value="${esc(r)}">`).join("")}</datalist>
+      ${E.contacts.map((c,n)=>`<div class="pfcedit" data-pfc="${n}">
+        <div class="row2"><label class="fld">Rôle<input type="text" list="pf-roles" data-f="role" maxlength="40" value="${esc(c.role||"")}" placeholder="Infirmière à domicile"></label><label class="fld">Nom<input type="text" data-f="name" maxlength="100" value="${esc(c.name||"")}" placeholder="Julie, Soins à domicile Anderlecht"></label></div>
+        <div class="row2"><label class="fld">Téléphone<input type="tel" data-f="phone" maxlength="40" value="${esc(c.phone||"")}"></label><label class="fld">E-mail<input type="email" data-f="email" maxlength="160" value="${esc(c.email||"")}"></label></div>
+        <div class="pfcrow"><label class="fld">Remarque<input type="text" data-f="note" maxlength="200" value="${esc(c.note||"")}" placeholder="Passe le mardi et le vendredi"></label><button type="button" class="linkbtn tdel" data-pfcdel="${n}">Retirer</button></div></div>`).join("")}
+      ${E.contacts.length<10?`<button type="button" class="btn ghost" id="pf-cadd">＋ Ajouter un contact</button>`:""}
+      <p class="hint">Visible uniquement par l'équipe du centre. Pas d'informations médicales : le dossier médical reste dans CareConnect.</p>
+      <div class="btnrow"><button type="button" class="btn" id="pf-save">Enregistrer</button><button type="button" class="btn ghost" id="pf-x">Annuler</button></div></section>`:"";
+  const own=k==="p"?p:parent;
+  return `<div class="pfhead"><button class="back" id="pf-back" aria-label="Retour">${IC.back}</button>
+    ${k==="p"?avatarHTML(AV.get(id),nm,56):avatarHTML(null,nm,56)}
+    <div class="pfwho"><h1>${esc(nm)}</h1><p>${p.birth_date?`Né(e) le ${fmtDate(p.birth_date)}${age!==""?` · ${age} an${age>1?"s":""}`:""}`:""}${p.phone?` · Tél. <a href="${telHref(p.phone)}">${esc(p.phone)}</a>`:""}${k==="r"&&p.email?` · ${esc(p.email)}`:""}</p>${kind}</div>
+    <div class="pfacts">${k!=="r"?`<button type="button" class="btn" id="pf-write">${SI.pen}<span>Écrire</span></button>`:`<button type="button" class="btn ghost" id="pf-redit">Modifier l'identité</button>`}
+      <button type="button" class="btn ghost" id="pf-task">＋ Tâche</button>${canExam()?`<button type="button" class="btn ghost" id="pf-exam">🧪 Examen</button>`:""}<button type="button" class="btn ghost" id="pf-talk">💬 En parler</button></div></div>
+  <div class="pfgrid"><div class="pfcol">${E?edit:view}</div>
+   <div class="pfcol">
+    ${own&&(own.phone||(own.extra_contacts||[]).length||own.contact_note)?`<section class="card pfcard"><header><h3>👤 Coordonnées données par ${k==="c"?"le parent":"le patient"}</h3></header>
+      ${k==="c"?`<p><b>${esc(own.first_name+" "+own.last_name)}</b>${own.phone?` · <a href="${telHref(own.phone)}">${esc(own.phone)}</a>`:""}</p>`:""}${extraContactsHTML(own)}<p class="hint">Le patient les gère lui-même dans « Mon compte ».</p></section>`:""}
+    <section class="card pfcard"><header><h3>📥 En cours au centre</h3></header>
+      ${reqs.map(r=>`<button type="button" class="drow" data-pfreq="${r.id}"><span class="dic">${IEMO[r.type]||"📋"}</span><span class="dtx"><b>${TYPES[r.type]?.label||"Demande"}</b><small>${fmt(r.created_at)}</small></span>${dueTagI(r)}</button>`).join("")}
+      ${tasks.map(t=>`<button type="button" class="drow" data-dtask="${t.id}"><span class="dic">${isExam(t)?"🧪":"✅"}</span><span class="dtx"><b>${esc(isExam(t)?(t.exam_types||[]).join(", "):t.title)}</b><small>${isExam(t)?(t.exam_results_at?"résultats reçus, à communiquer":"en attente des résultats"):"pour "+esc(taskForLabel(t))}</small></span>${t.due_date?`<span class="ddue${t.due_date<todayISO()?" late":""}">${new Date(t.due_date+"T12:00").toLocaleDateString(LOC,{day:"numeric",month:"short"})}</span>`:""}</button>`).join("")}
+      ${reqs.length||tasks.length?"":`<p class="dempty">Aucune demande ni tâche en cours.</p>`}</section>
+   </div></div>`;
+}
+function bindPfile(){
+  const {k,id}=S.pf, p=pfPerson(k,id); if(!p) return;
+  $("#pf-back").onclick=()=>{ S.cscreen=S.pfBack&&S.pfBack!=="pfile"?S.pfBack:"dash"; S.pfEdit=null; render(); };
+  const startEdit=()=>{ const i=S.pfInfo[k+":"+id]||{}; S.pfEdit={street:i.street||"",postal_code:i.postal_code||"",city:i.city||"",note:i.note||"",contacts:JSON.parse(JSON.stringify(i.contacts||[]))}; if(!S.pfEdit.contacts.length) S.pfEdit.contacts.push({}); render(); $("#pf-street")?.focus(); };
+  ["#pf-edit","#pf-edit2"].forEach(s=>{ const b=$(s); if(b) b.onclick=startEdit; });
+  const nm=pfName(k,id), who={p:{patient_id:id},c:{child_id:id},r:{record_id:id}}[k];
+  const pt=k==="r"?{...p,record:true}:k==="c"?{...p,child:true}:{...p};
+  const w=$("#pf-write"); if(w) w.onclick=()=>{ S.cscreen="compose"; S.compose=S.compose||{patient:null,subject:SUBJECTS[0],body:"",files:[],reply:true,q:""}; S.compose.patient=pt; render(); scrollTo(0,0); };
+  const re=$("#pf-redit"); if(re) re.onclick=()=>{ S.recEdit=id; S.recDraft={first:p.first_name,last:p.last_name,birth:p.birth_date,phone:p.phone||"",email:p.email||""}; S.cscreen="patients"; render(); scrollTo(0,0); };
+  const nt=(mode)=>{ S.tdraft={title:"",notes:"",due:mode==="exam"?addDays(todayISO(),7):"",to:"me",patient:pt,q:"",remind:null,mode}; S.tformOpen=true; S.tview="todo"; S.cscreen="tasks"; render(); scrollTo(0,0); (mode==="exam"?null:$("#tk-title"))?.focus(); };
+  $("#pf-task").onclick=()=>nt("task"); const ex=$("#pf-exam"); if(ex) ex.onclick=()=>nt("exam");
+  $("#pf-talk").onclick=()=>pickColleagues("En parler avec…",[],async(ids,name)=>{ const {data,error}=await sb.rpc("team_start",{p_members:ids,p_title:name||null}); if(error){ toast(frError(error)); return false; }
+    await loadTeam(); S.tthread=data; S.drafts["t"+data]=`À propos de ${nm}${p.birth_date?` (né(e) le ${fmtDate(p.birth_date)})`:""} : `; S.cscreen="messages"; render(); const c=$("#c-text"); if(c){ c.focus(); c.setSelectionRange(c.value.length,c.value.length); } });
+  $$("[data-pfreq]").forEach(b=>b.onclick=()=>{ const r=S.reqs.find(x=>x.id===+b.dataset.pfreq); if(!r) return; S.cscreen="inbox"; S.archive=false; S.itype="all"; S.iq=""; S.sel=r.id; S.scope="all"; render(); scrollTo(0,0); });
+  $$("[data-dtask]").forEach(b=>b.onclick=()=>{ const tid=+b.dataset.dtask; S.topen=S.topen||new Set(); S.topen.add(tid); S.cscreen="tasks"; S.tview="todo"; S.tkind="all"; render(); });
+  $$("[data-copy]").forEach(b=>b.onclick=()=>copyText(b.dataset.copy));
+  const E=S.pfEdit; if(!E) return;
+  const sync=()=>{ E.street=$("#pf-street").value; E.postal_code=$("#pf-postal").value; E.city=$("#pf-city").value; E.note=$("#pf-note").value;
+    $$("[data-pfc]").forEach(row=>{ const c=E.contacts[+row.dataset.pfc]; row.querySelectorAll("[data-f]").forEach(x=>c[x.dataset.f]=x.value); }); };
+  $$(".pfform input,.pfform textarea").forEach(x=>x.oninput=sync);
+  const ca=$("#pf-cadd"); if(ca) ca.onclick=()=>{ sync(); E.contacts.push({}); render(); $$("[data-pfc]").slice(-1)[0]?.querySelector("input")?.focus(); };
+  $$("[data-pfcdel]").forEach(b=>b.onclick=()=>{ sync(); E.contacts.splice(+b.dataset.pfcdel,1); render(); });
+  $("#pf-x").onclick=()=>{ S.pfEdit=null; render(); };
+  $("#pf-save").onclick=async e=>{ sync(); e.target.disabled=true;
+    const contacts=E.contacts.map(c=>Object.fromEntries(Object.entries(c).map(([a,v])=>[a,(v||"").trim()]).filter(([,v])=>v))).filter(c=>c.name||c.phone||c.email);
+    const ok=await run(()=>sb.rpc("save_patient_info",{p_patient:who.patient_id||null,p_child:who.child_id||null,p_record:who.record_id||null,p_street:E.street,p_postal:E.postal_code,p_city:E.city,p_note:E.note,p_contacts:contacts}),"Page patient enregistrée");
+    if(!ok){ e.target.disabled=false; return; }
+    S.pfInfo[k+":"+id]={...(S.pfInfo[k+":"+id]||{}),street:E.street.trim()||null,postal_code:E.postal_code.trim()||null,city:E.city.trim()||null,note:E.note.trim()||null,contacts,updated_by:S.me.id,updated_at:new Date().toISOString()};
+    S.pfEdit=null; render(); };
+}
+
 function renderStaff(a){
   a.className="wrap wide staff";
   const sc=S.cscreen;
   const nav=staffNavHTML(sc);
   let body="";
-  if(sc==="dash") body=dashHTML(); else if(sc==="compose") body=composeHTML(); else if(sc==="inventory") body=inventoryHTML(); else if(sc==="tasks") body=tasksHTML(); else if(sc==="accounts") body=accountsHTML(); else if(sc==="news") body=newsAdminHTML(); else if(sc==="team") body=teamHTML(); else if(sc==="settings") body=settingsHTML(); else if(sc==="help") body=staffHelpHTML(); else if(sc==="leaves") body=leavesHTML(); else if(sc==="patients") body=patientsHTML(); else if(sc==="messages") body=teamHTML2(); else if(sc==="templates") body=templatesHTML(); else if(sc==="binder") body=binderHTML(); else if(sc==="desk") body=deskHTML(); else if(sc==="waitlist") body=waitlistHTML(); else if(sc==="fiches") body=fichesHTML(); else if(sc==="infos") body=infosHTML(); else if(sc==="feedback"&&isAdmin()) body=feedbackHTML(); else if(sc==="annonces"&&isAdmin()) body=annoncesHTML(); else if(sc==="hours"&&canOffice()) body=hoursHTML(); else if(sc==="cash"&&canOffice()) body=cashHTML(); else body=inboxHTML();
+  if(sc==="dash") body=dashHTML(); else if(sc==="pfile") body=pfileHTML(); else if(sc==="compose") body=composeHTML(); else if(sc==="inventory") body=inventoryHTML(); else if(sc==="tasks") body=tasksHTML(); else if(sc==="accounts") body=accountsHTML(); else if(sc==="news") body=newsAdminHTML(); else if(sc==="team") body=teamHTML(); else if(sc==="settings") body=settingsHTML(); else if(sc==="help") body=staffHelpHTML(); else if(sc==="leaves") body=leavesHTML(); else if(sc==="patients") body=patientsHTML(); else if(sc==="messages") body=teamHTML2(); else if(sc==="templates") body=templatesHTML(); else if(sc==="binder") body=binderHTML(); else if(sc==="desk") body=deskHTML(); else if(sc==="waitlist") body=waitlistHTML(); else if(sc==="fiches") body=fichesHTML(); else if(sc==="infos") body=infosHTML(); else if(sc==="feedback"&&isAdmin()) body=feedbackHTML(); else if(sc==="annonces"&&isAdmin()) body=annoncesHTML(); else if(sc==="hours"&&canOffice()) body=hoursHTML(); else if(sc==="cash"&&canOffice()) body=cashHTML(); else body=inboxHTML();
   document.body.classList.add("hasbar","sidenav"); document.body.classList.remove("ddopen");
   a.innerHTML=nav+(sc==="dash"?"":urgBannerHTML()+annBannerHTML())+(sc==="inbox"||sc==="messages"?bdayBannerHTML():"")+body;
   bindAnnBanner();
@@ -3012,7 +3137,7 @@ function renderStaff(a){
   $$("[data-dd]").forEach(b=>b.onclick=e=>{ e.stopPropagation(); openDD(b.dataset.dd); });
   const bk=$(".ddback"); if(bk) bk.onclick=closeDD;
   $$("[data-cs]").forEach(b=>b.onclick=()=>{ closeDD(); if(CREC&&b.dataset.cs!=="compose") composeRecStop(false); S.cscreen=b.dataset.cs; render(); window.scrollTo(0,0); });
-  if(sc==="dash") bindDash(); else if(sc==="compose") bindCompose(); else if(sc==="inventory") bindInventory(); else if(sc==="tasks") bindTasks(); else if(sc==="accounts") bindAccounts(); else if(sc==="news") bindNewsAdmin(); else if(sc==="team") bindTeam(); else if(sc==="settings") bindSettings(); else if(sc==="help"||sc==="leaves") {} else if(sc==="patients") bindPatients(); else if(sc==="messages") bindTeam2(); else if(sc==="templates") bindTemplates(); else if(sc==="binder") bindBinder(); else if(sc==="desk") bindDesk(); else if(sc==="waitlist"){ if(S.waitlist) bindWaitlist(); } else if(sc==="fiches") bindFiches(); else if(sc==="infos") bindInfos(); else if(sc==="feedback"&&isAdmin()) bindFeedback(); else if(sc==="annonces"&&isAdmin()) bindAnnonces(); else if(sc==="hours"&&canOffice()) bindHours(); else if(sc==="cash"&&canOffice()) bindCash(); else bindInbox();
+  if(sc==="dash") bindDash(); else if(sc==="pfile") bindPfile(); else if(sc==="compose") bindCompose(); else if(sc==="inventory") bindInventory(); else if(sc==="tasks") bindTasks(); else if(sc==="accounts") bindAccounts(); else if(sc==="news") bindNewsAdmin(); else if(sc==="team") bindTeam(); else if(sc==="settings") bindSettings(); else if(sc==="help"||sc==="leaves") {} else if(sc==="patients") bindPatients(); else if(sc==="messages") bindTeam2(); else if(sc==="templates") bindTemplates(); else if(sc==="binder") bindBinder(); else if(sc==="desk") bindDesk(); else if(sc==="waitlist"){ if(S.waitlist) bindWaitlist(); } else if(sc==="fiches") bindFiches(); else if(sc==="infos") bindInfos(); else if(sc==="feedback"&&isAdmin()) bindFeedback(); else if(sc==="annonces"&&isAdmin()) bindAnnonces(); else if(sc==="hours"&&canOffice()) bindHours(); else if(sc==="cash"&&canOffice()) bindCash(); else bindInbox();
 }
 
 /* ----- durée estimée des rendez-vous de médecine générale (visible par l'équipe seulement) ----- */
@@ -3151,6 +3276,7 @@ function detailHTML(){
     ${r.child_id?`<div class="pinfo"><span>Né(e) le <b>${fmtDate(S.children[r.child_id]?.birth_date)}</b></span><span>Enfant de <b>${esc(patientName(r.patient_id))}</b></span><span>Tél. parent <b>${esc(p.phone||"—")}</b></span></div>`
     :`<div class="pinfo"><span>Né(e) le <b>${fmtDate(p.birth_date)}</b></span><span>Tél. <b>${esc(p.phone||"—")}</b></span></div>`}
     ${extraContactsHTML(p)}
+    <div class="pfline">${r.child_id?pfBtn("c",r.child_id,"Page patient"):pfBtn("p",r.patient_id,"Page patient")}</div>${r.child_id?pfPeekHTML("c",r.child_id):pfPeekHTML("p",r.patient_id)}
     <div class="meta" style="margin-top:6px"><span class="tag">${TYPES[r.type].label}</span>${durHTML(r)}<span class="pill st-${stClass(r)}">${stLabel(r)}</span><span>Reçue ${fmt(r.created_at)} · ${esc(reqWho(r))}</span></div></div></div>
    ${open?`<div class="prioedit"><span class="hint">Priorité</span>${["haute","normale","basse"].map(k=>`<button class="dec p-${k}" aria-pressed="${r.priority===k}" data-prio="${k}">${PRIO_LABEL[k]}</button>`).join("")}</div><div>${dueHTML(r)}</div>`:""}
       ${open&&r.type!=="centre"?(canMarkSeen(r)?`<div class="seenrow"><button class="btn ghost seenbtn" id="seen">✓ Vu · prévenir le patient</button><span class="hint">Le patient voit que sa demande est en cours de traitement (notification, sans e-mail).</span></div>`
@@ -3997,17 +4123,23 @@ function patientsHTML(){
     <p class="hint">Quand le patient crée son compte avec les mêmes nom, prénom et date de naissance, l'administrateur relie son compte à la fiche : les tâches suivent. Une fiche inutilisée pendant 12 mois est effacée.</p>
    </section>
    <section>
-    <input id="rc-q" class="pcq" type="search" placeholder="Rechercher une fiche (nom, prénom, téléphone)" value="${esc(S.recQ||"")}" aria-label="Rechercher une fiche" style="margin-bottom:10px">
+    <input id="rc-q" class="pcq" type="search" placeholder="Rechercher un patient (nom, prénom, téléphone)" value="${esc(S.recQ||"")}" aria-label="Rechercher une fiche" style="margin-bottom:10px">
+    <div id="rc-acc"></div>
+    ${q.length?`<p class="srg">Fiches sans compte</p>`:""}
     <div class="list">${list.length?list.map(r=>`<div class="medrow recrow"><div class="ic">${IC.user}</div><div><b>${esc(r.first_name+" "+r.last_name)}</b>
       <small>Né(e) le ${fmtDate(r.birth_date)} · Tél. ${esc(r.phone||"—")}${r.email?` · ${esc(r.email)}`:""}</small>
       <small>Fiche créée par ${esc(teamName(r.created_by))} ${fmt(r.created_at)}${open(r.id)?` · <b>${open(r.id)} tâche${open(r.id)>1?"s":""} en cours</b>`:""}${r.invited_at?` · invité(e) ${fmt(r.invited_at)}`:""}</small></div>
-      <div class="acts recacts"><button class="mini" data-rtask="${r.id}">Tâche</button><button class="mini ghostmini" data-rmsg="${r.id}">En parler</button>${r.email?`<button class="mini ghostmini" data-rinv="${r.id}">Inviter</button>`:""}<button class="linkbtn" style="font-size:12px" data-redit="${r.id}">Modifier</button>${r.created_by===S.me.id||isAdmin()?`<button class="linkbtn" style="font-size:12px;color:var(--muted)" data-rdel="${r.id}">Supprimer</button>`:""}</div></div>`).join("")
+      <div class="acts recacts"><button type="button" class="mini" data-pfopen="r:${r.id}">👤 Page</button><button class="mini ghostmini" data-rtask="${r.id}">Tâche</button><button class="mini ghostmini" data-rmsg="${r.id}">En parler</button>${r.email?`<button class="mini ghostmini" data-rinv="${r.id}">Inviter</button>`:""}<button class="linkbtn" style="font-size:12px" data-redit="${r.id}">Modifier</button>${r.created_by===S.me.id||isAdmin()?`<button class="linkbtn" style="font-size:12px;color:var(--muted)" data-rdel="${r.id}">Supprimer</button>`:""}</div></div>`).join("")
       :`<div class="empty">${q.length?"Aucune fiche ne correspond.":"Aucune fiche pour l'instant."}</div>`}</div>
    </section></div>`;
 }
 function bindPatients(){
   const D=S.recDraft; const f={first:"#rc-first",last:"#rc-last",birth:"#rc-birth",phone:"#rc-phone",email:"#rc-email"};
   Object.entries(f).forEach(([k,sel])=>{ const el=$(sel); el.oninput=el.onchange=()=>{ D[k]=el.value; }; });
+  const qq=norm(S.recQ||"").split(/\s+/).filter(Boolean);
+  if(qq.length&&qq.join("").length>=2) searchPatients(qq).then(ps=>{ const box=$("#rc-acc"); if(!box||!ps||!ps.length) return;
+    box.innerHTML=`<p class="srg">Patients avec compte dans l'app</p><div class="list">${ps.map(x=>`<button type="button" class="medrow recrow pfaccrow" data-pfopen="${x.child?"c":"p"}:${x.id}"><div class="ic">${IC.user}</div><div><b>${esc(`${x.first_name||""} ${x.last_name||""}`)}</b><small>Né(e) le ${fmtDate(x.birth_date)}${x.child?" · enfant":""}${x.phone?` · Tél. ${esc(x.phone)}`:""}</small></div><span class="linkbtn">Ouvrir la page ›</span></button>`).join("")}</div>`;
+    ps.forEach(x=>{ if(x.child) S.children[x.id]={...(S.children[x.id]||{}),...x}; else S.profiles[x.id]={...(S.profiles[x.id]||{}),...x}; }); });
   const qi=$("#rc-q"); let tm; qi.oninput=()=>{ clearTimeout(tm); tm=setTimeout(()=>{ S.recQ=qi.value; render(); const n=$("#rc-q"); n.focus(); n.setSelectionRange(n.value.length,n.value.length); },250); };
   const done=()=>{ S.recDraft=null; S.recEdit=null; };
   const cancel=$("#rc-cancel"); if(cancel) cancel.onclick=()=>{ done(); if(S.recBack){ S.cscreen=S.recBack; S.recBack=null; } render(); };
@@ -4089,10 +4221,10 @@ const isPatTask = t => !!(t.patient_id||t.child_id||t.record_id);
 const recName = id => { const r=(S.records||[]).find(x=>x.id===id); return r?`${r.first_name} ${r.last_name}`:"Fiche patient"; };
 function taskLinkHTML(t){
   if(t.record_id){ const r=(S.records||[]).find(x=>x.id===t.record_id);
-    return `<span class="tasklink">${IC.user}<b>${esc(recName(t.record_id))}</b>${r?` · né(e) le ${fmtDate(r.birth_date)}`:""} · <i>fiche sans compte</i>${r&&r.phone?` · tél. ${esc(r.phone)}`:""}</span>`; }
+    return `<span class="tasklink">${IC.user}<b>${esc(recName(t.record_id))}</b>${r?` · né(e) le ${fmtDate(r.birth_date)}`:""} · <i>fiche sans compte</i>${r&&r.phone?` · tél. ${esc(r.phone)}`:""} ${pfBtn("r",t.record_id)}</span>`; }
   if(!t.patient_id&&!t.child_id) return "";
   const nm=t.child_id?kidName(t.child_id):patientName(t.patient_id), bd=t.child_id?S.children[t.child_id]?.birth_date:S.profiles[t.patient_id]?.birth_date;
-  return `<span class="tasklink">${IC.user}<b>${esc(nm)}</b>${bd?` · né(e) le ${fmtDate(bd)}`:""}${t.child_id?" · enfant":""}</span>`; }
+  return `<span class="tasklink">${IC.user}<b>${esc(nm)}</b>${bd?` · né(e) le ${fmtDate(bd)}`:""}${t.child_id?" · enfant":""} ${t.child_id?pfBtn("c",t.child_id):pfBtn("p",t.patient_id)}</span>`; }
 /* ----- tâches en tableau : priorité, échéance, détails dépliables (067) ----- */
 const PRIO={haute:["Haute",0],normale:["Normale",1],basse:["Basse",2]};
 const prioOf = t => PRIO[t.priority]?t.priority:"normale";
@@ -4836,7 +4968,7 @@ function staffSearch(q){
   for(const t of S.tasks||[]) if(matchAll(`${t.title} ${t.notes||""} ${taskForLabel?taskForLabel(t):""}`,words))
     add("Tâches",t.done_at?"✅":"☑️",esc(t.title),t.notes?snip(t.notes,words[0]):(t.done_at?"Terminée":"À faire"),()=>{ S.cscreen="tasks"; S.tview=t.done_at?"done":"todo"; S.tkind="all"; });
   for(const r of S.records||[]) if(matchAll(`${r.first_name} ${r.last_name} ${r.phone||""} ${r.email||""}`,words))
-    add("Fiches patients","👤",esc(`${r.first_name} ${r.last_name}`),`Né(e) le ${fmtDate(r.birth_date)} · Tél. ${esc(r.phone||"—")}`,()=>{ S.cscreen="patients"; S.recQ=q; });
+    add("Fiches patients","👤",esc(`${r.first_name} ${r.last_name}`),`Né(e) le ${fmtDate(r.birth_date)} · Tél. ${esc(r.phone||"—")}`,()=>{ openPatientFile("r",r.id); return true; });
   for(const w of S.waitlist||[]) if(matchAll(`${wlWho(w)} ${w.reason||""} ${w.phone||""} ${provName(w.provider_id)}`,words))
     add("Listes d'attente","⏳",esc(wlWho(w)),`${esc(provName(w.provider_id))}${w.reason?" · "+esc(w.reason):""}`,()=>{ S.cscreen="waitlist"; });
   for(const i of S.inventory||[]) if(matchAll(`${i.title} ${i.quantity||""} ${i.notes||""}`,words))
@@ -4888,7 +5020,7 @@ function openSearch(){
     res.querySelectorAll("[data-sr]").forEach(b=>b.onclick=()=>{ const it=items[+b.dataset.sr]; close(); const done=it.go(); if(done!==true){ render(); scrollTo(0,0); } });
     if(staff){ clearTimeout(remoteT); remoteT=setTimeout(async()=>{ const words=norm(q).split(/\s+/).filter(Boolean); const ps=await searchPatients(words); const box=v.querySelector("#sr-pat"); if(!box||!ps||!ps.length||inp.value.trim()!==q) return;
       box.innerHTML=`<p class="srg">Patients inscrits dans l'app <span>${ps.length}</span></p>`+ps.map((p,i)=>`<button type="button" class="srow" data-srp="${i}"><span class="sric" aria-hidden="true">${p.child?"🧒":"👤"}</span><span><b>${esc(`${p.first_name||""} ${p.last_name||""}`)}</b><small>Né(e) le ${fmtDate(p.birth_date)} · ${p.child?"enfant":"Tél. "+esc(p.phone||"—")} · lui écrire</small></span></button>`).join("");
-      box.querySelectorAll("[data-srp]").forEach(b=>b.onclick=()=>{ const p=ps[+b.dataset.srp]; close(); S.cscreen="compose"; S.compose=S.compose||{patient:null,subject:SUBJECTS[0],body:"",files:[],reply:true,q:""}; S.compose.patient=p; render(); scrollTo(0,0); }); },300); }
+      box.querySelectorAll("[data-srp]").forEach(b=>b.onclick=()=>{ const p=ps[+b.dataset.srp]; close(); openPatientFile(p.child?"c":"p",p.id,p); }); },300); }
   };
   let t=null; inp.oninput=()=>{ clearTimeout(t); t=setTimeout(draw_,120); };
   inp.onkeydown=e=>{ if(e.key==="Enter"){ const f=res.querySelector("[data-sr],[data-srp]"); if(f) f.click(); } };

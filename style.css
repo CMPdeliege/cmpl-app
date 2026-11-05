@@ -1729,11 +1729,11 @@ select.tprio,span.tprio{font:inherit;font-size:12.5px;font-weight:700;border:1.5
   .tdetail{padding:4px 12px 12px 48px;flex-direction:column}
 }
 
-/* ----- tableau de bord (proposition) ----- */
-.dhead{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin:4px 0 18px}
-.dhead .greet{margin:0;color:var(--muted);font-weight:600}
-.dhead h1{margin:2px 0 4px;font-size:28px}
-.dhead p{margin:0;color:var(--muted)}
+/* ----- tableau de bord (069) ----- */
+.dbhead{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin:4px 0 18px}
+.dbhead .greet{margin:0;color:var(--muted);font-weight:600}
+.dbhead h1{margin:2px 0 4px;font-size:28px}
+.dbhead p{margin:0;color:var(--muted)}
 .dquick{display:flex;gap:8px;flex-wrap:wrap}
 .dquick .btn{display:inline-flex;align-items:center;gap:6px;padding:9px 14px;font-size:14px}
 .dquick .btn svg{width:17px;height:17px}
@@ -1762,10 +1762,10 @@ select.tprio,span.tprio{font:inherit;font-size:12.5px;font-weight:700;border:1.5
 .drow:focus-visible{outline:3px solid var(--accent)}
 .drow.hot{box-shadow:inset 3px 0 0 var(--danger)}
 .drow .tav,.drow .avatar{width:32px!important;height:32px!important;font-size:12px;flex:none}
-.dic{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;background:var(--surface-2);flex:none;font-size:15px}
-.dtx{flex:1;min-width:0;display:grid}
-.dtx b{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.dtx small{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.drow .dic{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;background:var(--surface-2);flex:none;font-size:15px}
+.drow .dtx{flex:1;min-width:0;display:grid}
+.drow .dtx b{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.drow .dtx small{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .drow .ipill{flex:none}
 .ddue{font-size:12.5px;font-weight:700;white-space:nowrap}.ddue.late{color:var(--danger)}.ddue.today{color:var(--warn)}
 .dnum{background:var(--accent);color:var(--accent-ink);border-radius:999px;min-width:20px;height:20px;padding:0 6px;font-size:12px;font-weight:700;display:grid;place-items:center}
@@ -1777,3 +1777,45 @@ select.tprio,span.tprio{font:inherit;font-size:12.5px;font-weight:700;border:1.5
 .dlink{all:unset;box-sizing:border-box;display:block;width:100%;cursor:pointer;padding:8px 4px;border-top:1px solid var(--line);font-size:14px}
 .dlink:hover{background:var(--surface-2)}
 .dann{background:var(--warn-soft);border-radius:10px;border-top:0;margin:2px 0;padding:8px 10px}
+
+/* ----- page patient (068) ----- */
+.pfhead{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin:0 0 16px}
+.pfhead .back{flex:none}
+.pfwho{flex:1;min-width:220px}
+.pfwho h1{margin:0;font-size:26px}
+.pfwho p{margin:2px 0 6px;color:var(--muted)}
+.pfwho a{color:inherit}
+.pftag{display:inline-block;font-size:12px;font-weight:700;padding:3px 10px;border-radius:999px;background:var(--surface-2);color:var(--muted)}
+.pftag.ok{background:var(--ok-soft);color:var(--ok)}
+.pftag.none{background:var(--warn-soft);color:var(--warn)}
+.pfacts{display:flex;gap:8px;flex-wrap:wrap}
+.pfacts .btn{display:inline-flex;align-items:center;gap:6px;padding:9px 14px;font-size:14px}
+.pfacts .btn svg{width:17px;height:17px}
+.pfgrid{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:14px;align-items:start}
+@media (max-width:900px){.pfgrid{grid-template-columns:1fr}}
+.pfcol{display:grid;gap:14px}
+.pfcard{padding:14px 16px}
+.pfcard header{display:flex;justify-content:space-between;align-items:center;margin:0 0 8px}
+.pfcard h3{margin:0;font-size:16px}
+.pfform h3{margin:14px 0 8px}.pfform h3:first-child{margin-top:0}
+.pfaddr{margin:0;font-size:16px;line-height:1.45;font-weight:600}
+.pfmap{display:flex;gap:14px;flex-wrap:wrap;margin:6px 0 0;font-size:14px}
+.pfinfo{margin-top:12px;padding:10px 12px;border-radius:12px;background:var(--gold-soft)}
+.pfinfo b{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+.pfinfo p{margin:4px 0 0;white-space:pre-line;font-size:15px}
+.pfc{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 12px;padding:10px 0;border-top:1px solid var(--line)}
+.pfc:first-of-type{border-top:0}
+.pfrole{grid-row:span 2;align-self:start;font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:999px;background:var(--info-soft);color:var(--info);white-space:nowrap}
+.pfc small{display:block;color:var(--muted);font-size:13px}
+.pfcl{display:flex;gap:12px;flex-wrap:wrap;font-size:14px}
+.pfcl a{color:var(--accent);font-weight:600;text-decoration:none}
+.pfcedit{padding:10px 12px;margin:0 0 10px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}
+.pfcrow{display:flex;gap:10px;align-items:flex-end}.pfcrow .fld{flex:1}
+.pfmeta{margin:0 4px}
+.pfline{margin:6px 0 0}
+.pfbtn{font-size:13.5px;white-space:nowrap}
+.pfpeek{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:13.5px;color:var(--ink);margin-top:6px}
+.pfpeek:empty{display:none}
+.pfpeek .pfnote{flex-basis:100%;background:var(--gold-soft);padding:6px 10px;border-radius:10px;white-space:pre-line}
+.pfaccrow{all:unset;box-sizing:border-box;cursor:pointer;width:100%}
+.pfmap a{color:var(--accent);font-weight:600}
