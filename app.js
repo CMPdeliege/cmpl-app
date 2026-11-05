@@ -940,7 +940,7 @@ async function refresh(){
     markActive();
     if(!lockDone){ lockDone=true; setTimeout(lockApp,0); }   // app rouverte avec une session encore valide : Face ID d'abord
   }
-  if(S.me.status==="active"){ await Promise.all([S.me.role==="patient"?loadPatient():loadStaff(), loadAnns().catch(e=>console.error(e))]); }
+  if(S.me.status==="active"){ await Promise.all([S.me.role==="patient"?loadPatient():loadStaff(), loadAnns().catch(e=>console.error(e)), S.me.role!=="patient"?loadOrg().catch(e=>{ console.error(e); S.orgOk=false; S.orgLoaded=true; }):null]); }
   render();
   if(S.me.status==="active") startRealtime();
   if(IS_NATIVE&&S.me.status==="active"&&!pushSynced){ pushSynced=true; nativePushInit().then(()=>{ if(nativePush!=="unsupported") render(); }); }
@@ -2078,7 +2078,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261106a";
+const APP_VERSION="20261106b";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -2790,11 +2790,12 @@ function tplFill(body,r){ const first=r?(r.child_id?(S.children?.[r.child_id]?.f
 function bindTplPicker(r){
   const b=$("#c-tpl"); if(!b) return;
   b.onclick=e=>{ e.stopPropagation(); const old=$("#tplpop"); if(old){ old.remove(); return; }
-    const mine=S.tpls.filter(t=>t.owner_id===S.me.id), centre=S.tpls.filter(t=>!t.owner_id); let tab=mine.length?"mine":"centre";
+    const rk=t=>(t.category||"general")===(r&&r.type)?0:(t.category||"general")==="general"?1:2;
+    const mine=S.tpls.filter(t=>t.owner_id===S.me.id).sort((a,b)=>rk(a)-rk(b)), centre=S.tpls.filter(t=>!t.owner_id).sort((a,b)=>rk(a)-rk(b)); let tab=mine.length?"mine":"centre";
     const pop=document.createElement("div"); pop.id="tplpop"; pop.className="tplpop"; pop.setAttribute("role","dialog"); pop.setAttribute("aria-label","Réponses types");
     const paint=()=>{ const L=tab==="mine"?mine:centre;
       pop.innerHTML=`<div class="seg"><button type="button" data-tt="mine" aria-pressed="${tab==="mine"}">Mes réponses</button><button type="button" data-tt="centre" aria-pressed="${tab==="centre"}">Réponses du centre</button></div>
-      <div class="tpllist">${L.map(t=>`<button type="button" class="tplit" data-tpl="${t.id}"><b>${esc(t.title)}</b><span>${esc(tplFill(t.body,r).slice(0,140))}</span></button>`).join("")||`<p class="hint">${tab==="mine"?"Vous n'avez pas encore de réponse type.":"Aucune réponse du centre."}</p>`}</div>
+      <div class="tpllist">${L.map(t=>`<button type="button" class="tplit" data-tpl="${t.id}"><b>${esc(t.title)}${t.category&&t.category!=="general"&&typeof TPL_CAT!=="undefined"?` <span class="tplcat">${TPL_CAT[t.category]}</span>`:""}</b><span>${esc(tplFill(t.body,r).slice(0,140))}</span></button>`).join("")||`<p class="hint">${tab==="mine"?"Vous n'avez pas encore de réponse type.":"Aucune réponse du centre."}</p>`}</div>
       <button type="button" class="linkbtn" id="tpl-manage">+ Créer une réponse type · Gérer</button>`;
       pop.querySelectorAll("[data-tt]").forEach(x=>x.onclick=ev=>{ ev.stopPropagation(); tab=x.dataset.tt; paint(); });
       pop.querySelectorAll("[data-tpl]").forEach(x=>x.onclick=()=>{ const t=S.tpls.find(y=>y.id===+x.dataset.tpl), ta=$("#c-text"); if(!t||!ta) return;
@@ -2806,24 +2807,28 @@ function bindTplPicker(r){
 }
 function templatesHTML(){
   const mine=S.tpls.filter(t=>t.owner_id===S.me.id), centre=S.tpls.filter(t=>!t.owner_id), ed=S.tedit;
-  const row=t=>`<li><div><b>${esc(t.title)}</b><p>${esc(t.body)}</p></div>${(t.owner_id===S.me.id||(!t.owner_id&&canCentreTpl()))?`<span class="tplact"><button type="button" class="linkbtn" data-tedit="${t.id}">Modifier</button><button type="button" class="linkbtn" data-tdel="${t.id}">Supprimer</button></span>`:""}</li>`;
+  const canEd=t=>t.owner_id===S.me.id||(!t.owner_id&&(canCentreTpl()||t.created_by===S.me.id));
+  const groups=Object.keys(TPL_CAT).map(k=>[k,centre.filter(t=>(t.category||"general")===k)]).filter(([,L])=>L.length);
+  const row=t=>`<li><div><b>${esc(t.title)}</b> <span class="tplcat">${TPL_CAT[t.category||"general"]||""}</span><p>${esc(t.body)}</p></div>${canEd(t)?`<span class="tplact"><button type="button" class="linkbtn" data-tedit="${t.id}">Modifier</button><button type="button" class="linkbtn" data-tdel="${t.id}">Supprimer</button></span>`:""}</li>`;
   return `<div class="chead"><div><h1>Réponses types</h1><p>Des textes prêts à insérer dans vos réponses aux patients (bouton ${"💬"} à côté de la zone de message). Vous pouvez toujours les modifier avant d'envoyer.</p></div></div>
   <div class="settings">
    <section class="card"><h3>${ed&&ed.id?"Modifier la réponse":"Nouvelle réponse type"}</h3>
     <label class="fld">Titre<input id="tp-title" maxlength="80" value="${esc(ed?.title||"")}" placeholder="Ex. Prescription prête"></label>
     <label class="fld">Texte<textarea id="tp-body" rows="5" maxlength="2000" placeholder="Bonjour {prénom}, …">${esc(ed?.body||"")}</textarea></label>
     <p class="hint">Astuce : écrivez <b>{prénom}</b>, il sera remplacé par le prénom du patient.</p>
-    ${canCentreTpl()?`<label class="chk2"><input type="checkbox" id="tp-centre" ${ed&&ed.id&&!ed.owner_id?"checked":""} ${ed&&ed.id?"disabled":""}> Réponse du centre (visible par toute l'équipe)</label>`:""}
+    <label class="fld">Type de demande<select id="tp-cat">${Object.entries(TPL_CAT).map(([k,l])=>`<option value="${k}" ${(ed?.category||"general")===k?"selected":""}>${l}</option>`).join("")}</select></label>
+    <label class="chk2"><input type="checkbox" id="tp-centre" ${ed&&ed.id&&!ed.owner_id?"checked":""} ${ed&&ed.id?"disabled":""}> Réponse du centre (partagée avec toute l'équipe)</label>
+    <p class="hint">Un ton courtois et respectueux : bonjour, merci, une formule de politesse. Pas d'information médicale propre à un patient dans un modèle.</p>
     <div class="btnrow"><button class="btn" id="tp-save">${ed&&ed.id?"Enregistrer":"Ajouter"}</button>${ed?`<button class="btn ghost" id="tp-cancel">Annuler</button>`:""}</div></section>
    <section class="card"><h3>Mes réponses</h3>${mine.length?`<ul class="tplman">${mine.map(row).join("")}</ul>`:`<p class="hint">Aucune pour l'instant.</p>`}</section>
-   <section class="card"><h3>Réponses du centre</h3>${centre.length?`<ul class="tplman">${centre.map(row).join("")}</ul>`:`<p class="hint">Aucune.</p>`}${canCentreTpl()?"":`<p class="hint">Gérées par l'administrateur et le secrétariat.</p>`}</section>
+   <section class="card"><h3>Réponses du centre</h3>${groups.length?groups.map(([k,L])=>`<h4 class="tplgh">${TPL_CAT[k]}</h4><ul class="tplman">${L.map(row).join("")}</ul>`).join(""):`<p class="hint">Aucune.</p>`}<p class="hint">Tout le monde peut en proposer ; chacun modifie les siennes, le secrétariat et l'administrateur toutes.</p></section>
   </div>`;
 }
 function bindTemplates(){
-  $("#tp-save").onclick=async()=>{ const title=$("#tp-title").value.trim(), body=$("#tp-body").value.trim(); if(!title||!body) return toast("Indiquez un titre et un texte.");
+  $("#tp-save").onclick=async()=>{ const title=$("#tp-title").value.trim(), body=$("#tp-body").value.trim(), category=$("#tp-cat")?.value||"general"; if(!title||!body) return toast("Indiquez un titre et un texte.");
     const ed=S.tedit, centre=!!$("#tp-centre")?.checked;
-    const ok = ed&&ed.id ? await run(()=>sb.from("reply_templates").update({title,body,updated_at:new Date().toISOString()}).eq("id",ed.id),"Enregistré")
-                         : await run(()=>sb.from("reply_templates").insert({title,body,owner_id:centre?null:S.me.id}),"Réponse ajoutée");
+    const ok = ed&&ed.id ? await run(()=>sb.from("reply_templates").update({title,body,category,updated_at:new Date().toISOString()}).eq("id",ed.id),"Enregistré")
+                         : await run(()=>sb.from("reply_templates").insert({title,body,category,owner_id:centre?null:S.me.id,created_by:S.me.id}),"Réponse ajoutée");
     if(ok){ S.tedit=null; await loadTeam(); render(); } };
   const c=$("#tp-cancel"); if(c) c.onclick=()=>{ S.tedit=null; render(); };
   $$("[data-tedit]").forEach(b=>b.onclick=()=>{ S.tedit=S.tpls.find(t=>t.id===+b.dataset.tedit)||null; render(); scrollTo(0,0); });
@@ -2919,6 +2924,13 @@ function staffHelpHTML(){
    ["Ordinateur de confiance (accueil)","Au moment du code de sécurité, cochez « Faire confiance à cet ordinateur » : pendant 90 jours, l'e-mail et le mot de passe suffisent sur cet ordinateur, avec déconnexion après 2 heures d'inactivité. Uniquement sur un ordinateur du centre. Pour le retirer : Mon profil et notifications → Ordinateurs de confiance."],
    ["Valider les comptes des patients","Seul un administrateur valide les nouveaux comptes et les enfants ajoutés par un parent (Patients → Comptes à valider). Un administrateur peut donner ces droits à n'importe quel membre de l'équipe (secrétariat compris) : Équipe → Comptes de l'équipe → case « Administrateur ». La personne garde son rôle."],
    ["Priorité des tâches et récapitulatif par e-mail","Équipe → Tâches : chaque tâche a une priorité (haute, normale, basse), modifiable directement dans le tableau. Triez par priorité ou par échéance ; touchez une ligne pour voir ses détails (note, documents, rappel, personnes). En haut de la liste, « Récapitulatif de mes tâches par e-mail » : choisissez les jours et une ou plusieurs heures pour recevoir la liste de vos tâches à faire. Rien n'est envoyé s'il n'y a rien à faire, et l'e-mail ne contient jamais de nom de patient."],
+   ["Visites à domicile (médecins généralistes)","Patients → Visites à domicile : ajoutez les patients que vous voyez à domicile, avec un rythme (chaque mois…), la prochaine visite et une note de suivi. L'adresse vient de la page patient (📍 ouvre Google Maps). « Mettre dans la tournée d'aujourd'hui » prépare l'itinéraire de la journée. Après la visite : « ✓ Noter la visite ». Les autres médecins généralistes voient aussi votre liste, pour vous remplacer."],
+   ["Rappels de suivi","Sur la page d'un patient, ou dans Tâches → 🔔 Rappels : « revoir dans 3 mois », « vaccin grippe en octobre »… Le jour venu, le rappel devient une tâche dans la liste de la personne choisie. Il peut se répéter (tous les 3 mois, tous les ans…)."],
+   ["Transmissions","Équipe → Transmissions : avant une absence, laissez un message à un ou plusieurs collègues, avec les patients à suivre. Ils le voient sur leur tableau de bord pendant la période choisie et reçoivent une notification sans détail."],
+   ["Locaux","Secrétariat → Locaux : la vue « Par jour » montre qui occupe chaque local, heure par heure. « Habituel » : l'occupation de chaque semaine (ex. Dr X au local 1 le lundi de 9 h à 13 h). « Réserver » ou « Libérer un créneau » : un changement pour un jour seulement. Le secrétariat et l'administrateur gèrent la liste des locaux."],
+   ["Checklists","Secrétariat → Checklists : ouverture, fermeture, contrôle de la semaine. Chacun coche ce qu'il a fait (nom et heure notés) et note la température du frigo à vaccins : une valeur en dehors de 2 à 8 °C est signalée en rouge, aussi sur le tableau de bord. L'historique garde 3 ans de relevés."],
+   ["Réunions d'équipe","Équipe → Réunions : chacun ajoute ses points à l'ordre du jour. Pendant la réunion, « Rédiger le procès-verbal » : présents, décisions point par point (« En faire une tâche »), compte rendu. « Clôturer » archive le PV, téléchargeable en PDF."],
+   ["Réponses types du centre","Dans une conversation, le bouton 💬 propose d'abord les réponses du type de la demande (rendez-vous, prescription…). Tout le monde peut proposer une réponse du centre, avec un ton courtois et respectueux."],
    ["Page patient (adresse, infos pratiques, contacts)","Chaque patient a sa page, visible uniquement par l'équipe : ouvrez-la avec « 👤 Page patient » dans une demande ou une tâche, avec la recherche (Ctrl K) ou depuis Fiches patients. Notez l'adresse, les infos pratiques (étage, sonnette, code de la porte, maison de repos…) et les contacts utiles (infirmière, famille, aidant…). L'adresse et les infos pratiques s'affichent aussi en résumé dans ses demandes. Jamais d'informations médicales : le dossier reste dans CareConnect."],
    ["Tableau de bord","Sur ordinateur, l'app s'ouvre sur le tableau de bord : vos demandes à traiter (les urgentes en premier), vos tâches, les messages de l'équipe non lus, les examens à suivre et ce qui se passe aujourd'hui au centre (absences, anniversaires, annonces, inventaire). Touchez un compteur ou une ligne pour y aller. Sur téléphone, l'app s'ouvre toujours sur les demandes ; le tableau de bord est dans « Plus »."],
    ["Annonces importantes (administrateurs)","Le centre → Annonces importantes : choisissez pour qui (équipe, patients ou tout le monde), un titre, un message et jusqu'à quand. L'annonce s'affiche en grand à l'ouverture de l'app (chacun touche « J'ai compris »), puis reste épinglée en haut de l'écran jusqu'au dernier jour choisi. Vous voyez combien de personnes l'ont lue et pouvez l'arrêter à tout moment. Notification sur le téléphone en option ; les patients ne la reçoivent que s'ils ont accepté les annonces du centre."],
@@ -2963,6 +2975,7 @@ function dashHTML(){
     ${canExam()?kpi("exams",Eg.length,"résultat"+(Eg.length>1?"s":"")+" à communiquer",`${E.length-Eg.length} examen${E.length-Eg.length>1?"s":""} en attente${El.length?` · <em>${El.length} en retard</em>`:""}`,Eg.length?"ok":""):""}
   </div>
   <div class="dgrid">
+    ${dashHoHTML()}
     ${card("📥","À traiter en priorité","inbox",R.slice(0,7).map(reqRow).join(""),`<span class="yay">🎉</span> Aucune demande en attente.`,
       (R.length>7?`<p class="dmore">+ ${R.length-7} autre${R.length-7>1?"s":""}</p>`:"")+(rx>=2?`<button type="button" class="drx" data-dgo="inbox">💊 <b>${rx} prescriptions simples</b> à accorder en série ›</button>`:""))}
     ${card("✅","Mes tâches","tasks",T.slice(0,6).map(taskRow).join(""),"✨ Rien à faire pour l'instant.")}
@@ -2972,6 +2985,7 @@ function dashHTML(){
       ${bd.map(b=>`<p class="dline">🎂 ${b.user_id===S.me.id?"<b>Joyeux anniversaire !</b>":`Anniversaire de <b>${esc(staffFirst(b.user_id))}</b> <button type="button" class="linkbtn" data-bdwrite="${b.user_id}">Lui écrire</button>`}</p>`).join("")}
       ${abs.length?abs.map(x=>`<p class="dline">🌴 <b>${esc(x.provider_id?provName(x.provider_id):(x.name||"—"))}</b> ${x.kind==="absence"?"absent(e)":"en congé"}${x.ends?` jusqu'au ${fmtDate(x.ends+"T12:00")}`:""}</p>`).join(""):`<p class="dline">👥 Toute l'équipe est présente.</p>`}
       ${myAnns().map(b=>`<button type="button" class="dline dlink dann" data-annopen="${b.id}">📢 <b>${esc(b.title)}</b></button>`).join("")}
+      ${dashOrgHTML()}
       ${nInv?`<button type="button" class="dline dlink" data-cs="inventory">📦 <b>${nInv}</b> article${nInv>1?"s":""} à commander ›</button>`:""}
       ${nAcc?`<button type="button" class="dline dlink" data-cs="accounts">🧑‍⚕️ <b>${nAcc}</b> compte${nAcc>1?"s":""} patient à valider ›</button>`:""}
       ${nFb?`<button type="button" class="dline dlink" data-cs="feedback">💡 <b>${nFb}</b> nouvelle${nFb>1?"s":""} suggestion${nFb>1?"s":""} ›</button>`:""}
@@ -3011,7 +3025,7 @@ async function loadPfInfo(k,id){
 async function openPatientFile(k,id,person){
   if(person){ if(k==="p") S.profiles[id]={...(S.profiles[id]||{}),...person}; else if(k==="c") S.children[id]={...(S.children[id]||{}),...person}; }
   if(S.cscreen!=="pfile") S.pfBack=S.cscreen;
-  S.pf={k,id}; S.pfEdit=null; S.cscreen="pfile"; render(); scrollTo(0,0);
+  S.pf={k,id}; S.pfEdit=null; S.pfFu=null; S.cscreen="pfile"; render(); scrollTo(0,0);
   const need=[];
   if(k==="p"&&!(S.profiles[id]&&"extra_contacts" in S.profiles[id])) need.push(sb.from("profiles").select("id,first_name,last_name,birth_date,phone,extra_contacts,contact_note").eq("id",id).maybeSingle().then(r=>{ if(r.data) S.profiles[id]=r.data; }));
   if(k==="c"&&!S.children[id]) need.push(sb.from("children").select("id,first_name,last_name,birth_date,status,created_by").eq("id",id).maybeSingle().then(r=>{ if(r.data) S.children[id]=r.data; }));
@@ -3077,6 +3091,7 @@ function pfileHTML(){
    <div class="pfcol">
     ${own&&(own.phone||(own.extra_contacts||[]).length||own.contact_note)?`<section class="card pfcard"><header><h3>👤 Coordonnées données par ${k==="c"?"le parent":"le patient"}</h3></header>
       ${k==="c"?`<p><b>${esc(own.first_name+" "+own.last_name)}</b>${own.phone?` · <a href="${telHref(own.phone)}">${esc(own.phone)}</a>`:""}</p>`:""}${extraContactsHTML(own)}<p class="hint">Le patient les gère lui-même dans « Mon compte ».</p></section>`:""}
+    ${pfFuHTML(k,id)}
     <section class="card pfcard"><header><h3>📥 En cours au centre</h3></header>
       ${reqs.map(r=>`<button type="button" class="drow" data-pfreq="${r.id}"><span class="dic">${IEMO[r.type]||"📋"}</span><span class="dtx"><b>${TYPES[r.type]?.label||"Demande"}</b><small>${fmt(r.created_at)}</small></span>${dueTagI(r)}</button>`).join("")}
       ${tasks.map(t=>`<button type="button" class="drow" data-dtask="${t.id}"><span class="dic">${isExam(t)?"🧪":"✅"}</span><span class="dtx"><b>${esc(isExam(t)?(t.exam_types||[]).join(", "):t.title)}</b><small>${isExam(t)?(t.exam_results_at?"résultats reçus, à communiquer":"en attente des résultats"):"pour "+esc(taskForLabel(t))}</small></span>${t.due_date?`<span class="ddue${t.due_date<todayISO()?" late":""}">${new Date(t.due_date+"T12:00").toLocaleDateString(LOC,{day:"numeric",month:"short"})}</span>`:""}</button>`).join("")}
@@ -3099,6 +3114,7 @@ function bindPfile(){
   $$("[data-pfreq]").forEach(b=>b.onclick=()=>{ const r=S.reqs.find(x=>x.id===+b.dataset.pfreq); if(!r) return; S.cscreen="inbox"; S.archive=false; S.itype="all"; S.iq=""; S.sel=r.id; S.scope="all"; render(); scrollTo(0,0); });
   $$("[data-dtask]").forEach(b=>b.onclick=()=>{ const tid=+b.dataset.dtask; S.topen=S.topen||new Set(); S.topen.add(tid); S.cscreen="tasks"; S.tview="todo"; S.tkind="all"; render(); });
   $$("[data-copy]").forEach(b=>b.onclick=()=>copyText(b.dataset.copy));
+  bindPfFu(k,id);
   const E=S.pfEdit; if(!E) return;
   const sync=()=>{ E.street=$("#pf-street").value; E.postal_code=$("#pf-postal").value; E.city=$("#pf-city").value; E.note=$("#pf-note").value;
     $$("[data-pfc]").forEach(row=>{ const c=E.contacts[+row.dataset.pfc]; row.querySelectorAll("[data-f]").forEach(x=>c[x.dataset.f]=x.value); }); };
@@ -3114,12 +3130,611 @@ function bindPfile(){
     S.pfEdit=null; render(); };
 }
 
+S.hoRead=new Set(); S.hos=[];
+SI.house='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10v10h13V10"/><path d="M10 20v-5h4v5"/></svg>';
+SI.handover='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 3.5h6v3H9z"/><path d="M8.5 11h7M8.5 15h5"/></svg>';
+SI.door='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 21V4a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v17"/><path d="M3 21h18"/><circle cx="15" cy="12" r="1"/></svg>';
+SI.checks='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 6 1.5 1.5L8 5"/><path d="m4 12 1.5 1.5L8 11"/><path d="m4 18 1.5 1.5L8 17"/><path d="M11 6.5h9M11 12.5h9M11 18.5h9"/></svg>';
+SI.meet='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="3"/><circle cx="16.5" cy="9" r="2.5"/><path d="M2.5 20c.6-3.4 2.8-5 5.5-5s4.9 1.6 5.5 5"/><path d="M14 15.3c.8-.3 1.6-.4 2.5-.4 2.3 0 4.2 1.4 4.8 4.6"/></svg>';
+/* =====================================================================
+   ORGANISATION DU CABINET ET DES SOINS (069)
+   ===================================================================== */
+const refOf = o => o.patient_id?["p",o.patient_id]:o.child_id?["c",o.child_id]:["r",o.record_id];
+const refArgs = sel => ({patient_id:sel.k==="p"?sel.id:null, child_id:sel.k==="c"?sel.id:null, record_id:sel.k==="r"?sel.id:null});
+const isoDow = d => new Date(d+"T12:00").getDay()||7;
+const dLong = d => new Date(d+"T12:00").toLocaleDateString(LOC,{weekday:"long",day:"numeric",month:"long"});
+const dShort = d => { const x=new Date(d+"T12:00"); return x.toLocaleDateString(LOC,{day:"numeric",month:"short",...(x.getFullYear()!==new Date().getFullYear()?{year:"numeric"}:{})}); };
+const daysBetween = (a,b) => Math.round((new Date(b+"T12:00")-new Date(a+"T12:00"))/864e5);
+const hmT = t => { const [h,m]=String(t||"").split(":"); return `${+h} h${m&&m!=="00"?" "+m:""}`; };
+const isGPme = () => { const pv=(S.providers||[]).find(p=>p.id===S.me.provider_id); return !!(pv&&pv.specialty===GP); };
+const activeStaff = () => (S.team||[]).filter(t=>t.status==="active"&&t.role!=="patient");
+const whoS = id => id===S.me.id?"moi":staffName(id);
+const isTyping = () => { const el=document.activeElement; return !!(el&&/TEXTAREA|INPUT|SELECT/.test(el.tagName)&&el.type!=="checkbox"); };
+const softRender = scr => { if(S.cscreen===scr&&!isTyping()) render(); };
+async function ensurePeople(objs){
+  const ps=new Set(), cs=new Set();
+  for(const o of objs){ if(o.patient_id&&!S.profiles[o.patient_id]) ps.add(o.patient_id); if(o.child_id&&!S.children[o.child_id]) cs.add(o.child_id); }
+  const jobs=[];
+  if(ps.size) jobs.push(sb.from("profiles").select("id,first_name,last_name,birth_date,phone,extra_contacts,contact_note").in("id",[...ps]).then(r=>{ for(const p of r.data||[]) S.profiles[p.id]=p; }));
+  if(cs.size) jobs.push(sb.from("children").select("id,first_name,last_name,birth_date,status,created_by").in("id",[...cs]).then(r=>{ for(const c of r.data||[]) S.children[c.id]=c; }));
+  await Promise.all(jobs);
+}
+async function loadPfInfos(objs){
+  const by={p:new Set(),c:new Set(),r:new Set()};
+  for(const o of objs){ const [k,id]=refOf(o); if(id&&!((k+":"+id) in S.pfInfo)) by[k].add(id); }
+  await Promise.all(Object.entries(by).filter(([,v])=>v.size).map(([k,v])=>sb.from("patient_info").select("*").in(PF_COL[k],[...v]).then(r=>{
+    if(r.error) return; for(const id of v) S.pfInfo[k+":"+id]=S.pfInfo[k+":"+id]||{}; for(const i of r.data||[]) if(i[PF_COL[k]]) S.pfInfo[k+":"+i[PF_COL[k]]]=i; })));
+}
+const refName = o => { const [k,id]=refOf(o); return pfName(k,id); };
+const refBirth = o => { const [k,id]=refOf(o); return pfPerson(k,id)?.birth_date; };
+
+/* ----- sélecteur de patient réutilisable ----- */
+function ppickHTML(P,id){
+  if(P.sel) return `<div class="ppsel">👤 <b>${esc(P.sel.name)}</b>${P.sel.birth?` · né(e) le ${fmtDate(P.sel.birth)}`:""}${P.sel.k==="r"?" · <i>fiche sans compte</i>":P.sel.k==="c"?" · enfant":""} <button type="button" class="linkbtn" data-ppclear="${id}">Changer</button></div>`;
+  return `<div class="ppick"><input type="search" class="pcq" data-ppq="${id}" placeholder="Nom du patient…" value="${esc(P.q||"")}" autocomplete="off" aria-label="Rechercher un patient"><div class="ppres" data-ppres="${id}" aria-live="polite"></div></div>`;
+}
+function bindPpick(P,id,onPick){
+  const c=$(`[data-ppclear="${id}"]`); if(c) c.onclick=()=>{ P.sel=null; render(); $(`[data-ppq="${id}"]`)?.focus(); };
+  const inp=$(`[data-ppq="${id}"]`), box=$(`[data-ppres="${id}"]`); if(!inp) return; let t;
+  const go=async()=>{ P.q=inp.value; const words=norm(inp.value).split(/\s+/).filter(Boolean);
+    if(!words.length||words.join("").length<2){ box.innerHTML=""; return; }
+    const recs=recordsMatching(words).slice(0,6), ps=(await searchPatients(words))||[]; if(inp.value!==P.q) return;
+    const all=[...ps.map(p=>({k:p.child?"c":"p",id:p.id,name:`${p.first_name||""} ${p.last_name||""}`.trim(),birth:p.birth_date,o:p})),
+               ...recs.map(r=>({k:"r",id:r.id,name:`${r.first_name} ${r.last_name}`,birth:r.birth_date,o:r}))];
+    box.innerHTML=all.length?all.map((x,i)=>`<button type="button" class="pprow" data-ppi="${i}"><b>${esc(x.name)}</b><small>${x.birth?fmtDate(x.birth):""}${x.k==="c"?" · enfant":x.k==="r"?" · fiche sans compte":""}</small></button>`).join("")
+      :`<p class="hint">Aucun patient trouvé. <button type="button" class="linkbtn" data-ppnew>Créer une fiche sans compte</button></p>`;
+    box.querySelectorAll("[data-ppi]").forEach(b=>b.onclick=()=>{ const x=all[+b.dataset.ppi];
+      if(x.k==="p") S.profiles[x.id]={...(S.profiles[x.id]||{}),...x.o}; if(x.k==="c") S.children[x.id]={...(S.children[x.id]||{}),...x.o};
+      P.sel={k:x.k,id:x.id,name:x.name,birth:x.birth}; P.q=""; if(onPick) onPick(P.sel); render(); });
+    const nw=box.querySelector("[data-ppnew]"); if(nw) nw.onclick=()=>{ S.recBack=null; S.cscreen="patients"; render(); scrollTo(0,0); }; };
+  inp.oninput=()=>{ clearTimeout(t); t=setTimeout(go,250); }; if(inp.value) go();
+}
+const staffOpts = (cur,withMe=true) => activeStaff().filter(t=>withMe||t.id!==S.me.id).map(t=>`<option value="${t.id}" ${cur===t.id?"selected":""}>${esc(t.id===S.me.id?"Moi":staffName(t.id))}</option>`).join("");
+
+/* ----- PDF texte simple (procès-verbal…) ----- */
+async function textPdf(title, sub, blocks){
+  const W=595.28, H=841.89, M=50, CW=W-2*M, pages=[]; let ops=[], y=0;
+  const RED="0.439 0.149 0.161", GOLD="0.624 0.510 0.282", GREY="0.43 0.37 0.36", INK="0.17 0.11 0.11";
+  const newPage=()=>{ ops=[]; pages.push(ops); y=H-M; };
+  const need=h=>{ if(y-h<M+24) newPage(); };
+  const text=(t,x,size,{bold=false,color=INK}={})=>ops.push(`BT /${bold?"F2":"F1"} ${size} Tf ${color} rg ${x.toFixed(2)} ${y.toFixed(2)} Td ${pdfStr(t)} Tj ET`);
+  const para=(t,{size=10.5,bold=false,color=INK,indent=0,gap=3}={})=>{ for(const l of wrapText(t,size,CW-indent,bold)){ need(size+gap); y-=size+gap; text(l,M+indent,size,{bold,color}); } };
+  const rule=()=>{ need(14); y-=8; ops.push(`0.85 0.80 0.76 RG 0.6 w ${M} ${y.toFixed(2)} m ${W-M} ${y.toFixed(2)} l S`); y-=6; };
+  newPage();
+  y-=12; text("CENTRE MÉDICAL",M,12,{bold:true,color:RED}); y-=15; text("PRINCE DE LIÈGE",M,12,{bold:true,color:GOLD});
+  y-=13; text(winText("21-23 rue du Potaerdenberg, 1070 Anderlecht · 02 781 18 75"),M,8.5,{color:GREY}); y-=10; rule(); y-=6;
+  para(title,{size:15,bold:true,gap:6}); for(const s of sub) para(s,{size:10,color:GREY});
+  for(const b of blocks){ if(b.rule) rule(); else if(b.h){ need(30); y-=6; para(b.h,{size:11.5,bold:true,gap:5}); } else para(b.p||"",{indent:b.indent||0,color:b.grey?GREY:INK,bold:!!b.bold,size:b.size||10.5}); }
+  const N=pages.length, parts=[], offs=[]; let len=0;
+  const bytes=s=>{ const u=new Uint8Array(s.length); for(let i=0;i<s.length;i++) u[i]=s.charCodeAt(i)&255; return u; };
+  const push=x=>{ const bb=typeof x==="string"?bytes(x):x; parts.push(bb); len+=bb.length; };
+  const obj=(n,body)=>{ offs[n]=len; push(`${n} 0 obj\n`); body(); push("\nendobj\n"); };
+  push("%PDF-1.4\n%\xE2\xE3\xCF\xD3\n");
+  const P0=5, total=P0+N*2;
+  obj(1,()=>push("<< /Type /Catalog /Pages 2 0 R >>"));
+  obj(2,()=>push(`<< /Type /Pages /Kids [${pages.map((_,i)=>`${P0+i*2} 0 R`).join(" ")}] /Count ${N} >>`));
+  obj(3,()=>push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>"));
+  obj(4,()=>push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>"));
+  pages.forEach((o,i)=>{ y=M-4; ops=o; text(winText(`Document interne · Page ${i+1}/${N}`),M,8,{color:GREY}); const cs=o.join("\n");
+    obj(P0+i*2,()=>push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${W} ${H}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${P0+i*2+1} 0 R >>`));
+    obj(P0+i*2+1,()=>push(`<< /Length ${cs.length} >>\nstream\n${cs}\nendstream`)); });
+  const xref=len; let x=`xref\n0 ${total}\n0000000000 65535 f \n`; for(let n=1;n<total;n++) x+=String(offs[n]).padStart(10,"0")+" 00000 n \n";
+  push(x+`trailer\n<< /Size ${total} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`);
+  return new Blob(parts,{type:"application/pdf"});
+}
+
+/* ----- chargement commun (tableau de bord) ----- */
+async function loadOrg(){
+  if(!S.me||S.me.role==="patient"||S.me.status!=="active") return;
+  const from=addDays(todayISO(),-7);
+  const [h,hr,rm,sl,bk,ct,cr,mt,mi]=await Promise.all([
+    sb.from("handovers").select("*").gte("ends_on",addDays(todayISO(),-60)).order("starts_on",{ascending:false}).limit(60),
+    sb.from("handover_reads").select("handover_id").eq("user_id",S.me.id),
+    sb.from("rooms").select("*").order("sort_order").order("name"),
+    sb.from("room_slots").select("*"),
+    sb.from("room_bookings").select("*").gte("on_date",from).order("on_date").limit(3000),
+    sb.from("checklist_templates").select("*").order("sort_order").order("id"),
+    sb.from("checklist_runs").select("*").gte("period",addDays(todayISO(),-40)),
+    sb.from("meetings").select("*").order("starts_at",{ascending:false}).limit(40),
+    sb.from("meeting_items").select("*").order("sort_order").order("created_at")]);
+  S.orgOk=!h.error;
+  S.hos=h.data||[]; S.hoRead=new Set((hr.data||[]).map(x=>x.handover_id));
+  S.rooms=rm.data||[]; S.rslots=sl.data||[]; S.rbook=bk.data||[]; S.rbookFrom=from;
+  S.cltpl=ct.data||[]; S.clruns=cr.data||[]; S.meetings=mt.data||[]; S.mitems=mi.data||[];
+  S.orgLoaded=true;
+}
+const orgMissing = () => S.orgLoaded&&S.orgOk===false?`<div class="err">Cette rubrique sera disponible après la mise à jour de la base de données (migration 069).</div>`:"";
+
+/* =====================================================================
+   VISITES À DOMICILE (médecins généralistes)
+   ===================================================================== */
+const HV_FREQ=[["","Pas de rythme fixe"],["7","Chaque semaine"],["14","Toutes les 2 semaines"],["30","Chaque mois"],["60","Tous les 2 mois"],["90","Tous les 3 mois"],["180","Tous les 6 mois"]];
+async function loadVisits(){
+  const [v,l]=await Promise.all([sb.from("home_visits").select("*").order("created_at"), sb.from("home_visit_log").select("*").order("visited_on",{ascending:false}).limit(1000)]);
+  S.hvOk=!v.error; S.hvList=v.data||[]; S.hvLog=l.data||[];
+  await Promise.all([ensurePeople(S.hvList), loadPfInfos(S.hvList)]); S.hvLoaded=true;
+}
+const hvNext = v => v.planned_on || (v.last_visit&&v.every_days?addDays(v.last_visit,v.every_days):null);
+const hvAddr = v => { const [k,id]=refOf(v), i=S.pfInfo[k+":"+id]||{}; return pfAddr(i); };
+const mapsUrl = a => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(a+", Belgique")}`;
+function visitsHTML(){
+  const V=S.hv||(S.hv={tab:"mine",open:new Set(),add:null});
+  const head=`<div class="chead"><div><h1>Visites à domicile</h1><p>Vos patients suivis à domicile : adresse, dernière visite, prochaine visite et note de suivi. Les autres médecins généralistes du centre voient aussi les listes, pour pouvoir vous remplacer.</p></div></div>`;
+  if(!S.hvLoaded) return head+`<p class="hint">Chargement…</p>`;
+  if(S.hvOk===false) return head+`<div class="err">Cette rubrique sera disponible après la mise à jour de la base de données (migration 069).</div>`;
+  const td=todayISO(), mine=S.hvList.filter(v=>v.owner_id===S.me.id), L=(V.tab==="mine"?mine:S.hvList).slice()
+    .sort((a,b)=>(a.planned_on===td?0:1)-(b.planned_on===td?0:1)||(hvNext(a)||"9999").localeCompare(hvNext(b)||"9999")||refName(a).localeCompare(refName(b)));
+  const today=L.filter(v=>v.planned_on===td), addrs=today.map(hvAddr).filter(Boolean);
+  const route=addrs.length?`https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=${encodeURIComponent(addrs[addrs.length-1]+", Belgique")}${addrs.length>1?`&waypoints=${encodeURIComponent(addrs.slice(0,-1).slice(0,9).map(a=>a+", Belgique").join("|"))}`:""}`:"";
+  const A=V.add;
+  const addForm=A?`<section class="card hvadd"><h3>Ajouter un patient à ma liste</h3>${ppickHTML(A.P,"hv")}
+    <div class="row2"><label class="fld">Rythme des visites<select id="hv-every">${HV_FREQ.map(([k,l])=>`<option value="${k}" ${A.every===k?"selected":""}>${l}</option>`).join("")}</select></label>
+    <label class="fld">Prochaine visite prévue<input type="date" id="hv-plan" min="${td}" value="${esc(A.plan||"")}"></label></div>
+    <label class="fld">Dernière visite (si déjà vu)<input type="date" id="hv-last" max="${td}" value="${esc(A.last||"")}"></label>
+    <label class="fld">Note de suivi<textarea id="hv-note" rows="3" maxlength="2000" placeholder="Ex. surveillance des pieds, pansement, renouvellement mensuel…">${esc(A.note||"")}</textarea></label>
+    <p class="hint">L'adresse et les infos pratiques viennent de la page du patient. Note courte : le dossier médical reste dans CareConnect.</p>
+    <div class="btnrow"><button type="button" class="btn" id="hv-save" ${A.P.sel?"":"disabled"}>Ajouter à ma liste</button><button type="button" class="btn ghost" id="hv-x">Annuler</button></div></section>`:"";
+  const row=v=>{ const nx=hvNext(v), late=nx&&nx<td, open=V.open.has(v.id), a=hvAddr(v), [k,id]=refOf(v), age=pfAge(refBirth(v)), logs=S.hvLog.filter(l=>l.visit_id===v.id);
+    const nxt=v.planned_on?`<b class="${v.planned_on===td?"hvtoday":late?"late":""}">${v.planned_on===td?"Aujourd'hui":(late?"⚠️ ":"")+"Prévue "+dShort(v.planned_on)}</b>`
+      :nx?`<span class="${late?"late":""}">${late?"⚠️ À revoir depuis le ":"Vers le "}${dShort(nx)}</span>`:`<span class="hint">—</span>`;
+    return `<div class="hvr${open?" open":""}${v.planned_on===td?" today":""}" role="row">
+      <button type="button" class="hvn" data-hvopen="${v.id}" aria-expanded="${open}"><b>${esc(refName(v))}</b><small>${age!==""?age+" ans":""}${V.tab==="all"&&v.owner_id!==S.me.id?` · liste de ${esc(staffName(v.owner_id))}`:""}</small></button>
+      <span class="hva">${a?`<a href="${mapsUrl(a)}" target="_blank" rel="noopener" title="Ouvrir dans Google Maps">📍 ${esc(a)}</a>`:`<button type="button" class="linkbtn" data-pfopen="${k}:${id}">＋ Ajouter l'adresse</button>`}</span>
+      <span class="hvl">${v.last_visit?`${dShort(v.last_visit)}<small>il y a ${daysBetween(v.last_visit,td)} j</small>`:`<span class="hint">jamais</span>`}</span>
+      <span class="hvx">${nxt}</span>
+      <span class="hvnote">${v.note?esc(v.note.length>90?v.note.slice(0,90)+"…":v.note):`<span class="hint">—</span>`}</span>
+      <button type="button" class="tcx" data-hvopen="${v.id}" aria-label="${open?"Masquer":"Détails"}">${open?"▴":"▾"}</button></div>
+      ${open?`<div class="hvd"><div class="hvdg">
+        <label class="fld">Note de suivi<textarea data-hvnote="${v.id}" rows="3" maxlength="2000">${esc(v.note||"")}</textarea></label>
+        <div class="row2"><label class="fld">Rythme<select data-hvevery="${v.id}">${HV_FREQ.map(([kk,l])=>`<option value="${kk}" ${String(v.every_days||"")===kk?"selected":""}>${l}</option>`).join("")}</select></label>
+        <label class="fld">Visite prévue le<input type="date" data-hvplan="${v.id}" min="${td}" value="${esc(v.planned_on||"")}"></label></div>
+        <div class="btnrow"><button type="button" class="btn ghost" data-hvsave="${v.id}">Enregistrer</button><button type="button" class="linkbtn" data-hvtoday="${v.id}">🚗 Mettre dans la tournée d'aujourd'hui</button></div></div>
+       <div class="hvdg"><h4>✓ Visite faite</h4><div class="row2"><label class="fld">Le<input type="date" data-hvdd="${v.id}" max="${td}" value="${td}"></label><label class="fld">Remarque (facultatif)<input type="text" data-hvdn="${v.id}" maxlength="500" placeholder="Ex. pansement refait"></label></div>
+        <button type="button" class="btn" data-hvdone="${v.id}">✓ Noter la visite</button>
+        ${logs.length?`<h4>Visites précédentes</h4><ul class="hvlog">${logs.slice(0,8).map(l=>`<li><b>${fmtDate(l.visited_on+"T12:00")}</b> · ${esc(staffName(l.by_user))}${l.note?` · ${esc(l.note)}`:""}</li>`).join("")}</ul>`:""}
+        <p class="hvfoot">${pfBtn(k,id,"Page patient")}${v.owner_id===S.me.id||isAdmin()?` <button type="button" class="linkbtn tdel" data-hvdel="${v.id}">Retirer de la liste</button>`:""}</p></div></div>`:""}`; };
+  return head+`<div class="hvtop"><div class="seg" role="group" aria-label="Liste"><button type="button" data-hvtab="mine" aria-pressed="${V.tab==="mine"}">Ma liste (${mine.length})</button><button type="button" data-hvtab="all" aria-pressed="${V.tab==="all"}">Tous les médecins (${S.hvList.length})</button></div>
+    ${A?"":`<button type="button" class="btn" id="hv-add">＋ Ajouter un patient</button>`}</div>
+  ${addForm}
+  ${today.length?`<section class="card hvtour"><h3>🚗 Tournée d'aujourd'hui (${today.length})</h3><p>${today.map(v=>`<b>${esc(refName(v))}</b>${hvAddr(v)?"":" <span class=\"late\">(adresse manquante)</span>"}`).join(" → ")}</p>${route?`<a class="btn" href="${route}" target="_blank" rel="noopener">🗺️ Itinéraire dans Google Maps</a>`:""}</section>`:""}
+  ${L.length?`<div class="hvt" role="table" aria-label="Visites à domicile"><div class="hvr thead" role="row"><span>Patient</span><span>Adresse</span><span>Dernière visite</span><span>Prochaine</span><span>Note de suivi</span><span></span></div>${L.map(row).join("")}</div>`
+    :`<div class="empty">${V.tab==="mine"?"Aucun patient dans votre liste. Ajoutez les patients que vous voyez à domicile.":"Aucun patient suivi à domicile."}</div>`}`;
+}
+function bindVisits(){
+  if(!S.hvLoaded&&!S.hvLoading){ S.hvLoading=true; loadVisits().catch(e=>{ console.error(e); S.hvOk=false; S.hvLoaded=true; }).finally(()=>{ S.hvLoading=false; softRender("visits"); }); return; }
+  const V=S.hv;
+  $$("[data-hvtab]").forEach(b=>b.onclick=()=>{ V.tab=b.dataset.hvtab; render(); });
+  $$("[data-hvopen]").forEach(b=>b.onclick=()=>{ const id=+b.dataset.hvopen; V.open.has(id)?V.open.delete(id):V.open.add(id); render(); });
+  const ad=$("#hv-add"); if(ad) ad.onclick=()=>{ V.add={P:{q:"",sel:null},every:"30",plan:"",last:"",note:""}; render(); $('[data-ppq="hv"]')?.focus(); };
+  const A=V.add;
+  if(A){ bindPpick(A.P,"hv");
+    const keep=()=>{ A.every=$("#hv-every").value; A.plan=$("#hv-plan").value; A.last=$("#hv-last").value; A.note=$("#hv-note").value; };
+    ["#hv-every","#hv-plan","#hv-last","#hv-note"].forEach(s=>{ const el=$(s); el.oninput=el.onchange=keep; });
+    $("#hv-x").onclick=()=>{ V.add=null; render(); };
+    $("#hv-save").onclick=async e=>{ keep(); if(!A.P.sel) return toast("Choisissez le patient.");
+      if(S.hvList.some(v=>v.owner_id===S.me.id&&refOf(v)[1]===A.P.sel.id)) return toast("Ce patient est déjà dans votre liste.");
+      e.target.disabled=true;
+      const row={...refArgs(A.P.sel),owner_id:S.me.id,every_days:A.every?+A.every:null,planned_on:A.plan||null,last_visit:A.last||null,note:A.note.trim()||null};
+      if(await run(()=>sb.from("home_visits").insert(row),"Patient ajouté à votre liste")){ V.add=null; await loadVisits(); render(); } else e.target.disabled=false; }; }
+  $$("[data-hvsave]").forEach(b=>b.onclick=async()=>{ const id=+b.dataset.hvsave, v=S.hvList.find(x=>x.id===id);
+    const upd={note:$(`[data-hvnote="${id}"]`).value.trim()||null,every_days:$(`[data-hvevery="${id}"]`).value?+$(`[data-hvevery="${id}"]`).value:null,planned_on:$(`[data-hvplan="${id}"]`).value||null,updated_at:new Date().toISOString()};
+    if(await run(()=>sb.from("home_visits").update(upd).eq("id",id),"Enregistré")){ Object.assign(v,upd); render(); } });
+  $$("[data-hvtoday]").forEach(b=>b.onclick=async()=>{ const id=+b.dataset.hvtoday, v=S.hvList.find(x=>x.id===id);
+    if(await run(()=>sb.from("home_visits").update({planned_on:todayISO()}).eq("id",id),"Ajouté à la tournée d'aujourd'hui")){ v.planned_on=todayISO(); render(); scrollTo(0,0); } });
+  $$("[data-hvdone]").forEach(b=>b.onclick=async()=>{ const id=+b.dataset.hvdone, d=$(`[data-hvdd="${id}"]`).value, n=$(`[data-hvdn="${id}"]`).value;
+    if(!d) return toast("Indiquez la date de la visite."); b.disabled=true;
+    if(await run(()=>sb.rpc("home_visit_done",{p_id:id,p_date:d,p_note:n}),"Visite notée")){ await loadVisits(); render(); } else b.disabled=false; });
+  $$("[data-hvdel]").forEach(b=>b.onclick=async()=>{ if(!confirmInline(b,"Retirer ?")) return;
+    if(await run(()=>sb.from("home_visits").delete().eq("id",+b.dataset.hvdel),"Retiré de la liste")){ S.hvList=S.hvList.filter(x=>x.id!==+b.dataset.hvdel); render(); } });
+}
+
+/* =====================================================================
+   RAPPELS DE SUIVI
+   ===================================================================== */
+const FU_REP=[["","Une seule fois"],["1","Tous les mois"],["3","Tous les 3 mois"],["6","Tous les 6 mois"],["12","Tous les ans"]];
+const FU_QUICK=[["1m","Dans 1 mois",1],["3m","3 mois",3],["6m","6 mois",6],["1y","1 an",12]];
+const addMonths = (d,n) => { const x=new Date(d+"T12:00"); x.setMonth(x.getMonth()+n); return x.toISOString().slice(0,10); };
+async function loadFollowups(){ const {data,error}=await sb.from("followups").select("*").eq("active",true).order("due_on").limit(1000);
+  S.fuOk=!error; S.fus=data||[]; await ensurePeople(S.fus); S.fuLoaded=true; }
+const newFu = sel => ({P:{q:"",sel:sel||null},reason:"",quick:"3m",due:addMonths(todayISO(),3),rep:"",owner:S.me.id});
+function fuFormHTML(F,id,withPicker){
+  return `<div class="fuform">${withPicker?ppickHTML(F.P,id):""}
+    <label class="fld">Motif du rappel<input type="text" data-fur="${id}" maxlength="200" value="${esc(F.reason)}" placeholder="Ex. Contrôle de tension, vaccin grippe, prise de sang annuelle…"></label>
+    <p class="fldl">Quand ?</p><div class="pchips">${FU_QUICK.map(([k,l])=>`<button type="button" class="pchip" data-fuq="${id}:${k}" aria-pressed="${F.quick===k}">${l}</button>`).join("")}<input type="date" class="fudate" data-fud="${id}" min="${addDays(todayISO(),1)}" value="${esc(F.due)}" aria-label="Date du rappel"></div>
+    <div class="row2"><label class="fld">Répéter<select data-furep="${id}">${FU_REP.map(([k,l])=>`<option value="${k}" ${F.rep===k?"selected":""}>${l}</option>`).join("")}</select></label>
+    <label class="fld">Pour<select data-fuo="${id}">${staffOpts(F.owner)}</select></label></div>
+    <p class="hint">Le jour venu, le rappel devient une tâche dans la liste de la personne choisie.</p>
+    <div class="btnrow"><button type="button" class="btn" data-fusave="${id}">🔔 Programmer le rappel</button><button type="button" class="btn ghost" data-fux="${id}">Annuler</button></div></div>`;
+}
+function bindFuForm(F,id,done){
+  if(F.P&&!F.P.sel) bindPpick(F.P,id);
+  const r=$(`[data-fur="${id}"]`); if(!r) return; r.oninput=()=>{ F.reason=r.value; };
+  $$(`[data-fuq^="${id}:"]`).forEach(b=>b.onclick=()=>{ const k=b.dataset.fuq.split(":")[1], q=FU_QUICK.find(x=>x[0]===k); F.quick=k; F.due=addMonths(todayISO(),q[2]); render(); });
+  const d=$(`[data-fud="${id}"]`); d.onchange=()=>{ F.due=d.value; F.quick=""; render(); };
+  $(`[data-furep="${id}"]`).onchange=e=>{ F.rep=e.target.value; }; $(`[data-fuo="${id}"]`).onchange=e=>{ F.owner=e.target.value; };
+  $(`[data-fux="${id}"]`).onclick=()=>done(false);
+  $(`[data-fusave="${id}"]`).onclick=async e=>{ F.reason=r.value;
+    if(!F.P.sel) return toast("Choisissez le patient."); if(!F.reason.trim()) return toast("Indiquez le motif du rappel."); if(!F.due||F.due<=todayISO()) return toast("Choisissez une date à venir.");
+    e.target.disabled=true;
+    const row={...refArgs(F.P.sel),owner_id:F.owner,created_by:S.me.id,reason:F.reason.trim(),due_on:F.due,repeat_months:F.rep?+F.rep:null};
+    if(await run(()=>sb.from("followups").insert(row),`Rappel programmé le ${dShort(F.due)}`)){ await loadFollowups(); done(true); } else e.target.disabled=false; };
+}
+function fuRowHTML(f,withPatient){
+  return `<div class="furow"><span class="fudt${f.due_on<=addDays(todayISO(),7)?" soon":""}">${dShort(f.due_on)}<small>${new Date(f.due_on+"T12:00").getFullYear()}</small></span>
+    <div><b>${esc(f.reason)}</b><small>${withPatient?`${esc(refName(f))} · `:""}pour ${esc(whoS(f.owner_id))}${f.repeat_months?` · 🔁 ${FU_REP.find(x=>x[0]===String(f.repeat_months))?.[1].toLowerCase()||"tous les "+f.repeat_months+" mois"}`:""}</small></div>
+    <span class="furact">${withPatient?pfBtn(...refOf(f)):""}${f.owner_id===S.me.id||f.created_by===S.me.id||isAdmin()?`<button type="button" class="linkbtn tdel" data-fudel="${f.id}">Supprimer</button>`:""}</span></div>`;
+}
+function bindFuRows(){ $$("[data-fudel]").forEach(b=>b.onclick=async()=>{ if(!confirmInline(b,"Supprimer ?")) return;
+  if(await run(()=>sb.from("followups").delete().eq("id",+b.dataset.fudel),"Rappel supprimé")){ S.fus=S.fus.filter(x=>x.id!==+b.dataset.fudel); render(); } }); }
+// onglet « Rappels » dans Tâches
+function fuPanelHTML(){
+  if(!S.fuLoaded) return `<p class="hint">Chargement…</p>`;
+  if(S.fuOk===false) return `<div class="err">Les rappels seront disponibles après la mise à jour de la base de données (migration 069).</div>`;
+  const mine=S.fus.filter(f=>f.owner_id===S.me.id), others=S.fus.filter(f=>f.owner_id!==S.me.id&&f.created_by===S.me.id);
+  return `<div class="fupanel">${S.fuNew?`<section class="card"><h3>Nouveau rappel de suivi</h3>${fuFormHTML(S.fuNew,"fun",true)}</section>`:`<button type="button" class="btn" id="fu-new">＋ Nouveau rappel</button>`}
+    <section class="card"><h3>🔔 Mes rappels à venir (${mine.length})</h3>${mine.length?mine.map(f=>fuRowHTML(f,true)).join(""):`<p class="hint">Aucun rappel programmé. Exemple : « revoir dans 3 mois », « vaccin grippe en octobre ».</p>`}</section>
+    ${others.length?`<section class="card"><h3>Programmés pour des collègues (${others.length})</h3>${others.map(f=>fuRowHTML(f,true)).join("")}</section>`:""}</div>`;
+}
+function bindFuPanel(){
+  if(!S.fuLoaded&&!S.fuLoading){ S.fuLoading=true; loadFollowups().catch(()=>{ S.fuOk=false; S.fuLoaded=true; }).finally(()=>{ S.fuLoading=false; softRender("tasks"); }); return; }
+  const n=$("#fu-new"); if(n) n.onclick=()=>{ S.fuNew=newFu(); render(); $('[data-ppq="fun"]')?.focus(); };
+  if(S.fuNew) bindFuForm(S.fuNew,"fun",ok=>{ S.fuNew=null; render(); });
+  bindFuRows();
+}
+// carte sur la page patient
+function pfFuHTML(k,id){
+  if(!S.fuLoaded) return `<section class="card pfcard"><header><h3>🔔 Rappels de suivi</h3></header><p class="hint">Chargement…</p></section>`;
+  if(S.fuOk===false) return "";
+  const L=S.fus.filter(f=>f[PF_COL[k]]===id);
+  return `<section class="card pfcard"><header><h3>🔔 Rappels de suivi</h3>${S.pfFu?"":`<button type="button" class="linkbtn" id="pf-fuadd">＋ Programmer</button>`}</header>
+    ${S.pfFu?fuFormHTML(S.pfFu,"pff",false):""}
+    ${L.length?L.map(f=>fuRowHTML(f,false)).join(""):S.pfFu?"":`<p class="hint">Aucun rappel. Ex. « contrôle de tension dans 3 mois ».</p>`}</section>`;
+}
+function bindPfFu(k,id){
+  if(!S.fuLoaded&&!S.fuLoading){ S.fuLoading=true; loadFollowups().catch(()=>{ S.fuOk=false; S.fuLoaded=true; }).finally(()=>{ S.fuLoading=false; if(!S.pfEdit) softRender("pfile"); }); }
+  const a=$("#pf-fuadd"); if(a) a.onclick=()=>{ const p=pfPerson(k,id); S.pfFu=newFu({k,id,name:pfName(k,id),birth:p?.birth_date}); render(); $('[data-fur="pff"]')?.focus(); };
+  if(S.pfFu) bindFuForm(S.pfFu,"pff",()=>{ S.pfFu=null; render(); });
+  bindFuRows();
+}
+
+/* =====================================================================
+   TRANSMISSIONS
+   ===================================================================== */
+const hoActive = h => h.ends_on>=todayISO();
+const hoForMe = () => (S.hos||[]).filter(h=>(h.recipients||[]).includes(S.me.id)&&h.author_id!==S.me.id);
+const hoUnread = () => hoForMe().filter(h=>hoActive(h)&&!S.hoRead.has(h.id));
+const newHo = () => ({id:null,rec:[],starts:todayISO(),ends:addDays(todayISO(),7),body:"",patients:[],P:{q:"",sel:null}});
+function hoCardHTML(h,mine){
+  const unread=!mine&&!S.hoRead.has(h.id), cur=h.starts_on<=todayISO()&&hoActive(h);
+  return `<article class="card hocard${unread?" unread":""}${hoActive(h)?"":" past"}"><header><div><b>${mine?`Pour ${esc((h.recipients||[]).map(staffName).join(", "))}`:`De ${esc(staffName(h.author_id))}`}</b>
+    <small>Du ${dShort(h.starts_on)} au ${dShort(h.ends_on)}${cur?" · <span class=\"hocur\">en cours</span>":hoActive(h)?" · à venir":" · terminée"}${unread?" · <b class=\"honew\">nouveau</b>":""}</small></div>
+    ${mine&&hoActive(h)?`<span><button type="button" class="linkbtn" data-hoedit="${h.id}">Modifier</button> <button type="button" class="linkbtn tdel" data-hodel="${h.id}">Supprimer</button></span>`:""}</header>
+    ${h.body?`<p class="hobody">${esc(h.body)}</p>`:""}
+    ${(h.patients||[]).length?`<h4>Patients à suivre</h4><ul class="hopat">${h.patients.map(p=>`<li><button type="button" class="linkbtn" data-pfopen="${p.k}:${p.id}">👤 ${esc(p.name||pfName(p.k,p.id))}</button>${p.note?` — ${esc(p.note)}`:""}</li>`).join("")}</ul>`:""}</article>`;
+}
+function handoversHTML(){
+  const head=`<div class="chead"><div><h1>Transmissions</h1><p>Avant une absence, laissez à vos collègues ce qu'il faut savoir : patients à surveiller, résultats attendus, choses en cours. Ils la voient sur leur tableau de bord pendant la période choisie.</p></div></div>`;
+  if(!S.orgLoaded) return head+`<p class="hint">Chargement…</p>`;
+  if(S.orgOk===false) return head+orgMissing();
+  const forMe=hoForMe(), mine=(S.hos||[]).filter(h=>h.author_id===S.me.id), E=S.hoEdit;
+  const form=E?`<section class="card hoform"><h3>${E.id?"Modifier la transmission":"Nouvelle transmission"}</h3>
+    <p class="fldl">Pour qui ?</p><div class="pchips">${activeStaff().filter(t=>t.id!==S.me.id).map(t=>`<button type="button" class="pchip" data-horec="${t.id}" aria-pressed="${E.rec.includes(t.id)}">${esc(staffName(t.id))}</button>`).join("")}</div>
+    <div class="row2"><label class="fld">Du<input type="date" id="ho-s" value="${esc(E.starts)}"></label><label class="fld">Au<input type="date" id="ho-e" min="${esc(E.starts)}" value="${esc(E.ends)}"></label></div>
+    <label class="fld">Message<textarea id="ho-b" rows="5" maxlength="4000" placeholder="Ex. Je suis absent du 10 au 17. Dr X reprend mes demandes. Le labo doit renvoyer…">${esc(E.body)}</textarea></label>
+    <p class="fldl">Patients à suivre</p>
+    ${E.patients.map((p,i)=>`<div class="hopedit"><b>👤 ${esc(p.name)}</b><input type="text" data-hopn="${i}" maxlength="300" value="${esc(p.note||"")}" placeholder="Ce qu'il faut savoir ou faire"><button type="button" class="linkbtn tdel" data-hopx="${i}">Retirer</button></div>`).join("")}
+    ${E.patients.length<30?ppickHTML(E.P,"ho"):""}
+    <p class="hint">Visible uniquement par les collègues choisis (et l'administrateur). Vos collègues reçoivent une notification sans détail.</p>
+    <div class="btnrow"><button type="button" class="btn" id="ho-save">${E.id?"Enregistrer":"📋 Envoyer la transmission"}</button><button type="button" class="btn ghost" id="ho-x">Annuler</button></div></section>`:"";
+  return head+`${E?"":`<div class="btnrow" style="margin-bottom:12px"><button type="button" class="btn" id="ho-new">＋ Écrire une transmission</button></div>`}${form}
+    <h3 class="secth">Pour moi</h3>${forMe.length?forMe.map(h=>hoCardHTML(h,false)).join(""):`<p class="hint">Aucune transmission pour vous.</p>`}
+    <h3 class="secth">Écrites par moi</h3>${mine.length?mine.map(h=>hoCardHTML(h,true)).join(""):`<p class="hint">Aucune.</p>`}`;
+}
+function bindHandovers(){
+  if(!S.orgLoaded&&!S.orgLoading){ S.orgLoading=true; loadOrg().catch(e=>{ console.error(e); S.orgOk=false; S.orgLoaded=true; }).finally(()=>{ S.orgLoading=false; softRender("handovers"); }); return; }
+  // marquer comme lues celles affichées
+  for(const h of hoUnread()){ S.hoRead.add(h.id); sb.from("handover_reads").insert({handover_id:h.id,user_id:S.me.id}).then(r=>{ if(r.error) console.error(r.error); updateBadges(); }); }
+  const n=$("#ho-new"); if(n) n.onclick=()=>{ S.hoEdit=newHo(); render(); };
+  $$("[data-hoedit]").forEach(b=>b.onclick=()=>{ const h=S.hos.find(x=>x.id===+b.dataset.hoedit); S.hoEdit={id:h.id,rec:[...h.recipients],starts:h.starts_on,ends:h.ends_on,body:h.body||"",patients:JSON.parse(JSON.stringify(h.patients||[])),P:{q:"",sel:null}}; render(); scrollTo(0,0); });
+  $$("[data-hodel]").forEach(b=>b.onclick=async()=>{ if(!confirmInline(b,"Supprimer ?")) return; if(await run(()=>sb.from("handovers").delete().eq("id",+b.dataset.hodel),"Transmission supprimée")){ S.hos=S.hos.filter(x=>x.id!==+b.dataset.hodel); render(); } });
+  const E=S.hoEdit; if(!E) return;
+  const keep=()=>{ E.starts=$("#ho-s").value; E.ends=$("#ho-e").value; E.body=$("#ho-b").value; $$("[data-hopn]").forEach(i=>E.patients[+i.dataset.hopn].note=i.value); };
+  ["#ho-s","#ho-e","#ho-b"].forEach(s=>{ const el=$(s); el.oninput=el.onchange=keep; }); $$("[data-hopn]").forEach(i=>i.oninput=keep);
+  $$("[data-horec]").forEach(b=>b.onclick=()=>{ keep(); const id=b.dataset.horec; E.rec=E.rec.includes(id)?E.rec.filter(x=>x!==id):[...E.rec,id]; render(); });
+  $$("[data-hopx]").forEach(b=>b.onclick=()=>{ keep(); E.patients.splice(+b.dataset.hopx,1); render(); });
+  if(E.patients.length<30) bindPpick(E.P,"ho",sel=>{ keep(); if(!E.patients.some(p=>p.id===sel.id)) E.patients.push({k:sel.k,id:sel.id,name:sel.name,note:""}); E.P.sel=null; });
+  $("#ho-x").onclick=()=>{ S.hoEdit=null; render(); };
+  $("#ho-save").onclick=async e=>{ keep();
+    if(!E.rec.length) return toast("Choisissez au moins un collègue."); if(!E.starts||!E.ends||E.ends<E.starts) return toast("Vérifiez les dates.");
+    if(!E.body.trim()&&!E.patients.length) return toast("Écrivez un message ou ajoutez un patient.");
+    e.target.disabled=true;
+    const row={recipients:E.rec,starts_on:E.starts,ends_on:E.ends,body:E.body.trim()||null,patients:E.patients.map(p=>({k:p.k,id:p.id,name:p.name,note:(p.note||"").trim()||undefined})),updated_at:new Date().toISOString()};
+    const ok=E.id?await run(()=>sb.from("handovers").update(row).eq("id",E.id),"Transmission modifiée"):await run(()=>sb.from("handovers").insert({...row,author_id:S.me.id}),"Transmission envoyée");
+    if(ok){ S.hoEdit=null; await loadOrg(); render(); } else e.target.disabled=false; };
+}
+
+/* ----- réponses types : catégories ----- */
+const TPL_CAT={general:"Général",rdv:"Rendez-vous",question:"Question",prescription:"Prescription",resultats:"Résultats",rapport:"Rapport",document:"Document"};
+/* =====================================================================
+   LOCAUX : occupation habituelle et exceptionnelle
+   ===================================================================== */
+const RM_DAYS=["Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi","Dimanche"];
+const RM_PAL=["#ffe3d6","#d9f1ee","#e2f2d9","#ebe4fb","#dcebfb","#fdf0c9","#fde3ef","#e6f0d8","#f0e4d8"];
+const rmColor = key => { let h=0; for(const c of String(key||"")) h=(h*31+c.charCodeAt(0))>>>0; return RM_PAL[h%RM_PAL.length]; };
+const tmin = t => { const [h,m]=String(t).split(":"); return (+h)*60+(+m||0); };
+const rmWho = b => b.user_id?staffName(b.user_id):(b.label||"—");
+const canRooms = () => isAdmin()||["secretariat","gestion"].includes(S.me.role);
+const slotValid = (s,d) => (!s.valid_from||s.valid_from<=d)&&(!s.valid_to||s.valid_to>=d);
+function roomDay(roomId,d){
+  const dow=isoDow(d), bks=(S.rbook||[]).filter(b=>b.room_id===roomId&&b.on_date===d);
+  const over=(a,b)=>tmin(a.starts)<tmin(b.ends)&&tmin(b.starts)<tmin(a.ends);
+  const usual=(S.rslots||[]).filter(s=>s.room_id===roomId&&s.weekday===dow&&slotValid(s,d))
+    .map(s=>({...s,type:"usual",off:bks.some(b=>over(s,b))}));
+  return [...usual,...bks.map(b=>({...b,type:b.kind==="free"?"free":"exc"}))].sort((a,b)=>tmin(a.starts)-tmin(b.starts));
+}
+async function loadBookingsFrom(d){ const from=addDays(d,-7); if(S.rbookFrom&&from>=S.rbookFrom) return;
+  const {data}=await sb.from("room_bookings").select("*").gte("on_date",from).order("on_date").limit(3000); S.rbook=data||[]; S.rbookFrom=from; }
+function roomsHTML(){
+  const head=`<div class="chead"><div><h1>Locaux</h1><p>Qui occupe quel local, jour par jour : l'occupation habituelle (chaque semaine) et les changements exceptionnels.</p></div></div>`;
+  if(!S.orgLoaded) return head+`<p class="hint">Chargement…</p>`;
+  if(S.orgOk===false) return head+orgMissing();
+  const R=S.rm||(S.rm={tab:"day",date:todayISO(),form:null,sel:null});
+  const rooms=(S.rooms||[]).filter(r=>r.active);
+  const tabs=`<div class="seg" role="group" aria-label="Vue"><button type="button" data-rmtab="day" aria-pressed="${R.tab==="day"}">📅 Par jour</button><button type="button" data-rmtab="week" aria-pressed="${R.tab==="week"}">🔁 Habituel</button>${canRooms()?`<button type="button" data-rmtab="manage" aria-pressed="${R.tab==="manage"}">⚙️ Liste des locaux</button>`:""}</div>`;
+  if(!rooms.length&&R.tab!=="manage") return head+tabs+`<div class="empty">Aucun local pour l'instant. ${canRooms()?`<button type="button" class="linkbtn" data-rmtab="manage">Ajouter les locaux du centre</button>`:"Le secrétariat ou l'administrateur peut les ajouter."}</div>`;
+  const F=R.form;
+  const form=F?`<section class="card rmform"><h3>${F.type==="usual"?(F.id?"Modifier l'occupation habituelle":"Occupation habituelle"):F.kind==="free"?"Libérer un créneau":"Réservation exceptionnelle"}</h3>
+    <div class="row2"><label class="fld">Local<select id="rm-room">${rooms.map(r=>`<option value="${r.id}" ${+F.room===r.id?"selected":""}>${esc(r.name)}</option>`).join("")}</select></label>
+    ${F.type==="usual"?`<label class="fld">Jour<select id="rm-dow">${RM_DAYS.map((d,i)=>`<option value="${i+1}" ${+F.dow===i+1?"selected":""}>${d}</option>`).join("")}</select></label>`:`<label class="fld">Date<input type="date" id="rm-date" value="${esc(F.date)}"></label>`}</div>
+    <div class="row2"><label class="fld">De<input type="time" id="rm-s" step="900" value="${esc(F.starts)}"></label><label class="fld">À<input type="time" id="rm-e" step="900" value="${esc(F.ends)}"></label></div>
+    ${F.kind==="free"?"":`<div class="row2"><label class="fld">Qui ?<select id="rm-u"><option value="">Autre (à écrire)</option>${staffOpts(F.user)}</select></label>${F.user?"":`<label class="fld">Nom<input type="text" id="rm-l" maxlength="60" value="${esc(F.label||"")}" placeholder="Ex. Whisper Audition"></label>`}</div>`}
+    ${F.type==="usual"?`<div class="row2"><label class="fld">À partir du (facultatif)<input type="date" id="rm-from" value="${esc(F.from||"")}"></label><label class="fld">Jusqu'au (facultatif)<input type="date" id="rm-to" value="${esc(F.to||"")}"></label></div>`
+      :`<label class="fld">Remarque (facultatif)<input type="text" id="rm-n" maxlength="200" value="${esc(F.note||"")}" placeholder="${F.kind==="free"?"Ex. Dr X en congé":"Ex. remplacement"}"></label>`}
+    <div class="btnrow"><button type="button" class="btn" id="rm-save">Enregistrer</button>${F.id?`<button type="button" class="btn ghost danger" id="rm-del">Supprimer</button>`:""}<button type="button" class="btn ghost" id="rm-x">Annuler</button></div></section>`:"";
+  let body="";
+  if(R.tab==="day"){
+    const d=R.date, all=rooms.flatMap(r=>roomDay(r.id,d)), h0=Math.min(8,...all.map(b=>Math.floor(tmin(b.starts)/60))), h1=Math.max(19,...all.map(b=>Math.ceil(tmin(b.ends)/60))), span=(h1-h0)*60;
+    const pos=b=>`left:${((tmin(b.starts)-h0*60)/span*100).toFixed(2)}%;width:${((tmin(b.ends)-tmin(b.starts))/span*100).toFixed(2)}%`;
+    const block=b=>`<button type="button" class="rmb ${b.type}${b.off?" off":""}" style="${pos(b)};${b.type==="free"?"":`background:${rmColor(b.user_id||b.label)}`}" data-rmb="${b.type}:${b.id}" title="${esc(`${hmT(b.starts)} – ${hmT(b.ends)} · ${b.type==="free"?"libéré":rmWho(b)}${b.type==="exc"?" (exceptionnel)":b.off?" (remplacé ce jour-là)":""}${b.note?" · "+b.note:""}`)}">
+      <b>${b.type==="free"?"Libéré":esc(rmWho(b))}</b><small>${hmT(b.starts)}–${hmT(b.ends)}${b.type==="exc"?" · exceptionnel":""}</small></button>`;
+    const mineToday=rooms.flatMap(r=>roomDay(r.id,d).filter(b=>b.user_id===S.me.id&&b.type!=="free"&&!b.off).map(b=>`<b>${esc(r.name)}</b> de ${hmT(b.starts)} à ${hmT(b.ends)}`));
+    body=`<div class="rmnav"><button type="button" class="btn ghost" data-rmday="-1" aria-label="Jour précédent">‹</button><input type="date" id="rm-day" value="${d}" aria-label="Jour"><button type="button" class="btn ghost" data-rmday="1" aria-label="Jour suivant">›</button>${d!==todayISO()?`<button type="button" class="linkbtn" data-rmday="0">Aujourd'hui</button>`:""}<b class="rmdl">${dLong(d).replace(/^./,c=>c.toUpperCase())}</b>
+      <span class="rmadd"><button type="button" class="btn" data-rmnew="exc">＋ Réserver</button><button type="button" class="btn ghost" data-rmnew="free">Libérer un créneau</button></span></div>
+      ${mineToday.length?`<p class="rmme">🚪 Vous : ${mineToday.join(" · ")}</p>`:""}
+      <div class="rmgrid"><div class="rmrow rmhead"><span></span><div class="rmtrack">${Array.from({length:h1-h0+1},(_,i)=>`<i style="left:${(i*60/span*100).toFixed(2)}%">${h0+i} h</i>`).join("")}</div></div>
+      ${rooms.map(r=>`<div class="rmrow"><span class="rmname"><b>${esc(r.name)}</b>${r.note?`<small>${esc(r.note)}</small>`:""}</span><div class="rmtrack">${Array.from({length:h1-h0},(_,i)=>`<em style="left:${(i*60/span*100).toFixed(2)}%"></em>`).join("")}${roomDay(r.id,d).map(block).join("")||""}</div></div>`).join("")}</div>
+      <p class="hint">Couleur pleine : occupation habituelle. Bord pointillé : exceptionnel. Hachuré : créneau libéré ce jour-là. Touchez un créneau pour le modifier.</p>`;
+  } else if(R.tab==="week"){
+    body=`<div class="btnrow" style="margin:0 0 10px"><button type="button" class="btn" data-rmnew="usual">＋ Ajouter une occupation habituelle</button></div>
+      <div class="rmweek">${rooms.map(r=>`<section class="card"><h3>${esc(r.name)}</h3>${[1,2,3,4,5,6].map(dw=>{ const L=(S.rslots||[]).filter(s=>s.room_id===r.id&&s.weekday===dw).sort((a,b)=>tmin(a.starts)-tmin(b.starts));
+        return `<div class="rmwd"><span>${RM_DAYS[dw-1]}</span><div>${L.map(s=>`<button type="button" class="rmchip" style="background:${rmColor(s.user_id||s.label)}" data-rmb="usual:${s.id}">${hmT(s.starts)}–${hmT(s.ends)} · <b>${esc(rmWho(s))}</b>${s.valid_from||s.valid_to?` <small>(${s.valid_from?"dès "+dShort(s.valid_from):""}${s.valid_to?" jusqu'au "+dShort(s.valid_to):""})</small>`:""}</button>`).join("")||`<small class="hint">libre</small>`}</div></div>`; }).join("")}</section>`).join("")}</div>`;
+  } else {
+    body=`<section class="card"><h3>Locaux du centre</h3>${(S.rooms||[]).map((r,i)=>`<div class="rmman${r.active?"":" off"}"><input type="text" data-rmname="${r.id}" maxlength="60" value="${esc(r.name)}" aria-label="Nom du local"><input type="text" data-rmnote="${r.id}" maxlength="200" value="${esc(r.note||"")}" placeholder="Remarque (ex. échographe, lavabo)" aria-label="Remarque">
+      <button type="button" class="mini ghostmini" data-rmup="${r.id}" ${i?"":"disabled"} aria-label="Monter">↑</button><button type="button" class="mini ghostmini" data-rmact="${r.id}">${r.active?"Masquer":"Réactiver"}</button><button type="button" class="linkbtn tdel" data-rmdel="${r.id}">Supprimer</button></div>`).join("")||`<p class="hint">Aucun local.</p>`}
+      <div class="rmman"><input type="text" id="rm-newname" maxlength="60" placeholder="Nom du nouveau local (ex. Local 3)"><button type="button" class="btn" id="rm-newadd">＋ Ajouter</button></div>
+      <p class="hint">Les noms se modifient directement (enregistré en quittant le champ). Supprimer un local efface aussi ses occupations.</p></section>`;
+  }
+  return head+tabs+form+body;
+}
+function bindRooms(){
+  if(!S.orgLoaded&&!S.orgLoading){ S.orgLoading=true; loadOrg().catch(e=>{ console.error(e); S.orgOk=false; S.orgLoaded=true; }).finally(()=>{ S.orgLoading=false; softRender("rooms"); }); return; }
+  const R=S.rm; if(!R) return;
+  $$("[data-rmtab]").forEach(b=>b.onclick=()=>{ R.tab=b.dataset.rmtab; R.form=null; render(); });
+  const setDay=async d=>{ R.date=d; await loadBookingsFrom(d); render(); };
+  $$("[data-rmday]").forEach(b=>b.onclick=()=>setDay(+b.dataset.rmday?addDays(R.date,+b.dataset.rmday):todayISO()));
+  const di=$("#rm-day"); if(di) di.onchange=()=>{ if(di.value) setDay(di.value); };
+  const firstRoom=(S.rooms||[]).find(r=>r.active)?.id;
+  $$("[data-rmnew]").forEach(b=>b.onclick=()=>{ const t=b.dataset.rmnew;
+    R.form=t==="usual"?{type:"usual",room:firstRoom,dow:isoDow(R.date)>6?1:isoDow(R.date),starts:"09:00",ends:"13:00",user:S.me.id,label:"",from:"",to:""}
+                      :{type:"booking",kind:t==="free"?"free":"booking",room:firstRoom,date:R.date,starts:"09:00",ends:"13:00",user:t==="free"?"":S.me.id,label:"",note:""};
+    render(); scrollTo(0,0); });
+  $$("[data-rmb]").forEach(b=>b.onclick=()=>{ const [t,id]=b.dataset.rmb.split(":");
+    if(t==="usual"){ const s=S.rslots.find(x=>x.id===+id); if(!s) return;
+      if(R.tab==="day"&&!s.off){ R.form={type:"booking",kind:"free",room:s.room_id,date:R.date,starts:s.starts.slice(0,5),ends:s.ends.slice(0,5),user:"",label:"",note:"",fromSlot:s.id}; }
+      else R.form={type:"usual",id:s.id,room:s.room_id,dow:s.weekday,starts:s.starts.slice(0,5),ends:s.ends.slice(0,5),user:s.user_id||"",label:s.label||"",from:s.valid_from||"",to:s.valid_to||""}; }
+    else { const k=S.rbook.find(x=>x.id===+id); if(!k) return; R.form={type:"booking",id:k.id,kind:k.kind,room:k.room_id,date:k.on_date,starts:k.starts.slice(0,5),ends:k.ends.slice(0,5),user:k.user_id||"",label:k.label||"",note:k.note||""}; }
+    render(); scrollTo(0,0); });
+  const F=R.form;
+  if(F){
+    const keep=()=>{ F.room=$("#rm-room").value; if($("#rm-dow")) F.dow=$("#rm-dow").value; if($("#rm-date")) F.date=$("#rm-date").value; F.starts=$("#rm-s").value; F.ends=$("#rm-e").value;
+      if($("#rm-u")) F.user=$("#rm-u").value; if($("#rm-l")) F.label=$("#rm-l").value; if($("#rm-from")) F.from=$("#rm-from").value; if($("#rm-to")) F.to=$("#rm-to").value; if($("#rm-n")) F.note=$("#rm-n").value; };
+    $$(".rmform input,.rmform select").forEach(el=>{ el.oninput=el.onchange=keep; }); const u=$("#rm-u"); if(u) u.onchange=()=>{ keep(); render(); };
+    $("#rm-x").onclick=()=>{ R.form=null; render(); };
+    const del=$("#rm-del"); if(del) del.onclick=async()=>{ if(!confirmInline(del,"Supprimer ?")) return; const tbl=F.type==="usual"?"room_slots":"room_bookings";
+      if(await run(()=>sb.from(tbl).delete().eq("id",F.id),"Supprimé")){ R.form=null; await loadOrg(); await loadBookingsFrom(R.date); render(); } };
+    $("#rm-save").onclick=async e=>{ keep();
+      if(!F.starts||!F.ends||F.ends<=F.starts) return toast("L'heure de fin doit être après l'heure de début.");
+      if(F.kind!=="free"&&!F.user&&!(F.label||"").trim()) return toast("Indiquez qui occupe le local.");
+      if(F.type!=="usual"&&!F.date) return toast("Choisissez la date.");
+      e.target.disabled=true;
+      const row=F.type==="usual"?{room_id:+F.room,weekday:+F.dow,starts:F.starts,ends:F.ends,user_id:F.user||null,label:F.user?null:(F.label||"").trim()||null,valid_from:F.from||null,valid_to:F.to||null}
+        :{room_id:+F.room,on_date:F.date,starts:F.starts,ends:F.ends,kind:F.kind,user_id:F.kind==="free"?null:F.user||null,label:F.kind==="free"||F.user?null:(F.label||"").trim()||null,note:(F.note||"").trim()||null};
+      const tbl=F.type==="usual"?"room_slots":"room_bookings";
+      const ok=F.id?await run(()=>sb.from(tbl).update(row).eq("id",F.id),"Enregistré"):await run(()=>sb.from(tbl).insert(row),F.kind==="free"?"Créneau libéré ce jour-là":"Enregistré");
+      if(ok){ if(F.type!=="usual") R.date=F.date; R.form=null; await loadOrg(); await loadBookingsFrom(R.date); render(); } else e.target.disabled=false; };
+  }
+  // gestion des locaux
+  $$("[data-rmname]").forEach(i=>i.onchange=async()=>{ const v=i.value.trim(); if(!v) return toast("Le nom ne peut pas être vide."); await run(()=>sb.from("rooms").update({name:v}).eq("id",+i.dataset.rmname),"Nom enregistré"); const r=S.rooms.find(x=>x.id===+i.dataset.rmname); if(r) r.name=v; });
+  $$("[data-rmnote]").forEach(i=>i.onchange=async()=>{ await run(()=>sb.from("rooms").update({note:i.value.trim()||null}).eq("id",+i.dataset.rmnote),"Enregistré"); const r=S.rooms.find(x=>x.id===+i.dataset.rmnote); if(r) r.note=i.value.trim()||null; });
+  $$("[data-rmact]").forEach(b=>b.onclick=async()=>{ const r=S.rooms.find(x=>x.id===+b.dataset.rmact); if(await run(()=>sb.from("rooms").update({active:!r.active}).eq("id",r.id),r.active?"Local masqué":"Local réactivé")){ r.active=!r.active; render(); } });
+  $$("[data-rmup]").forEach(b=>b.onclick=async()=>{ const L=S.rooms, i=L.findIndex(x=>x.id===+b.dataset.rmup); if(i<1) return; [L[i-1],L[i]]=[L[i],L[i-1]];
+    await Promise.all(L.map((r,n)=>{ r.sort_order=n; return sb.from("rooms").update({sort_order:n}).eq("id",r.id); })); render(); });
+  $$("[data-rmdel]").forEach(b=>b.onclick=async()=>{ if(!confirmInline(b,"Supprimer le local ?")) return; if(await run(()=>sb.from("rooms").delete().eq("id",+b.dataset.rmdel),"Local supprimé")){ await loadOrg(); render(); } });
+  const na=$("#rm-newadd"); if(na) na.onclick=async()=>{ const v=$("#rm-newname").value.trim(); if(!v) return toast("Donnez un nom au local.");
+    if(await run(()=>sb.from("rooms").insert({name:v,sort_order:(S.rooms||[]).length}),"Local ajouté")){ await loadOrg(); render(); $("#rm-newname")?.focus(); } };
+}
+
+/* =====================================================================
+   CHECKLISTS
+   ===================================================================== */
+const CL_SCHED={daily:"Chaque jour",weekly:"Chaque semaine",monthly:"Chaque mois"};
+const clPeriod = (t,d=todayISO()) => t.schedule==="weekly"?mondayOf(d):t.schedule==="monthly"?d.slice(0,8)+"01":d;
+const clRun = (t,p) => (S.clruns||[]).find(r=>r.template_id===t.id&&r.period===p);
+const clDone = (t,r) => (t.items||[]).filter(i=>r&&r.vals&&r.vals[i.id]).length;
+const clTempBad = (i,v) => i.kind==="temp"&&v!=null&&v!==""&&((i.min!=null&&+v<i.min)||(i.max!=null&&+v>i.max));
+function clAlerts(){ const out=[]; for(const t of (S.cltpl||[]).filter(x=>x.active)){ const r=clRun(t,clPeriod(t)); if(!r) continue;
+  for(const i of t.items) if(clTempBad(i,r.vals?.[i.id]?.v)) out.push(`${t.title} : ${i.label.replace(/\s*\(°C\)/,"")} ${r.vals[i.id].v} °C`); } return out; }
+function checklistsHTML(){
+  const head=`<div class="chead"><div><h1>Checklists</h1><p>Ouverture, fermeture et contrôles réguliers : chacun coche ce qu'il a fait, l'heure et le nom sont notés.</p></div></div>`;
+  if(!S.orgLoaded) return head+`<p class="hint">Chargement…</p>`;
+  if(S.orgOk===false) return head+orgMissing();
+  const C=S.cl||(S.cl={tab:"today",edit:null}), T=(S.cltpl||[]).filter(t=>t.active), td=todayISO();
+  const tabs=`<div class="seg" role="group" aria-label="Vue"><button type="button" data-cltab="today" aria-pressed="${C.tab==="today"}">À faire</button><button type="button" data-cltab="hist" aria-pressed="${C.tab==="hist"}">Historique</button>${canRooms()?`<button type="button" data-cltab="manage" aria-pressed="${C.tab==="manage"}">⚙️ Modifier les listes</button>`:""}</div>`;
+  if(C.tab==="today"){
+    return head+tabs+`<div class="clgrid">${T.map(t=>{ const p=clPeriod(t), r=clRun(t,p), n=clDone(t,r), m=t.items.length;
+      return `<section class="card clcard${n>=m?" done":""}"><header><h3>${n>=m?"✅":"☑️"} ${esc(t.title)}</h3><span class="clprog"><b>${n}/${m}</b><small>${t.schedule==="daily"?"aujourd'hui":t.schedule==="weekly"?"semaine du "+dShort(p):"mois de "+new Date(p+"T12:00").toLocaleDateString(LOC,{month:"long"})}</small></span></header>
+        <div class="clbar"><i style="width:${Math.round(n/m*100)}%"></i></div>
+        ${t.items.map(i=>{ const v=r?.vals?.[i.id]; const bad=clTempBad(i,v?.v);
+          return `<div class="clit${v?" on":""}${bad?" bad":""}">${i.kind==="temp"?`<span class="cltemp"><input type="number" step="0.1" inputmode="decimal" data-clv="${t.id}:${i.id}" value="${v?esc(String(v.v)):""}" aria-label="${esc(i.label)}"><i>°C</i></span>`:`<button type="button" class="clck" data-clc="${t.id}:${i.id}" aria-pressed="${!!v}" aria-label="${esc(i.label)}">${v?"✓":""}</button>`}
+            <div><span>${esc(i.label)}</span>${v?`<small>${esc(whoS(v.by))} · ${new Date(v.at).toLocaleTimeString(LOC,{hour:"2-digit",minute:"2-digit"})}${t.schedule!=="daily"?" le "+fmtDate(v.at):""}</small>`:""}${bad?`<small class="clbad">⚠️ En dehors de ${i.min} à ${i.max} °C : prévenez le responsable des vaccins et notez ce qui a été fait.</small>`:i.kind==="temp"&&i.min!=null?`<small>Normal : ${i.min} à ${i.max} °C</small>`:""}</div></div>`; }).join("")}
+        <label class="fld clnote">Remarque<input type="text" data-cln="${t.id}" maxlength="1000" value="${esc(r?.note||"")}" placeholder="Ex. ampoule à changer dans le local 2"></label></section>`; }).join("")||`<div class="empty">Aucune checklist.</div>`}</div>`;
+  }
+  if(C.tab==="hist"){
+    const days=Array.from({length:14},(_,i)=>addDays(td,-i));
+    return head+tabs+T.map(t=>{ const periods=t.schedule==="daily"?days:t.schedule==="weekly"?[...new Set(days.map(mondayOf))]:[...new Set(days.map(d=>d.slice(0,8)+"01"))];
+      const temps=t.items.filter(i=>i.kind==="temp");
+      return `<section class="card"><h3>${esc(t.title)}</h3><div class="clhist">${periods.map(p=>{ const r=clRun(t,p), n=clDone(t,r), m=t.items.length;
+        return `<div class="clh ${n>=m?"ok":n?"part":"none"}"><b>${t.schedule==="daily"?new Date(p+"T12:00").toLocaleDateString(LOC,{weekday:"short",day:"numeric"}):dShort(p)}</b><span>${n>=m?"✓":n?`${n}/${m}`:"–"}</span>${temps.map(i=>{ const v=r?.vals?.[i.id]?.v; return v!=null?`<small class="${clTempBad(i,v)?"clbad":""}">${v} °C</small>`:""; }).join("")}${r?.note?`<small title="${esc(r.note)}">💬</small>`:""}</div>`; }).join("")}</div></section>`; }).join("");
+  }
+  const E=C.edit;
+  return head+tabs+(E?`<section class="card clform"><h3>${E.id?"Modifier la checklist":"Nouvelle checklist"}</h3>
+    <div class="row2"><label class="fld">Titre<input type="text" id="cl-t" maxlength="80" value="${esc(E.title)}"></label><label class="fld">Fréquence<select id="cl-s">${Object.entries(CL_SCHED).map(([k,l])=>`<option value="${k}" ${E.schedule===k?"selected":""}>${l}</option>`).join("")}</select></label></div>
+    <p class="fldl">Points à cocher</p>${E.items.map((i,n)=>`<div class="clie"><input type="text" data-cli="${n}" maxlength="120" value="${esc(i.label)}" placeholder="Ex. Alarme désactivée"><select data-clk="${n}"><option value="check" ${i.kind!=="temp"?"selected":""}>Case à cocher</option><option value="temp" ${i.kind==="temp"?"selected":""}>Température</option></select>${i.kind==="temp"?`<input type="number" data-clmin="${n}" value="${i.min??2}" aria-label="Minimum" title="Minimum °C"><input type="number" data-clmax="${n}" value="${i.max??8}" aria-label="Maximum" title="Maximum °C">`:""}<button type="button" class="linkbtn tdel" data-clix="${n}">Retirer</button></div>`).join("")}
+    ${E.items.length<30?`<button type="button" class="btn ghost" id="cl-iadd">＋ Ajouter un point</button>`:""}
+    <div class="btnrow"><button type="button" class="btn" id="cl-save">Enregistrer</button><button type="button" class="btn ghost" id="cl-x">Annuler</button>${E.id?`<button type="button" class="linkbtn tdel" id="cl-arch">Archiver cette checklist</button>`:""}</div></section>`
+    :`<div class="btnrow" style="margin:0 0 10px"><button type="button" class="btn" id="cl-new">＋ Nouvelle checklist</button></div>${T.map(t=>`<section class="card"><header class="clmh"><h3>${esc(t.title)}</h3><span class="hint">${CL_SCHED[t.schedule]} · ${t.items.length} points</span><button type="button" class="linkbtn" data-cledit="${t.id}">Modifier</button></header></section>`).join("")}`);
+}
+function bindChecklists(){
+  if(!S.orgLoaded&&!S.orgLoading){ S.orgLoading=true; loadOrg().catch(e=>{ console.error(e); S.orgOk=false; S.orgLoaded=true; }).finally(()=>{ S.orgLoading=false; softRender("checklists"); }); return; }
+  const C=S.cl; if(!C) return;
+  $$("[data-cltab]").forEach(b=>b.onclick=()=>{ C.tab=b.dataset.cltab; C.edit=null; render(); });
+  const set=async(tid,item,value,note)=>{ const t=S.cltpl.find(x=>x.id===tid), p=clPeriod(t);
+    const {error}=await sb.rpc("checklist_set",{p_template:tid,p_period:p,p_item:item,p_value:value,p_note:note??null}); if(error){ toast(frError(error)); return false; }
+    let r=clRun(t,p); if(!r){ r={template_id:tid,period:p,vals:{},note:null}; S.clruns.push(r); }
+    if(item){ if(value===null||value===false) delete r.vals[item]; else r.vals[item]={v:value,by:S.me.id,at:new Date().toISOString()}; }
+    if(note!=null) r.note=note||null; return true; };
+  $$("[data-clc]").forEach(b=>b.onclick=async()=>{ const [t,i]=b.dataset.clc.split(":"), on=b.getAttribute("aria-pressed")!=="true"; b.disabled=true; if(await set(+t,i,on?true:null)) render(); else b.disabled=false; });
+  $$("[data-clv]").forEach(inp=>inp.onchange=async()=>{ const [t,i]=inp.dataset.clv.split(":"), v=inp.value.trim().replace(",","."); if(v!==""&&isNaN(+v)) return toast("Indiquez un nombre.");
+    if(await set(+t,i,v===""?null:+v)){ const tt=S.cltpl.find(x=>x.id===+t), it=tt.items.find(x=>x.id===i); if(clTempBad(it,v)) toast("⚠️ Température en dehors des normes"); render(); } });
+  $$("[data-cln]").forEach(inp=>inp.onchange=async()=>{ if(await set(+inp.dataset.cln,null,null,inp.value.trim())) toast("Remarque enregistrée"); });
+  const nw=$("#cl-new"); if(nw) nw.onclick=()=>{ C.edit={id:null,title:"",schedule:"daily",items:[{label:"",kind:"check"}]}; render(); $("#cl-t")?.focus(); };
+  $$("[data-cledit]").forEach(b=>b.onclick=()=>{ const t=S.cltpl.find(x=>x.id===+b.dataset.cledit); C.edit={id:t.id,title:t.title,schedule:t.schedule,items:JSON.parse(JSON.stringify(t.items))}; render(); });
+  const E=C.edit; if(!E) return;
+  const keep=()=>{ E.title=$("#cl-t").value; E.schedule=$("#cl-s").value; $$("[data-cli]").forEach(i=>E.items[+i.dataset.cli].label=i.value);
+    $$("[data-clmin]").forEach(i=>E.items[+i.dataset.clmin].min=i.value===""?null:+i.value); $$("[data-clmax]").forEach(i=>E.items[+i.dataset.clmax].max=i.value===""?null:+i.value); };
+  $$(".clform input,.clform select").forEach(el=>el.oninput=keep);
+  $$("[data-clk]").forEach(s=>s.onchange=()=>{ keep(); const it=E.items[+s.dataset.clk]; it.kind=s.value; if(s.value==="temp"){ it.min=it.min??2; it.max=it.max??8; } render(); });
+  $$("[data-clix]").forEach(b=>b.onclick=()=>{ keep(); E.items.splice(+b.dataset.clix,1); render(); });
+  const ia=$("#cl-iadd"); if(ia) ia.onclick=()=>{ keep(); E.items.push({label:"",kind:"check"}); render(); $$("[data-cli]").slice(-1)[0]?.focus(); };
+  $("#cl-x").onclick=()=>{ C.edit=null; render(); };
+  const ar=$("#cl-arch"); if(ar) ar.onclick=async()=>{ if(!confirmInline(ar,"Archiver ?")) return; if(await run(()=>sb.from("checklist_templates").update({active:false}).eq("id",E.id),"Checklist archivée (l'historique est gardé)")){ C.edit=null; await loadOrg(); render(); } };
+  $("#cl-save").onclick=async e=>{ keep(); const items=E.items.filter(i=>i.label.trim()).map((i,n)=>({id:i.id||("i"+Date.now().toString(36)+n),label:i.label.trim(),kind:i.kind==="temp"?"temp":"check",...(i.kind==="temp"?{min:i.min??null,max:i.max??null}:{})}));
+    if(!E.title.trim()) return toast("Donnez un titre."); if(!items.length) return toast("Ajoutez au moins un point.");
+    e.target.disabled=true; const row={title:E.title.trim(),schedule:E.schedule,items};
+    const ok=E.id?await run(()=>sb.from("checklist_templates").update(row).eq("id",E.id),"Checklist enregistrée"):await run(()=>sb.from("checklist_templates").insert({...row,sort_order:(S.cltpl||[]).length+1}),"Checklist créée");
+    if(ok){ C.edit=null; await loadOrg(); render(); } else e.target.disabled=false; };
+}
+
+/* =====================================================================
+   RÉUNIONS D'ÉQUIPE : ordre du jour et procès-verbal
+   ===================================================================== */
+const mtNext = () => (S.meetings||[]).filter(m=>!m.closed_at).sort((a,b)=>new Date(a.starts_at)-new Date(b.starts_at))[0]||null;
+const mtWhen = m => new Date(m.starts_at).toLocaleString(LOC,{weekday:"long",day:"numeric",month:"long",hour:"2-digit",minute:"2-digit"}).replace(/^./,c=>c.toUpperCase());
+const mtItems = id => (S.mitems||[]).filter(i=>i.meeting_id===id);
+async function mtPdf(m){
+  const items=mtItems(m.id), blocks=[];
+  if((m.attendees||[]).length) blocks.push({h:"Présents"},{p:(m.attendees||[]).map(staffName).join(", ")});
+  blocks.push({h:"Ordre du jour et décisions"});
+  items.forEach((i,n)=>{ blocks.push({p:`${n+1}. ${i.text}`,bold:true}); if(i.details) blocks.push({p:i.details,indent:14,grey:true}); blocks.push({p:i.decision?`Décision / suite : ${i.decision}`:"(pas de décision notée)",indent:14}); });
+  if(m.minutes) blocks.push({rule:true},{h:"Compte rendu"},{p:m.minutes});
+  return textPdf(`Procès-verbal — ${m.title}`,[mtWhen(m)+(m.location?` · ${m.location}`:""),`Rédigé le ${new Date().toLocaleString("fr-BE")}`],blocks);
+}
+function meetingsHTML(){
+  const head=`<div class="chead"><div><h1>Réunions d'équipe</h1><p>Chacun ajoute ses points à l'ordre du jour pendant la semaine. Pendant la réunion, on note les décisions et le procès-verbal, puis on le garde ici (et en PDF).</p></div></div>`;
+  if(!S.orgLoaded) return head+`<p class="hint">Chargement…</p>`;
+  if(S.orgOk===false) return head+orgMissing();
+  const M=S.mt||(S.mt={plan:null,pv:false,open:null}), nx=mtNext(), pool=mtItems(null), items=nx?mtItems(nx.id):pool, past=(S.meetings||[]).filter(m=>m.closed_at);
+  const P=M.plan;
+  const planForm=P?`<section class="card mtform"><h3>${P.id?"Modifier la réunion":"Planifier une réunion"}</h3>
+    <label class="fld">Titre<input type="text" id="mt-t" maxlength="120" value="${esc(P.title)}"></label>
+    <div class="row2"><label class="fld">Date<input type="date" id="mt-d" value="${esc(P.date)}"></label><label class="fld">Heure<input type="time" id="mt-h" step="900" value="${esc(P.time)}"></label></div>
+    <label class="fld">Lieu<input type="text" id="mt-l" maxlength="120" value="${esc(P.loc)}" placeholder="Ex. Salle d'attente après la fermeture"></label>
+    ${P.id?"":`<p class="hint">Les points déjà proposés y seront ajoutés. L'équipe reçoit une notification.</p>`}
+    <div class="btnrow"><button type="button" class="btn" id="mt-save">${P.id?"Enregistrer":"🗓️ Planifier"}</button><button type="button" class="btn ghost" id="mt-x">Annuler</button>${P.id?`<button type="button" class="linkbtn tdel" id="mt-del">Supprimer la réunion</button>`:""}</div></section>`:"";
+  const itemRow=(i,n,pv)=>`<li class="mti${i.discussed?" ok":""}"><div class="mtih"><b>${n+1}. ${esc(i.text)}</b><small>proposé par ${esc(whoS(i.author_id))}</small>${i.author_id===S.me.id||isAdmin()?`<button type="button" class="linkbtn tdel" data-mtidel="${i.id}">Retirer</button>`:""}</div>
+    ${i.details?`<p>${esc(i.details)}</p>`:""}
+    ${pv?`<label class="chk2"><input type="checkbox" data-mtok="${i.id}" ${i.discussed?"checked":""}> Traité</label><label class="fld">Décision / suite<textarea data-mtdec="${i.id}" rows="2" maxlength="2000" placeholder="Ce qui a été décidé, qui s'en occupe">${esc(i.decision||"")}</textarea></label>
+      <button type="button" class="linkbtn" data-mttask="${i.id}">＋ En faire une tâche</button>`:i.decision?`<p class="mtdec">➜ ${esc(i.decision)}</p>`:""}</li>`;
+  return head+planForm+`
+  <section class="card mtnext">${nx?`<header><div><h3>🗓️ ${esc(nx.title)}</h3><p><b>${esc(mtWhen(nx))}</b>${nx.location?` · ${esc(nx.location)}`:""}</p></div><span>${P?"":`<button type="button" class="linkbtn" id="mt-edit">Modifier</button>`}</span></header>`
+    :`<header><div><h3>📝 Points pour la prochaine réunion</h3><p class="hint">Aucune réunion planifiée.</p></div>${P?"":`<button type="button" class="btn" id="mt-new">🗓️ Planifier une réunion</button>`}</header>`}
+    <ol class="mtlist">${items.map((i,n)=>itemRow(i,n,M.pv&&nx)).join("")||`<p class="hint">Aucun point pour l'instant.</p>`}</ol>
+    <div class="mtadd"><input type="text" id="mt-it" maxlength="300" placeholder="Ajouter un point à l'ordre du jour…" aria-label="Nouveau point"><input type="text" id="mt-id" maxlength="2000" placeholder="Détails (facultatif)" aria-label="Détails"><button type="button" class="btn" id="mt-iadd">＋ Ajouter</button></div>
+    ${nx?(M.pv?`<div class="mtpv"><h3>Procès-verbal</h3><p class="fldl">Présents</p><div class="pchips">${activeStaff().map(t=>`<button type="button" class="pchip" data-mtatt="${t.id}" aria-pressed="${(nx.attendees||[]).includes(t.id)}">${esc(staffName(t.id))}</button>`).join("")}</div>
+      <label class="fld">Compte rendu<textarea id="mt-min" rows="6" maxlength="20000" placeholder="Résumé des échanges, informations données, prochaines étapes…">${esc(nx.minutes||"")}</textarea></label>
+      <div class="btnrow"><button type="button" class="btn ghost" id="mt-pvsave">Enregistrer</button><button type="button" class="btn" id="mt-close">✓ Clôturer la réunion</button><button type="button" class="btn ghost" id="mt-pdf">📄 PV en PDF</button></div></div>`
+      :`<div class="btnrow"><button type="button" class="btn" id="mt-pv">📝 Rédiger le procès-verbal</button></div>`):""}
+  </section>
+  ${past.length?`<h3 class="secth">Réunions précédentes</h3>${past.map(m=>{ const o=M.open===m.id, its=mtItems(m.id);
+    return `<section class="card mtpast"><header><button type="button" class="linkbtn mtph" data-mtopen="${m.id}" aria-expanded="${o}"><b>${esc(m.title)}</b> · ${esc(mtWhen(m))} ${o?"▴":"▾"}</button><button type="button" class="linkbtn" data-mtpdf="${m.id}">📄 PDF</button></header>
+      ${o?`${(m.attendees||[]).length?`<p class="hint">Présents : ${esc(m.attendees.map(staffName).join(", "))}</p>`:""}<ol class="mtlist">${its.map((i,n)=>itemRow(i,n,false)).join("")}</ol>${m.minutes?`<div class="mtmin">${esc(m.minutes)}</div>`:""}`:""}</section>`; }).join("")}`:""}`;
+}
+function bindMeetings(){
+  if(!S.orgLoaded&&!S.orgLoading){ S.orgLoading=true; loadOrg().catch(e=>{ console.error(e); S.orgOk=false; S.orgLoaded=true; }).finally(()=>{ S.orgLoading=false; softRender("meetings"); }); return; }
+  const M=S.mt; if(!M) return; const nx=mtNext();
+  const reload=async()=>{ await loadOrg(); render(); };
+  const nw=$("#mt-new"); if(nw) nw.onclick=()=>{ const d=addDays(todayISO(),7); M.plan={title:"Réunion d'équipe",date:d,time:"13:00",loc:""}; render(); };
+  const ed=$("#mt-edit"); if(ed) ed.onclick=()=>{ const dt=new Date(nx.starts_at); M.plan={id:nx.id,title:nx.title,date:`${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`,time:dt.toTimeString().slice(0,5),loc:nx.location||""}; render(); };
+  const P=M.plan;
+  if(P){ $("#mt-x").onclick=()=>{ M.plan=null; render(); };
+    const del=$("#mt-del"); if(del) del.onclick=async()=>{ if(!confirmInline(del,"Supprimer la réunion et ses points ?")) return; if(await run(()=>sb.from("meetings").delete().eq("id",P.id),"Réunion supprimée")){ M.plan=null; await reload(); } };
+    $("#mt-save").onclick=async e=>{ const t=$("#mt-t").value.trim()||"Réunion d'équipe", d=$("#mt-d").value, h=$("#mt-h").value; if(!d||!h) return toast("Choisissez la date et l'heure.");
+      const row={title:t,starts_at:new Date(`${d}T${h}:00`).toISOString(),location:$("#mt-l").value.trim()||null,updated_at:new Date().toISOString()}; e.target.disabled=true;
+      const ok=P.id?await run(()=>sb.from("meetings").update(row).eq("id",P.id),"Réunion modifiée"):await run(()=>sb.from("meetings").insert({...row,created_by:S.me.id}),"Réunion planifiée");
+      if(ok){ M.plan=null; await reload(); } else e.target.disabled=false; }; }
+  $("#mt-iadd").onclick=async e=>{ const t=$("#mt-it").value.trim(); if(!t) return toast("Écrivez le point à ajouter."); e.target.disabled=true;
+    if(await run(()=>sb.from("meeting_items").insert({meeting_id:nx?nx.id:null,author_id:S.me.id,text:t,details:$("#mt-id").value.trim()||null,sort_order:Date.now()%2147483647}),"Point ajouté")){ await reload(); $("#mt-it")?.focus(); } else e.target.disabled=false; };
+  $("#mt-it").onkeydown=e=>{ if(e.key==="Enter") $("#mt-iadd").click(); };
+  $$("[data-mtidel]").forEach(b=>b.onclick=async()=>{ if(!confirmInline(b,"Retirer ?")) return; if(await run(()=>sb.from("meeting_items").delete().eq("id",+b.dataset.mtidel),"Point retiré")) await reload(); });
+  const pv=$("#mt-pv"); if(pv) pv.onclick=()=>{ M.pv=true; render(); };
+  $$("[data-mtok]").forEach(c=>c.onchange=async()=>{ const i=S.mitems.find(x=>x.id===+c.dataset.mtok); if(await run(()=>sb.from("meeting_items").update({discussed:c.checked}).eq("id",i.id))){ i.discussed=c.checked; } });
+  $$("[data-mtdec]").forEach(t=>t.onchange=async()=>{ const i=S.mitems.find(x=>x.id===+t.dataset.mtdec); if(await run(()=>sb.from("meeting_items").update({decision:t.value.trim()||null}).eq("id",i.id),"Décision enregistrée")) i.decision=t.value.trim()||null; });
+  $$("[data-mttask]").forEach(b=>b.onclick=()=>{ const i=S.mitems.find(x=>x.id===+b.dataset.mttask); S.tdraft={title:(i.decision||i.text).slice(0,200),notes:`Réunion d'équipe : ${i.text}`,due:"",to:"me",patient:null,q:"",remind:null}; S.tformOpen=true; S.tview="todo"; S.cscreen="tasks"; render(); scrollTo(0,0); });
+  $$("[data-mtatt]").forEach(b=>b.onclick=async()=>{ const id=b.dataset.mtatt, a=nx.attendees||[], n2=a.includes(id)?a.filter(x=>x!==id):[...a,id];
+    if(await run(()=>sb.from("meetings").update({attendees:n2}).eq("id",nx.id))){ nx.attendees=n2; render(); } });
+  const savePv=async msg=>{ const v=$("#mt-min").value; const ok=await run(()=>sb.from("meetings").update({minutes:v.trim()||null,updated_at:new Date().toISOString()}).eq("id",nx.id),msg); if(ok) nx.minutes=v.trim()||null; return ok; };
+  const ps=$("#mt-pvsave"); if(ps) ps.onclick=()=>savePv("Procès-verbal enregistré");
+  const cl=$("#mt-close"); if(cl) cl.onclick=async()=>{ if(!confirmInline(cl,"Clôturer ?")) return; if(!(await savePv())) return;
+    if(await run(()=>sb.from("meetings").update({closed_at:new Date().toISOString()}).eq("id",nx.id),"Réunion clôturée, PV archivé")){ M.pv=false; await reload(); } };
+  const pdf=async m=>{ try{ const blob=await mtPdf(m); await saveFile(blob,`PV ${m.title} ${new Date(m.starts_at).toISOString().slice(0,10)}.pdf`); }catch(e){ console.error(e); toast("Le PDF n'a pas pu être créé."); } };
+  const pd=$("#mt-pdf"); if(pd) pd.onclick=async()=>{ await savePv(); pdf(nx); };
+  $$("[data-mtpdf]").forEach(b=>b.onclick=()=>pdf(S.meetings.find(x=>x.id===+b.dataset.mtpdf)));
+  $$("[data-mtopen]").forEach(b=>b.onclick=()=>{ const id=+b.dataset.mtopen; M.open=M.open===id?null:id; render(); });
+}
+
+/* ----- tableau de bord : lignes « organisation » ----- */
+function dashOrgHTML(){
+  if(!S.orgLoaded||S.orgOk===false) return "";
+  const td=todayISO(), out=[];
+  for(const r of (S.rooms||[]).filter(x=>x.active)) for(const b of roomDay(r.id,td)) if(b.user_id===S.me.id&&b.type!=="free"&&!b.off) out.push(`<button type="button" class="dline dlink" data-cs="rooms">🚪 Vous êtes au <b>${esc(r.name)}</b> de ${hmT(b.starts)} à ${hmT(b.ends)} ›</button>`);
+  for(const t of (S.cltpl||[]).filter(x=>x.active&&x.schedule==="daily")){ const r=clRun(t,td), n=clDone(t,r), m=t.items.length;
+    out.push(`<button type="button" class="dline dlink" data-cs="checklists">${n>=m?"✅":"☑️"} ${esc(t.title)} : <b>${n}/${m}</b> ›</button>`); }
+  for(const a of clAlerts()) out.push(`<button type="button" class="dline dlink dalert" data-cs="checklists">⚠️ ${esc(a)} ›</button>`);
+  const nx=mtNext(); if(nx&&new Date(nx.starts_at)-Date.now()<8*864e5) out.push(`<button type="button" class="dline dlink" data-cs="meetings">🗓️ ${esc(nx.title)} : ${esc(mtWhen(nx))} · ${mtItems(nx.id).length} point${mtItems(nx.id).length>1?"s":""} ›</button>`);
+  return out.join("");
+}
+function dashHoHTML(){
+  if(!S.orgLoaded||S.orgOk===false) return "";
+  const L=hoForMe().filter(h=>h.starts_on<=addDays(todayISO(),3)&&hoActive(h)); if(!L.length) return "";
+  return `<section class="card dcard dho"><header><h3>📋 Transmissions</h3><button type="button" class="linkbtn" data-cs="handovers">Tout voir ›</button></header>${L.map(h=>`<button type="button" class="drow${S.hoRead.has(h.id)?"":" hot"}" data-cs="handovers"><span class="dtx"><b>${esc(staffName(h.author_id))}${S.hoRead.has(h.id)?"":" · nouveau"}</b><small>Du ${dShort(h.starts_on)} au ${dShort(h.ends_on)}${(h.patients||[]).length?` · ${h.patients.length} patient${h.patients.length>1?"s":""} à suivre`:""}</small></span></button>`).join("")}</section>`;
+}
+function orgRt(){ if(!S.me||S.me.role==="patient") return; clearTimeout(orgRt.t); orgRt.t=setTimeout(async()=>{ try{ await loadOrg(); }catch(e){ return; } if(["dash","checklists","meetings"].includes(S.cscreen)&&!isTyping()&&!$(".modal")) render(); },800); }
 function renderStaff(a){
   a.className="wrap wide staff";
   const sc=S.cscreen;
   const nav=staffNavHTML(sc);
   let body="";
-  if(sc==="dash") body=dashHTML(); else if(sc==="pfile") body=pfileHTML(); else if(sc==="compose") body=composeHTML(); else if(sc==="inventory") body=inventoryHTML(); else if(sc==="tasks") body=tasksHTML(); else if(sc==="accounts") body=accountsHTML(); else if(sc==="news") body=newsAdminHTML(); else if(sc==="team") body=teamHTML(); else if(sc==="settings") body=settingsHTML(); else if(sc==="help") body=staffHelpHTML(); else if(sc==="leaves") body=leavesHTML(); else if(sc==="patients") body=patientsHTML(); else if(sc==="messages") body=teamHTML2(); else if(sc==="templates") body=templatesHTML(); else if(sc==="binder") body=binderHTML(); else if(sc==="desk") body=deskHTML(); else if(sc==="waitlist") body=waitlistHTML(); else if(sc==="fiches") body=fichesHTML(); else if(sc==="infos") body=infosHTML(); else if(sc==="feedback"&&isAdmin()) body=feedbackHTML(); else if(sc==="annonces"&&isAdmin()) body=annoncesHTML(); else if(sc==="hours"&&canOffice()) body=hoursHTML(); else if(sc==="cash"&&canOffice()) body=cashHTML(); else body=inboxHTML();
+  if(sc==="dash") body=dashHTML(); else if(sc==="pfile") body=pfileHTML(); else if(sc==="visits") body=visitsHTML(); else if(sc==="handovers") body=handoversHTML(); else if(sc==="rooms") body=roomsHTML(); else if(sc==="checklists") body=checklistsHTML(); else if(sc==="meetings") body=meetingsHTML(); else if(sc==="compose") body=composeHTML(); else if(sc==="inventory") body=inventoryHTML(); else if(sc==="tasks") body=tasksHTML(); else if(sc==="accounts") body=accountsHTML(); else if(sc==="news") body=newsAdminHTML(); else if(sc==="team") body=teamHTML(); else if(sc==="settings") body=settingsHTML(); else if(sc==="help") body=staffHelpHTML(); else if(sc==="leaves") body=leavesHTML(); else if(sc==="patients") body=patientsHTML(); else if(sc==="messages") body=teamHTML2(); else if(sc==="templates") body=templatesHTML(); else if(sc==="binder") body=binderHTML(); else if(sc==="desk") body=deskHTML(); else if(sc==="waitlist") body=waitlistHTML(); else if(sc==="fiches") body=fichesHTML(); else if(sc==="infos") body=infosHTML(); else if(sc==="feedback"&&isAdmin()) body=feedbackHTML(); else if(sc==="annonces"&&isAdmin()) body=annoncesHTML(); else if(sc==="hours"&&canOffice()) body=hoursHTML(); else if(sc==="cash"&&canOffice()) body=cashHTML(); else body=inboxHTML();
   document.body.classList.add("hasbar","sidenav"); document.body.classList.remove("ddopen");
   a.innerHTML=nav+(sc==="dash"?"":urgBannerHTML()+annBannerHTML())+(sc==="inbox"||sc==="messages"?bdayBannerHTML():"")+body;
   bindAnnBanner();
@@ -3137,7 +3752,7 @@ function renderStaff(a){
   $$("[data-dd]").forEach(b=>b.onclick=e=>{ e.stopPropagation(); openDD(b.dataset.dd); });
   const bk=$(".ddback"); if(bk) bk.onclick=closeDD;
   $$("[data-cs]").forEach(b=>b.onclick=()=>{ closeDD(); if(CREC&&b.dataset.cs!=="compose") composeRecStop(false); S.cscreen=b.dataset.cs; render(); window.scrollTo(0,0); });
-  if(sc==="dash") bindDash(); else if(sc==="pfile") bindPfile(); else if(sc==="compose") bindCompose(); else if(sc==="inventory") bindInventory(); else if(sc==="tasks") bindTasks(); else if(sc==="accounts") bindAccounts(); else if(sc==="news") bindNewsAdmin(); else if(sc==="team") bindTeam(); else if(sc==="settings") bindSettings(); else if(sc==="help"||sc==="leaves") {} else if(sc==="patients") bindPatients(); else if(sc==="messages") bindTeam2(); else if(sc==="templates") bindTemplates(); else if(sc==="binder") bindBinder(); else if(sc==="desk") bindDesk(); else if(sc==="waitlist"){ if(S.waitlist) bindWaitlist(); } else if(sc==="fiches") bindFiches(); else if(sc==="infos") bindInfos(); else if(sc==="feedback"&&isAdmin()) bindFeedback(); else if(sc==="annonces"&&isAdmin()) bindAnnonces(); else if(sc==="hours"&&canOffice()) bindHours(); else if(sc==="cash"&&canOffice()) bindCash(); else bindInbox();
+  if(sc==="dash") bindDash(); else if(sc==="pfile") bindPfile(); else if(sc==="visits") bindVisits(); else if(sc==="handovers") bindHandovers(); else if(sc==="rooms") bindRooms(); else if(sc==="checklists") bindChecklists(); else if(sc==="meetings") bindMeetings(); else if(sc==="compose") bindCompose(); else if(sc==="inventory") bindInventory(); else if(sc==="tasks") bindTasks(); else if(sc==="accounts") bindAccounts(); else if(sc==="news") bindNewsAdmin(); else if(sc==="team") bindTeam(); else if(sc==="settings") bindSettings(); else if(sc==="help"||sc==="leaves") {} else if(sc==="patients") bindPatients(); else if(sc==="messages") bindTeam2(); else if(sc==="templates") bindTemplates(); else if(sc==="binder") bindBinder(); else if(sc==="desk") bindDesk(); else if(sc==="waitlist"){ if(S.waitlist) bindWaitlist(); } else if(sc==="fiches") bindFiches(); else if(sc==="infos") bindInfos(); else if(sc==="feedback"&&isAdmin()) bindFeedback(); else if(sc==="annonces"&&isAdmin()) bindAnnonces(); else if(sc==="hours"&&canOffice()) bindHours(); else if(sc==="cash"&&canOffice()) bindCash(); else bindInbox();
 }
 
 /* ----- durée estimée des rendez-vous de médecine générale (visible par l'équipe seulement) ----- */
@@ -4349,14 +4964,15 @@ function tasksHTML(){
   </section>`:`<div class="tknew"><button type="button" class="btn" data-tknew="task">＋ Nouvelle tâche</button>${canExam()?`<button type="button" class="btn ghost" data-tknew="exam">🧪 Examen demandé</button>`:""}</div>`}
   <section>
    ${digestHTML()}
-   <div class="seg" role="group" aria-label="Afficher" style="margin-bottom:10px"><button data-tv="todo" aria-pressed="${V==="todo"}">À faire (${todo.length})</button><button data-tv="given" aria-pressed="${V==="given"}">Confiées (${given.length})</button><button data-tv="done" aria-pressed="${V==="done"}">Terminées</button></div>
-   <div class="ichips tkinds" role="group" aria-label="Type de tâche"><button class="ichip all" data-tk="all" aria-pressed="${K==="all"}">Toutes <i>${listAll.length}</i></button><button class="ichip t-question" data-tk="pat" aria-pressed="${K==="pat"}">👤 Patients <i>${nP}</i></button><button class="ichip t-rapport" data-tk="org" aria-pressed="${K==="org"}">🏥 Organisation <i>${nO}</i></button>${nE||canExam()?`<button class="ichip t-prescription" data-tk="exam" aria-pressed="${K==="exam"}">🧪 Examens <i>${nE}</i></button>`:""}</div>
-   ${list.length?taskTableHTML(list,V):`<div class="list tasks"><div class="empty">${V==="todo"?`<span class="yay" aria-hidden="true">✨</span>Rien à faire pour l'instant.`:V==="given"?"Aucune tâche confiée en cours.":"Aucune tâche terminée. Celles qui concernent un patient sont effacées 90 jours après."}</div></div>`}
+   <div class="seg" role="group" aria-label="Afficher" style="margin-bottom:10px"><button data-tv="todo" aria-pressed="${V==="todo"}">À faire (${todo.length})</button><button data-tv="given" aria-pressed="${V==="given"}">Confiées (${given.length})</button><button data-tv="done" aria-pressed="${V==="done"}">Terminées</button><button data-tv="fu" aria-pressed="${V==="fu"}">🔔 Rappels</button></div>
+   ${V==="fu"?fuPanelHTML():`   <div class="ichips tkinds" role="group" aria-label="Type de tâche"><button class="ichip all" data-tk="all" aria-pressed="${K==="all"}">Toutes <i>${listAll.length}</i></button><button class="ichip t-question" data-tk="pat" aria-pressed="${K==="pat"}">👤 Patients <i>${nP}</i></button><button class="ichip t-rapport" data-tk="org" aria-pressed="${K==="org"}">🏥 Organisation <i>${nO}</i></button>${nE||canExam()?`<button class="ichip t-prescription" data-tk="exam" aria-pressed="${K==="exam"}">🧪 Examens <i>${nE}</i></button>`:""}</div>
+   ${list.length?taskTableHTML(list,V):`<div class="list tasks"><div class="empty">${V==="todo"?`<span class="yay" aria-hidden="true">✨</span>Rien à faire pour l'instant.`:V==="given"?"Aucune tâche confiée en cours.":"Aucune tâche terminée. Celles qui concernent un patient sont effacées 90 jours après."}</div></div>`}`}
   </section></div>`;
 }
 function bindTasks(){
   const D=S.tdraft, add=$("#tk-add"), EX=D.mode==="exam";
   bindDigest();
+  if(S.tview==="fu") bindFuPanel();
   $$("[data-tknew]").forEach(b=>b.onclick=()=>{ S.tformOpen=true; D.mode=b.dataset.tknew; if(D.mode==="exam"&&!D.due) D.due=addDays(todayISO(),7); render(); (D.mode==="exam"?$("#tk-q"):$("#tk-title"))?.focus(); });
   $$("[data-tsort]").forEach(b=>b.onclick=()=>{ S.tsort=b.dataset.tsort; render(); });
   $$("[data-topen]").forEach(b=>b.onclick=()=>{ const id=+b.dataset.topen; S.topen=S.topen||new Set(); S.topen.has(id)?S.topen.delete(id):S.topen.add(id); render(); });
@@ -4869,16 +5485,21 @@ function navGroups(){
      {cs:"inbox",ic:SI.inbox,t:"Demandes",n:nIn,hot:myUrgent().length},
      {cs:"compose",ic:SI.pen,t:"Écrire à un patient"},
      {cs:"patients",ic:IC.user,t:"Fiches patients"},
+     ...(isGPme()?[{cs:"visits",ic:SI.house,t:"Visites à domicile"}]:[]),
      {cs:"waitlist",ic:SI.hourglass,t:"Listes d'attente"},
      ...(isAdmin()?[{cs:"accounts",ic:SI.ucheck,t:"Comptes à valider",n:S.pending.length+(S.pendingKids||[]).length}]:[])]},
    {h:"Équipe",it:[
      {cs:"messages",ic:SI.chat,t:"Messages",n:teamUnread()},
      {cs:"tasks",ic:SI.tasks,t:"Tâches",n:myTasks().length},
+     {cs:"handovers",ic:SI.handover,t:"Transmissions",n:hoUnread().length},
+     {cs:"meetings",ic:SI.meet,t:"Réunions"},
      {cs:"leaves",ic:SI.cal,t:"Congés"},
      ...(isAdmin()||isGestion()?[{cs:"team",ic:SI.team,t:"Comptes de l'équipe"}]:[])]},
    {h:"Secrétariat",it:[
      {cs:"desk",ic:SI.phone,t:"Accueil",n:isDesk()?deskTodayCount():0},
      {cs:"infos",ic:SI.idcard,t:"Infos et documents"},
+     {cs:"rooms",ic:SI.door,t:"Locaux"},
+     {cs:"checklists",ic:SI.checks,t:"Checklists",n:clAlerts().length},
      ...(canOffice()?[{cs:"hours",ic:SI.clock,t:"Horaires"},{cs:"cash",ic:SI.euro,t:"Caisse"}]:[])]},
    {h:"Le centre",it:[
      ...(canPub()?[{cs:"news",ic:SI.news||IC.news,t:"Actualités"}]:[]),
@@ -5491,6 +6112,8 @@ function startRealtime(){
       .on("postgres_changes",{event:"*",schema:"public",table:"message_reactions"},p=>rtQueue((p.new&&p.new.request_id)||(p.old&&p.old.request_id)))
       .on("postgres_changes",{event:"*",schema:"public",table:"team_message_reactions"},()=>teamRt())
       .on("postgres_changes",{event:"*",schema:"public",table:"broadcasts"},()=>annRt())
+      .on("postgres_changes",{event:"*",schema:"public",table:"checklist_runs"},()=>orgRt())
+      .on("postgres_changes",{event:"*",schema:"public",table:"meeting_items"},()=>orgRt())
       .subscribe();
   }catch(e){ console.error(e); RT=null; }
 }
