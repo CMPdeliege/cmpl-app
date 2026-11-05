@@ -929,6 +929,8 @@ async function refresh(){
   if(!S.session){ S.me=null; render(); return; }
   await loadMe();
   if(!S.me){ render(); return; }
+  // App Android (Play Store) : réservée aux patients. L'équipe utilise app.cmpl.be dans Chrome (notifications comprises).
+  if(IS_ANDROID_APP&&S.me.role!=="patient"){ S.androidStaff=true; stopRealtime(); await sb.auth.signOut(); S.session=null; S.me=null; S.mfa=null; render(); return; }
   syncLang(); syncTextSize();
   S.mfa=null;
   if(S.me.status==="active"&&S.me.role!=="patient"){
@@ -1251,6 +1253,7 @@ const CAP = () => { if(CAP.c) return CAP.c; const c={};
   const ap=capPlugin("App",["minimizeApp","exitApp"]);
   if(pn) c.PushNotifications=pn; if(sec) c.CMPLSecure=sec; if(ap) c.App=ap; return CAP.c=c; };
 const IS_ANDROID=/android/i.test(navigator.userAgent);
+const IS_ANDROID_APP=/Android/i.test(navigator.userAgent)&&(/CMPLApp/.test(navigator.userAgent)||!!(window.Capacitor&&window.Capacitor.getPlatform&&window.Capacitor.getPlatform()==="android"));
 const IS_NATIVE=/CMPLApp/.test(navigator.userAgent)||!!(window.Capacitor&&window.Capacitor.isNativePlatform&&window.Capacitor.isNativePlatform());
 const IS_STANDALONE=IS_NATIVE||matchMedia("(display-mode: standalone)").matches||navigator.standalone===true;
 let pushSynced=false;
@@ -1376,6 +1379,7 @@ function renderAuth(a){
   ${pinned.map(n=>`<div style="margin-bottom:12px">${newsCard(n,true,true)}</div>`).join("")}
   <div class="auth">
    <h1>${m==="signup"?"Créer mon compte":m==="forgot"?"Mot de passe oublié":"Connexion"}</h1>
+   ${S.androidStaff?`<div class="famnote" translate="no"><b>Membres de l'équipe :</b> sur Android, l'app du Play Store est réservée aux patients. Ouvrez <b>app.cmpl.be</b> dans Chrome et connectez-vous là (menu ⋮ → « Ajouter à l'écran d'accueil » pour l'avoir comme une app, avec les notifications).</div>`:""}
    <div class="seg" role="group" aria-label="Connexion ou inscription">
     <button id="m-login" aria-pressed="${m==="login"}">J'ai un compte</button>
     <button id="m-signup" aria-pressed="${m==="signup"}">Créer un compte</button>
@@ -2073,7 +2077,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261105b";
+const APP_VERSION="20261105c";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
