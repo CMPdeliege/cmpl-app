@@ -1951,3 +1951,13 @@ select.tprio,span.tprio{font:inherit;font-size:12.5px;font-weight:700;border:1.5
 .rmb.exc{z-index:2}
 .rmhead .rmtrack i:last-child{transform:translateX(-100%)}
 .hvtour .btn{display:inline-flex;width:auto;text-decoration:none}
+
+/* ----- nouvelle version disponible ----- */
+.updbox{position:fixed;left:50%;bottom:calc(96px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:300;width:min(440px,calc(100vw - 24px));background:var(--surface);border:1px solid var(--line);border-radius:18px;box-shadow:0 10px 36px rgb(40 10 10/.22);padding:14px 16px}
+.updbox.big{border-top:5px solid var(--accent)}
+.updin{display:flex;gap:12px;align-items:flex-start}
+.updic{font-size:26px;line-height:1}
+.updin b{font-size:16px}.updin p{margin:3px 0 0;color:var(--muted);font-size:14px}
+.updwarn{color:var(--warn)!important;font-weight:600}
+.updbox .btnrow{margin-top:12px;justify-content:flex-end}
+@media (min-width:900px){.updbox{left:auto;right:24px;bottom:24px;transform:none}}

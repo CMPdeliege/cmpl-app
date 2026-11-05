@@ -2078,7 +2078,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261106b";
+const APP_VERSION="20261106c";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -6162,5 +6162,29 @@ async function autoRefresh(){ if(busy||!S.session||S.loading||document.hidden||S
 setInterval(autoRefresh, 60000);
 document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) autoRefresh(); });
 if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
+/* ----- nouvelle version publiée : proposer de recharger l'app ----- */
+// version.json (publié avec chaque mise à jour) contient le numéro de la dernière version.
+const UPD={shown:false,later:0,loadedAt:Date.now()};
+try{ const u=new URL(location.href); if(u.searchParams.has("maj")){ u.searchParams.delete("maj"); history.replaceState(null,"",u.pathname+(u.search||"")+u.hash); } }catch(e){}
+async function checkUpdate(){
+  if(UPD.shown||Date.now()<UPD.later||document.hidden||!navigator.onLine) return;
+  let v; try{ const r=await fetch("version.json?t="+Date.now(),{cache:"no-store"}); if(!r.ok) return; v=String((await r.json()).v||""); }catch(e){ return; }
+  if(!/^\d{8}[a-z]?$/.test(v)||v<=APP_VERSION) return;
+  showUpdate(v);
+}
+function showUpdate(v){
+  if(UPD.shown||$(".updbox")) return; UPD.shown=true;
+  const el=document.activeElement, typing=el&&/TEXTAREA|INPUT/.test(el.tagName)&&el.value;
+  const box=document.createElement("div"); box.className="updbox"+(typing?"":" big"); box.setAttribute("role","alertdialog"); box.setAttribute("aria-labelledby","upd-t");
+  box.innerHTML=`<div class="updin"><span class="updic" aria-hidden="true">🔄</span><div><b id="upd-t">Nouvelle version disponible</b><p>Mettez l'app à jour pour profiter des dernières améliorations.</p>${typing?`<p class="updwarn">Envoyez d'abord le message que vous êtes en train d'écrire.</p>`:""}</div></div>
+    <div class="btnrow"><button type="button" class="btn" id="upd-go">Mettre à jour</button><button type="button" class="btn ghost" id="upd-later">Plus tard</button></div>`;
+  document.body.appendChild(box);
+  box.querySelector("#upd-go").onclick=()=>{ box.querySelector("#upd-go").disabled=true; const u=new URL(location.href); u.searchParams.set("maj",v); location.replace(u.toString()); };
+  box.querySelector("#upd-later").onclick=()=>{ box.remove(); UPD.shown=false; UPD.later=Date.now()+30*60e3; };
+  if(!typing) box.querySelector("#upd-go").focus();
+}
+setTimeout(checkUpdate,4000);
+setInterval(checkUpdate,10*60e3);
+document.addEventListener("visibilitychange",()=>{ if(!document.hidden) setTimeout(checkUpdate,1500); });
 console.log("CMPL app version "+APP_VERSION);
 })();
