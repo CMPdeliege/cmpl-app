@@ -953,6 +953,15 @@ const TEXT_SIZES={normal:["Normal",1],grand:["Grand",1.15],tres_grand:["Très gr
 function applyTextSize(v){ const z=(TEXT_SIZES[v]||TEXT_SIZES.normal)[1]; document.body.style.zoom=z===1?"":String(z);
   try{ localStorage.setItem("cmpl_ts",TEXT_SIZES[v]?v:"normal"); }catch(e){} }
 try{ const t=localStorage.getItem("cmpl_ts"); if(t&&TEXT_SIZES[t]) applyTextSize(t); }catch(e){}
+/* ---------- apparence : automatique (comme l'appareil), clair ou sombre — propre à chaque appareil ---------- */
+const THEMES={auto:["Automatique","🌗"],light:["Clair","☀️"],dark:["Sombre","🌙"]};
+function applyTheme(v){ const t=THEMES[v]?v:"auto"; if(t==="auto") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme=t;
+  try{ localStorage.setItem("cmpl_theme",t); }catch(e){} }
+const curTheme = () => { try{ const t=localStorage.getItem("cmpl_theme"); return THEMES[t]?t:"auto"; }catch(e){ return "auto"; } };
+applyTheme(curTheme());
+const themeHTML = () => `<section class="card tscard"><h3>Apparence</h3><p class="hint">Automatique : comme le réglage de votre appareil. Ce choix ne vaut que pour cet appareil.</p>
+  <div class="seg tsseg" role="group" aria-label="Apparence">${Object.entries(THEMES).map(([k,[l,ic]])=>`<button type="button" data-theme-pick="${k}" aria-pressed="${curTheme()===k}"><span aria-hidden="true">${ic}</span> <span>${l}</span></button>`).join("")}</div></section>`;
+function bindTheme(){ $$("[data-theme-pick]").forEach(b=>b.onclick=()=>{ applyTheme(b.dataset.themePick); render(); }); }
 function syncTextSize(){ if(S.me&&S.me.text_size&&TEXT_SIZES[S.me.text_size]) applyTextSize(S.me.text_size); }
 const textSizeHTML = () => `<section class="card tscard"><h3>Taille du texte</h3><p class="hint">Pour lire plus facilement. Le choix suit votre compte sur tous vos appareils.</p>
   <div class="seg tsseg" role="group" aria-label="Taille du texte">${Object.entries(TEXT_SIZES).map(([k,[l]],i)=>`<button type="button" data-ts="${k}" aria-pressed="${(S.me.text_size||"normal")===k}"><span style="font-size:${14+i*3}px">A</span> ${l}</button>`).join("")}</div></section>`;
@@ -1718,7 +1727,7 @@ function patientAccount(a){
   <button type="button" class="absrow helprow" data-cs-help>${IC.help}<span>Aide et questions fréquentes</span>${IC.chev||"›"}</button>
   <button type="button" class="absrow helprow" id="fbopen">${SI.idea}<span>Une idée ou un problème avec l'app ?</span>${IC.chev||"›"}</button>
   <section class="card langcard"><h3>Langue de l'application</h3><p class="hint">Les messages restent écrits par le centre en français.</p>${langPickerHTML()}</section>
-  ${textSizeHTML()}
+  ${textSizeHTML()}${themeHTML()}
   ${photoCardHTML("Facultatif. Visible uniquement par vous et par l'équipe du centre, pour vous reconnaître.")}
   ${m.status==="active"?familyCardHTML():""}
   ${contactsCardHTML()}
@@ -1746,7 +1755,7 @@ function patientAccount(a){
   $("#delconf").oninput=e=>{ $("#delgo").disabled=e.target.value.trim().toUpperCase()!=="SUPPRIMER"; };
   $("#delgo").onclick=async e=>{ e.target.disabled=true;
     if(await run(()=>sb.rpc("delete_my_account"))){ await logout("Votre compte et ses données ont été supprimés."); } else e.target.disabled=false; };
-  bindPhotoCard(); bindFamily(); bindLangPicker(); bindContacts(); bindTextSize();
+  bindPhotoCard(); bindFamily(); bindLangPicker(); bindContacts(); bindTextSize(); bindTheme();
   $("#acctform").onsubmit=async e=>{ e.preventDefault();
     const upd={first_name:$("#a-first").value.trim(),last_name:$("#a-last").value.trim(),birth_date:$("#a-birth").value||null,phone:$("#a-phone").value.trim()};
     if(await run(()=>sb.from("profiles").update(upd).eq("id",m.id),"Enregistré")) Object.assign(S.me,upd); };
@@ -2078,7 +2087,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261106c";
+const APP_VERSION="20261106d";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -5384,7 +5393,7 @@ function settingsHTML(){
    ${photoCardHTML("Facultatif. Visible par les patients dans les conversations, et par l'équipe.")}
    ${faceIdCardHTML()}
    ${trustCardHTML()}
-   ${textSizeHTML()}
+   ${textSizeHTML()}${themeHTML()}
    ${bdayCardHTML()}
    <section class="card"><h3>Quand me prévenir</h3><div class="pgrid">
     <label class="fld">Haute priorité (à voir en moins de 24 h)${sel("s-haute",s.haute)}</label>
@@ -5428,7 +5437,7 @@ function awayDefaultText(u=$("#s-until")?.value, fwId=$("#s-fw")?.value){
   return `Bonjour,\nJe suis absent(e)${until}. Votre message a bien été reçu${fw?` et sera traité par ${(fw.first_name||"")+" "+(fw.last_name||"")}`:" et sera traité à mon retour"}.\nPour une question qui ne peut pas attendre, appelez le secrétariat au 02 781 18 75. Urgence vitale : 112.`;
 }
 function bindSettings(){
-  bindPhotoCard(); bindPush(); bindTextSize(); bindFaceIdCard(); bindTrustCard(); bindBdayCard();
+  bindPhotoCard(); bindPush(); bindTextSize(); bindTheme(); bindFaceIdCard(); bindTrustCard(); bindBdayCard();
   const dc=$("#s-direct"); if(dc) dc.onchange=async()=>{ const v=dc.checked;
     if(await run(()=>sb.rpc("set_my_direct_contact",{p_ok:v}),v?"Les patients peuvent vous écrire directement":"Les demandes passeront d'abord par le secrétariat")){ const pr=P.byId(S.me.provider_id); if(pr) pr.direct_contact=v; } else dc.checked=!v; };
   $("#lv-add").onclick=async()=>{ const f=$("#lv-from").value, t=$("#lv-to").value;
