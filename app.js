@@ -146,7 +146,7 @@ const S = {
   session:null, me:null, providers:[], hours:{}, news:[], reqs:[], meds:[], notifs:[], profiles:{}, children:{}, tasks:[], pendingKids:[],
   screen:"home", flow:null, answers:{}, drug:null, openReq:null, openNews:null, lastSent:null,
   // équipe
-  tab:"secretariat", provFilter:"tous", archive:false, sel:null, cscreen:"inbox", drafts:{}, pending:[], team:[], allNews:[], settings:null,
+  tab:"secretariat", provFilter:"tous", archive:false, sel:null, cscreen:(matchMedia("(min-width:900px)").matches?"dash":"inbox"), drafts:{}, pending:[], team:[], allNews:[], settings:null,
   authMode:"login", recovery:false, loading:true
 };
 
@@ -1483,7 +1483,7 @@ function renderBlocked(a){
   <div class="closed"><b>Compte non validé</b><span>Ce compte n'a pas pu être validé. Contactez le secrétariat au 02 781 18 75.</span></div>`;
   $("#logout").onclick=logout;
 }
-async function logout(reason){ if(typeof reason!=="string") await pushForget(); stopRealtime(); await sb.auth.signOut(); updateBadges(0); const keep=savedLang(); if(keep&&keep!==L) applyLang(keep); S.session=null; S.me=null; S.mfa=null; S.trustList=null; S.scope=null; S.iq=""; S.itype="all"; S.screen="home"; S.cscreen="inbox"; try{ localStorage.removeItem("cmpl_last_active"); }catch(e){} render(); if(typeof reason==="string") toast(reason); }
+async function logout(reason){ if(typeof reason!=="string") await pushForget(); stopRealtime(); await sb.auth.signOut(); updateBadges(0); const keep=savedLang(); if(keep&&keep!==L) applyLang(keep); S.session=null; S.me=null; S.mfa=null; S.trustList=null; S.scope=null; S.iq=""; S.itype="all"; S.screen="home"; S.cscreen=matchMedia("(min-width:900px)").matches?"dash":"inbox"; try{ localStorage.removeItem("cmpl_last_active"); }catch(e){} render(); if(typeof reason==="string") toast(reason); }
 
 /* =====================================================================
    PATIENT
@@ -2073,7 +2073,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261104a";
+const APP_VERSION="20261105b";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -2914,20 +2914,85 @@ function staffHelpHTML(){
    ["Ordinateur de confiance (accueil)","Au moment du code de sécurité, cochez « Faire confiance à cet ordinateur » : pendant 90 jours, l'e-mail et le mot de passe suffisent sur cet ordinateur, avec déconnexion après 2 heures d'inactivité. Uniquement sur un ordinateur du centre. Pour le retirer : Mon profil et notifications → Ordinateurs de confiance."],
    ["Valider les comptes des patients","Seul un administrateur valide les nouveaux comptes et les enfants ajoutés par un parent (Patients → Comptes à valider). Un administrateur peut donner ces droits à n'importe quel membre de l'équipe (secrétariat compris) : Équipe → Comptes de l'équipe → case « Administrateur ». La personne garde son rôle."],
    ["Priorité des tâches et récapitulatif par e-mail","Équipe → Tâches : chaque tâche a une priorité (haute, normale, basse), modifiable directement dans le tableau. Triez par priorité ou par échéance ; touchez une ligne pour voir ses détails (note, documents, rappel, personnes). En haut de la liste, « Récapitulatif de mes tâches par e-mail » : choisissez les jours et une ou plusieurs heures pour recevoir la liste de vos tâches à faire. Rien n'est envoyé s'il n'y a rien à faire, et l'e-mail ne contient jamais de nom de patient."],
+   ["Tableau de bord","Sur ordinateur, l'app s'ouvre sur le tableau de bord : vos demandes à traiter (les urgentes en premier), vos tâches, les messages de l'équipe non lus, les examens à suivre et ce qui se passe aujourd'hui au centre (absences, anniversaires, annonces, inventaire). Touchez un compteur ou une ligne pour y aller. Sur téléphone, l'app s'ouvre toujours sur les demandes ; le tableau de bord est dans « Plus »."],
    ["Annonces importantes (administrateurs)","Le centre → Annonces importantes : choisissez pour qui (équipe, patients ou tout le monde), un titre, un message et jusqu'à quand. L'annonce s'affiche en grand à l'ouverture de l'app (chacun touche « J'ai compris »), puis reste épinglée en haut de l'écran jusqu'au dernier jour choisi. Vous voyez combien de personnes l'ont lue et pouvez l'arrêter à tout moment. Notification sur le téléphone en option ; les patients ne la reçoivent que s'ils ont accepté les annonces du centre."],
    ["Face ID sur l'iPhone","Dans l'app iPhone : Mon profil et notifications → Face ID. Ensuite l'app se déverrouille avec votre visage, sans code."],
    ["Un problème avec l'app","Prévenez l'administrateur du centre en précisant l'écran concerné (une capture d'écran aide beaucoup)."]];
   return `<div class="chead"><div><h1>Aide</h1><p>Les réponses aux questions les plus fréquentes de l'équipe.</p></div></div>
   <div class="settings">${Q.map(([q,r])=>`<details class="faq card"><summary>${q}</summary><p>${r}</p></details>`).join("")}${versionHTML()}</div>`;
 }
+/* =====================================================================
+   TABLEAU DE BORD (proposition) : l'essentiel de la journée en un coup d'œil
+   ===================================================================== */
+SI.dash='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>';
+const dashReqs = () => (S.reqs||[]).filter(r=>r.status!=="traite"&&awaitingStaff(r)&&(myQueue(r)||(!S.me.provider_id&&S.me.role==="admin")))
+  .sort((x,y)=>reqGroup(x)-reqGroup(y)||new Date(x.due_at||8.64e15)-new Date(y.due_at||8.64e15));
+const dashExams = () => (S.tasks||[]).filter(t=>!t.done_at&&isExam(t)&&forMe(t));
+function dashHTML(){
+  const now=new Date(), td=todayISO(), R=dashReqs(), U=R.filter(r=>reqGroup(r)===0), rep=R.filter(r=>reqGroup(r)===1);
+  const T=myTasks().filter(t=>!isExam(t)).sort(byPrio), Tl=T.filter(t=>t.due_date&&t.due_date<td), Tt=T.filter(t=>t.due_date===td), Th=T.filter(t=>prioOf(t)==="haute");
+  const E=dashExams(), Eg=E.filter(t=>t.exam_results_at), El=E.filter(t=>!t.exam_results_at&&t.due_date&&t.due_date<td);
+  const th=tSorted().filter(t=>tUnread(t)||tFlagged(t)).slice(0,5), nU=teamUnread(), nF=(S.team2.threads||[]).filter(tFlagged).length;
+  const rx=R.filter(isSimpleRx).length;
+  const abs=(S.teamAbs||[]).filter(x=>x.starts<=td&&(!x.ends||x.ends>=td));
+  const bd=(S.bdays||[]).filter(b=>isBdayOn(b,now)&&(b.shared||b.user_id===S.me.id));
+  const kpi=(go,n,l,sub,cls="")=>`<button type="button" class="dkpi ${cls}${n?"":" zero"}" data-dgo="${go}"><b>${n}</b><span>${l}</span>${sub?`<small>${sub}</small>`:""}</button>`;
+  const nm=r=>{ const p=reqName(r).split(/\s+/); return p[0]+(p[1]?" "+p.slice(1).join(" "):""); };
+  const reqRow=r=>`<button type="button" class="drow${reqGroup(r)===0?" hot":""}" data-dreq="${r.id}"><span class="dic t-${r.type}" aria-hidden="true">${IEMO[r.type]||"📋"}</span>
+    <span class="dtx"><b>${esc(nm(r))}</b><small>${TYPES[r.type]?.label||""}${newPatientMsg(r)?" · a répondu":""}</small></span>${dueTagI(r)}</button>`;
+  const taskRow=t=>{ const late=t.due_date&&t.due_date<td, d=t.due_date?(t.due_date===td?"Aujourd'hui":new Date(t.due_date+"T12:00").toLocaleDateString(LOC,{day:"numeric",month:"short"})):"";
+    return `<button type="button" class="drow" data-dtask="${t.id}"><span class="tprio pr-${prioOf(t)}">${PRIO[prioOf(t)][0]}</span><span class="dtx"><b>${esc(t.title)}</b>${taskPatShort(t)?`<small>👤 ${esc(taskPatShort(t))}</small>`:""}</span><span class="ddue${late?" late":t.due_date===td?" today":""}">${late?"⚠️ ":""}${d}</span></button>`; };
+  const examRow=t=>`<button type="button" class="drow" data-dtask="${t.id}"><span class="dic" aria-hidden="true">🧪</span><span class="dtx"><b>${esc(taskPatShort(t))}</b><small>${esc((t.exam_types||[]).join(", "))}</small></span>${t.exam_results_at?`<span class="ipill rep">à communiquer</span>`:t.due_date&&t.due_date<td?`<span class="ipill late">résultats en retard</span>`:`<span class="ipill wait">en attente</span>`}</button>`;
+  const thRow=t=>{ const last=tMsgs(t.id).slice(-1)[0], u=tUnread(t); return `<button type="button" class="drow" data-dthread="${t.id}">${tAvatar(t)}<span class="dtx"><b>${tFlagged(t)?"🚩 ":""}${esc(tTitle(t))}</b><small>${esc(tPreview(last))}</small></span>${u?`<span class="dnum">${u}</span>`:""}</button>`; };
+  const card=(ic,title,go,body,empty,extra="")=>`<section class="card dcard"><header><h3>${ic} ${title}</h3>${go?`<button type="button" class="linkbtn" data-dgo="${go}">Tout voir ›</button>`:""}</header>${body||`<p class="dempty">${empty}</p>`}${extra}</section>`;
+  const adm=isAdmin(), nAcc=adm?S.pending.length+(S.pendingKids||[]).length:0, nInv=invOpen(), nFb=adm?fbNew():0;
+  return `<div class="dhead"><div><p class="greet">${greetWord()} ${esc(S.me.first_name||"")} 👋</p>
+    <h1>${now.toLocaleDateString(LOC,{weekday:"long",day:"numeric",month:"long"}).replace(/^./,c=>c.toUpperCase())}</h1>
+    <p>${isOpen(now)?'<span class="state on">Centre ouvert</span>':`<span class="state off">Fermé · réouverture ${fmtWhen(nextOpen(now))}</span>`}${abs.length?` · ${abs.length} absent${abs.length>1?"s":""} aujourd'hui`:""}</p></div>
+    <div class="dquick"><button type="button" class="btn" data-cs="compose">${SI.pen}<span>Écrire à un patient</span></button><button type="button" class="btn ghost" data-dnew="task">＋ Tâche</button>${canExam()?`<button type="button" class="btn ghost" data-dnew="exam">🧪 Examen</button>`:""}<button type="button" class="btn ghost" data-rosa>${SI.cal}<span>Agenda Rosa</span></button></div></div>
+  <div class="dkpis">
+    ${kpi("inbox",R.length,"demande"+(R.length>1?"s":"")+" à traiter",U.length?`<em>🔴 ${U.length} urgente${U.length>1?"s":""} ou en retard</em>`:rep.length?`${rep.length} patient${rep.length>1?"s ont":" a"} répondu`:"",U.length?"hot":"")}
+    ${kpi("messages",nU,"message"+(nU>1?"s":"")+" de l'équipe",nF?`🚩 ${nF} prioritaire${nF>1?"s":""}`:nU?"non lu"+(nU>1?"s":""):"tout est lu")}
+    ${kpi("tasks",T.length,"tâche"+(T.length>1?"s":"")+" à faire",Tl.length?`<em>⚠️ ${Tl.length} en retard</em>`+(Tt.length?` · ${Tt.length} aujourd'hui`:""):Tt.length?`${Tt.length} pour aujourd'hui`:Th.length?`${Th.length} prioritaire${Th.length>1?"s":""}`:"",Tl.length?"warn":"")}
+    ${canExam()?kpi("exams",Eg.length,"résultat"+(Eg.length>1?"s":"")+" à communiquer",`${E.length-Eg.length} examen${E.length-Eg.length>1?"s":""} en attente${El.length?` · <em>${El.length} en retard</em>`:""}`,Eg.length?"ok":""):""}
+  </div>
+  <div class="dgrid">
+    ${card("📥","À traiter en priorité","inbox",R.slice(0,7).map(reqRow).join(""),`<span class="yay">🎉</span> Aucune demande en attente.`,
+      (R.length>7?`<p class="dmore">+ ${R.length-7} autre${R.length-7>1?"s":""}</p>`:"")+(rx>=2?`<button type="button" class="drx" data-dgo="inbox">💊 <b>${rx} prescriptions simples</b> à accorder en série ›</button>`:""))}
+    ${card("✅","Mes tâches","tasks",T.slice(0,6).map(taskRow).join(""),"✨ Rien à faire pour l'instant.")}
+    ${card("💬","Équipe","messages",th.map(thRow).join(""),"Tous les messages sont lus.")}
+    ${canExam()?card("🧪","Examens à suivre","exams",[...Eg,...El,...E.filter(t=>!Eg.includes(t)&&!El.includes(t))].slice(0,5).map(examRow).join(""),"Aucun examen en attente."):""}
+    <section class="card dcard dtoday"><header><h3>📅 Aujourd'hui au centre</h3></header>
+      ${bd.map(b=>`<p class="dline">🎂 ${b.user_id===S.me.id?"<b>Joyeux anniversaire !</b>":`Anniversaire de <b>${esc(staffFirst(b.user_id))}</b> <button type="button" class="linkbtn" data-bdwrite="${b.user_id}">Lui écrire</button>`}</p>`).join("")}
+      ${abs.length?abs.map(x=>`<p class="dline">🌴 <b>${esc(x.provider_id?provName(x.provider_id):(x.name||"—"))}</b> ${x.kind==="absence"?"absent(e)":"en congé"}${x.ends?` jusqu'au ${fmtDate(x.ends+"T12:00")}`:""}</p>`).join(""):`<p class="dline">👥 Toute l'équipe est présente.</p>`}
+      ${myAnns().map(b=>`<button type="button" class="dline dlink dann" data-annopen="${b.id}">📢 <b>${esc(b.title)}</b></button>`).join("")}
+      ${nInv?`<button type="button" class="dline dlink" data-cs="inventory">📦 <b>${nInv}</b> article${nInv>1?"s":""} à commander ›</button>`:""}
+      ${nAcc?`<button type="button" class="dline dlink" data-cs="accounts">🧑‍⚕️ <b>${nAcc}</b> compte${nAcc>1?"s":""} patient à valider ›</button>`:""}
+      ${nFb?`<button type="button" class="dline dlink" data-cs="feedback">💡 <b>${nFb}</b> nouvelle${nFb>1?"s":""} suggestion${nFb>1?"s":""} ›</button>`:""}
+    </section>
+  </div>`;
+}
+function bindDash(){
+  const go=k=>{ if(k==="exams"){ S.cscreen="tasks"; S.tview="todo"; S.tkind="exam"; } else if(k==="inbox"){ S.cscreen="inbox"; S.archive=false; S.itype="all"; S.iq=""; if(S.me.provider_id) S.scope="mine"; } else S.cscreen=k; render(); scrollTo(0,0); };
+  $$("[data-dgo]").forEach(b=>b.onclick=()=>go(b.dataset.dgo));
+  $$("[data-dreq]").forEach(b=>b.onclick=()=>{ const r=S.reqs.find(x=>x.id===+b.dataset.dreq); if(!r) return;
+    S.cscreen="inbox"; S.archive=false; S.itype="all"; S.iq=""; S.short=false; S.sel=r.id;
+    S.scope=r.queue==="prestataires"?(r.provider_id===S.me.provider_id?"mine":"prestataires"):r.queue; render(); scrollTo(0,0); });
+  $$("[data-dtask]").forEach(b=>b.onclick=()=>{ const id=+b.dataset.dtask; S.topen=S.topen||new Set(); S.topen.add(id); S.cscreen="tasks"; S.tview="todo"; S.tkind="all"; render();
+    setTimeout(()=>document.querySelector(`[data-topen="${id}"]`)?.scrollIntoView({block:"center"}),50); });
+  $$("[data-dthread]").forEach(b=>b.onclick=()=>{ S.tthread=+b.dataset.dthread; S.cscreen="messages"; render(); scrollTo(0,0); });
+  $$("[data-dnew]").forEach(b=>b.onclick=()=>{ S.cscreen="tasks"; S.tformOpen=true; S.tdraft=S.tdraft||{title:"",notes:"",due:"",to:"me",patient:null,q:"",remind:null}; S.tdraft.mode=b.dataset.dnew;
+    if(S.tdraft.mode==="exam"&&!S.tdraft.due) S.tdraft.due=addDays(todayISO(),7); render(); scrollTo(0,0); });
+}
+
 function renderStaff(a){
   a.className="wrap wide staff";
   const sc=S.cscreen;
   const nav=staffNavHTML(sc);
   let body="";
-  if(sc==="compose") body=composeHTML(); else if(sc==="inventory") body=inventoryHTML(); else if(sc==="tasks") body=tasksHTML(); else if(sc==="accounts") body=accountsHTML(); else if(sc==="news") body=newsAdminHTML(); else if(sc==="team") body=teamHTML(); else if(sc==="settings") body=settingsHTML(); else if(sc==="help") body=staffHelpHTML(); else if(sc==="leaves") body=leavesHTML(); else if(sc==="patients") body=patientsHTML(); else if(sc==="messages") body=teamHTML2(); else if(sc==="templates") body=templatesHTML(); else if(sc==="binder") body=binderHTML(); else if(sc==="desk") body=deskHTML(); else if(sc==="waitlist") body=waitlistHTML(); else if(sc==="fiches") body=fichesHTML(); else if(sc==="infos") body=infosHTML(); else if(sc==="feedback"&&isAdmin()) body=feedbackHTML(); else if(sc==="annonces"&&isAdmin()) body=annoncesHTML(); else if(sc==="hours"&&canOffice()) body=hoursHTML(); else if(sc==="cash"&&canOffice()) body=cashHTML(); else body=inboxHTML();
+  if(sc==="dash") body=dashHTML(); else if(sc==="compose") body=composeHTML(); else if(sc==="inventory") body=inventoryHTML(); else if(sc==="tasks") body=tasksHTML(); else if(sc==="accounts") body=accountsHTML(); else if(sc==="news") body=newsAdminHTML(); else if(sc==="team") body=teamHTML(); else if(sc==="settings") body=settingsHTML(); else if(sc==="help") body=staffHelpHTML(); else if(sc==="leaves") body=leavesHTML(); else if(sc==="patients") body=patientsHTML(); else if(sc==="messages") body=teamHTML2(); else if(sc==="templates") body=templatesHTML(); else if(sc==="binder") body=binderHTML(); else if(sc==="desk") body=deskHTML(); else if(sc==="waitlist") body=waitlistHTML(); else if(sc==="fiches") body=fichesHTML(); else if(sc==="infos") body=infosHTML(); else if(sc==="feedback"&&isAdmin()) body=feedbackHTML(); else if(sc==="annonces"&&isAdmin()) body=annoncesHTML(); else if(sc==="hours"&&canOffice()) body=hoursHTML(); else if(sc==="cash"&&canOffice()) body=cashHTML(); else body=inboxHTML();
   document.body.classList.add("hasbar","sidenav"); document.body.classList.remove("ddopen");
-  a.innerHTML=nav+urgBannerHTML()+annBannerHTML()+(sc==="inbox"||sc==="messages"?bdayBannerHTML():"")+body;
+  a.innerHTML=nav+(sc==="dash"?"":urgBannerHTML()+annBannerHTML())+(sc==="inbox"||sc==="messages"?bdayBannerHTML():"")+body;
   bindAnnBanner();
   $$("[data-bdwrite]").forEach(b=>b.onclick=()=>writeTo(b.dataset.bdwrite));
   if(!S.bdLoaded&&!S.bdLoading){ S.bdLoading=true; loadBirthdays().then(()=>{ S.bdLoading=false; const el=document.activeElement;
@@ -2943,7 +3008,7 @@ function renderStaff(a){
   $$("[data-dd]").forEach(b=>b.onclick=e=>{ e.stopPropagation(); openDD(b.dataset.dd); });
   const bk=$(".ddback"); if(bk) bk.onclick=closeDD;
   $$("[data-cs]").forEach(b=>b.onclick=()=>{ closeDD(); if(CREC&&b.dataset.cs!=="compose") composeRecStop(false); S.cscreen=b.dataset.cs; render(); window.scrollTo(0,0); });
-  if(sc==="compose") bindCompose(); else if(sc==="inventory") bindInventory(); else if(sc==="tasks") bindTasks(); else if(sc==="accounts") bindAccounts(); else if(sc==="news") bindNewsAdmin(); else if(sc==="team") bindTeam(); else if(sc==="settings") bindSettings(); else if(sc==="help"||sc==="leaves") {} else if(sc==="patients") bindPatients(); else if(sc==="messages") bindTeam2(); else if(sc==="templates") bindTemplates(); else if(sc==="binder") bindBinder(); else if(sc==="desk") bindDesk(); else if(sc==="waitlist"){ if(S.waitlist) bindWaitlist(); } else if(sc==="fiches") bindFiches(); else if(sc==="infos") bindInfos(); else if(sc==="feedback"&&isAdmin()) bindFeedback(); else if(sc==="annonces"&&isAdmin()) bindAnnonces(); else if(sc==="hours"&&canOffice()) bindHours(); else if(sc==="cash"&&canOffice()) bindCash(); else bindInbox();
+  if(sc==="dash") bindDash(); else if(sc==="compose") bindCompose(); else if(sc==="inventory") bindInventory(); else if(sc==="tasks") bindTasks(); else if(sc==="accounts") bindAccounts(); else if(sc==="news") bindNewsAdmin(); else if(sc==="team") bindTeam(); else if(sc==="settings") bindSettings(); else if(sc==="help"||sc==="leaves") {} else if(sc==="patients") bindPatients(); else if(sc==="messages") bindTeam2(); else if(sc==="templates") bindTemplates(); else if(sc==="binder") bindBinder(); else if(sc==="desk") bindDesk(); else if(sc==="waitlist"){ if(S.waitlist) bindWaitlist(); } else if(sc==="fiches") bindFiches(); else if(sc==="infos") bindInfos(); else if(sc==="feedback"&&isAdmin()) bindFeedback(); else if(sc==="annonces"&&isAdmin()) bindAnnonces(); else if(sc==="hours"&&canOffice()) bindHours(); else if(sc==="cash"&&canOffice()) bindCash(); else bindInbox();
 }
 
 /* ----- durée estimée des rendez-vous de médecine générale (visible par l'équipe seulement) ----- */
@@ -4053,7 +4118,7 @@ function taskTRowHTML(t,V){
     ${canRem?`<label class="tremind${t.remind_days!=null?" on":""}" title="Rappel par e-mail à 8 h à la personne qui doit faire la tâche"><span aria-hidden="true">🔔</span><select data-trem="${t.id}" aria-label="Rappel par e-mail"><option value="">Pas de rappel avant l'échéance</option>${remindOpts(t.remind_days)}</select>${t.reminded_at?`<em>envoyé</em>`:""}</label>`:""}
     <small>Pour : ${esc(taskForLabel(t))}${t.created_by===S.me.id&&!t.done_at?` <button type="button" class="linkbtn tppl" data-tppl="${t.id}">👥 Personnes</button>`:""} · de ${esc(teamName(t.created_by))} · ${ex&&t.exam_requested?"demandé le "+fmtDate(t.exam_requested+"T12:00"):"créée "+fmt(t.created_at)}${t.done_at?` · faite ${fmt(t.done_at)} par ${esc(teamName(t.done_by))}`:""}</small></div>
     ${t.created_by===S.me.id?`<button class="linkbtn tdel" data-tdel="${t.id}">Supprimer</button>`:""}</div>`;
-  return `<div class="trow pr-${p}${t.done_at?" done":""}${late?" late":""}${open?" open":""}" role="row">
+  return `<div class="ttr pr-${p}${t.done_at?" done":""}${late?" late":""}${open?" open":""}" role="row">
     <span class="tcc" role="cell"><button class="tcheck" data-tdone="${t.id}" aria-pressed="${!!t.done_at}" aria-label="${t.done_at?"Remettre à faire":ex?"Patient contacté : terminé":"Marquer comme faite"}" title="${t.done_at?"Remettre à faire":ex?"Patient contacté : terminé":"Faite"}">${t.done_at?"✓":""}</button></span>
     <span class="tcp" role="cell">${t.done_at?`<span class="tprio pr-${p}">${PRIO[p][0]}</span>`:`<select class="tprio pr-${p}" data-tprio="${t.id}" aria-label="Priorité">${Object.entries(PRIO).map(([k,[l]])=>`<option value="${k}" ${p===k?"selected":""}>${k==="haute"?"🔴 ":""}${l}</option>`).join("")}</select>`}</span>
     <button type="button" class="tct" role="cell" data-topen="${t.id}" aria-expanded="${open}"><b>${esc(title)}</b>${tags.length?`<small>${tags.join(" · ")}</small>`:""}</button>
@@ -4065,7 +4130,7 @@ function taskTRowHTML(t,V){
 function taskTableHTML(list,V){
   const so=S.tsort||"prio", L=V==="done"?list:[...list].sort(so==="due"?byDueP:byPrio);
   return `${V!=="done"?`<div class="tsort"><span class="hint">Trier par</span><div class="seg" role="group" aria-label="Trier par"><button type="button" data-tsort="prio" aria-pressed="${so==="prio"}">Priorité</button><button type="button" data-tsort="due" aria-pressed="${so==="due"}">Échéance</button></div></div>`:""}
-  <div class="ttable" role="table" aria-label="Tâches"><div class="trow thead" role="row"><span role="columnheader"></span><span role="columnheader">Priorité</span><span role="columnheader">Tâche</span><span role="columnheader">${V==="given"?"Pour":"De"}</span><span role="columnheader">Échéance</span><span></span></div>
+  <div class="ttable" role="table" aria-label="Tâches"><div class="ttr thead" role="row"><span role="columnheader"></span><span role="columnheader">Priorité</span><span role="columnheader">Tâche</span><span role="columnheader">${V==="given"?"Pour":"De"}</span><span role="columnheader">Échéance</span><span></span></div>
   ${L.map(t=>taskTRowHTML(t,V)).join("")}</div>`;
 }
 // ----- récapitulatif des tâches par e-mail (067) -----
@@ -4664,6 +4729,7 @@ function navGroups(){
   const nIn=S.reqs.filter(awaitingStaff).length;
   const G=[
    {h:"Patients",it:[
+     {cs:"dash",ic:SI.dash,t:"Tableau de bord"},
      {cs:"inbox",ic:SI.inbox,t:"Demandes",n:nIn,hot:myUrgent().length},
      {cs:"compose",ic:SI.pen,t:"Écrire à un patient"},
      {cs:"patients",ic:IC.user,t:"Fiches patients"},
