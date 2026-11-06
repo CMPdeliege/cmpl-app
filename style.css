@@ -1963,3 +1963,4 @@ select.tprio,span.tprio{font:inherit;font-size:12.5px;font-weight:700;border:1.5
 @media (min-width:900px){.updbox{left:auto;right:24px;bottom:24px;transform:none}}
 .calpanel p{margin:4px 0 8px;font-size:14px}
 .calbtns{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 8px}.calbtns a.btn{text-decoration:none;display:inline-flex;align-items:center}
+.calbtn{font-weight:700}.calbtn.on{color:var(--ok)}.calhint{font-size:12.5px}
