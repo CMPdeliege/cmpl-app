@@ -897,7 +897,7 @@ async function loadStaff(){
   S.reqs = rq.data||[];
   const ids=[...new Set(S.reqs.map(r=>r.patient_id))];
   const tasks=[];
-  if(ids.length) tasks.push(sb.from("profiles").select("id,first_name,last_name,birth_date,phone,extra_contacts,contact_note").in("id",ids).then(r=>{ for(const p of r.data||[]) S.profiles[p.id]=p; }));
+  if(ids.length) tasks.push(sb.from("profiles").select("id,first_name,last_name,birth_date,phone,extra_contacts,contact_note,lang").in("id",ids).then(r=>{ for(const p of r.data||[]) S.profiles[p.id]=p; }));
   if(isAdminP(S.me)) tasks.push(sb.from("profiles").select("id,first_name,last_name,birth_date,phone,created_at").eq("role","patient").eq("status","pending").order("created_at").then(r=>S.pending=r.data||[]));
   tasks.push(sb.from("profiles").select("id,first_name,last_name,role,provider_id,status,created_at,is_admin").neq("role","patient").then(r=>S.team=r.data||[]));
   tasks.push(sb.from("motif_durations").select("motif,minutes").then(r=>{ S.durations=Object.fromEntries((r.data||[]).map(d=>[d.motif,d.minutes])); }));
@@ -2088,7 +2088,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261106g";
+const APP_VERSION="20261107a";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -2948,6 +2948,10 @@ function staffHelpHTML(){
    ["Mercis, emoji et couleur","Sur le tableau de bord, « ＋ Dire merci » pour remercier un collègue : il reçoit une notification et le merci reste affiché deux semaines. Dans Réglages, choisissez votre emoji et votre couleur (affichés à côté de votre nom) et activez ou non les petites célébrations."],
    ["Tableau de bord","Sur ordinateur, l'app s'ouvre sur le tableau de bord : vos demandes à traiter (les urgentes en premier), vos tâches, les messages de l'équipe non lus, les examens à suivre et ce qui se passe aujourd'hui au centre (absences, anniversaires, annonces, inventaire). Touchez un compteur ou une ligne pour y aller. Sur téléphone, l'app s'ouvre toujours sur les demandes ; le tableau de bord est dans « Plus »."],
    ["Annonces importantes (administrateurs)","Le centre → Annonces importantes : choisissez pour qui (équipe, patients ou tout le monde), un titre, un message et jusqu'à quand. L'annonce s'affiche en grand à l'ouverture de l'app (chacun touche « J'ai compris »), puis reste épinglée en haut de l'écran jusqu'au dernier jour choisi. Vous voyez combien de personnes l'ont lue et pouvez l'arrêter à tout moment. Notification sur le téléphone en option ; les patients ne la reçoivent que s'ils ont accepté les annonces du centre."],
+   ["Annuaire des correspondants","Secrétariat → Annuaire : spécialistes, hôpitaux, labos, kinés, infirmiers… avec téléphones (touchez pour appeler), e-mail, adresse et remarques (« délai 3 semaines », « demander Nadia »). ⭐ pour les favoris, « Copier » pour coller les coordonnées dans un courrier. Sur la page d'un patient, « 📇 Ou depuis l'annuaire » ajoute un correspondant à ses contacts."],
+   ["Suivi des factures","Infos et documents → Documents : chaque facture affiche « À payer », « En retard » (échéance dépassée) ou « Payée le… ». Le filtre « Impayées » donne le total à encaisser. « ✓ Payée » enregistre la date du paiement ; « 📄 Rappel » prépare une lettre de rappel (PDF) à envoyer au destinataire."],
+   ["Statistiques du mois (administrateurs)","Le centre → Statistiques : demandes reçues, délai de première réponse, part des demandes traitées dans le délai annoncé, répartition par type, par prestataire, par heure et par jour, comparées au mois précédent. Aucun nom de patient."],
+   ["Journal et sauvegarde (administrateurs)","Le centre → Journal et sauvegarde : qui a ouvert quelle demande, écrit, classé, transféré, modifié un compte, affiché un mot de passe, créé ou annulé un reçu, sur les 3 derniers mois (export Excel possible). « Télécharger la sauvegarde » produit un fichier Excel des patients, pages patients, annuaire, tâches et factures : à garder sur un ordinateur protégé du centre. Un rappel arrive le 1er de chaque mois."],
    ["Face ID sur l'iPhone","Dans l'app iPhone : Mon profil et notifications → Face ID. Ensuite l'app se déverrouille avec votre visage, sans code."],
    ["Un problème avec l'app","Prévenez l'administrateur du centre en précisant l'écran concerné (une capture d'écran aide beaucoup)."]];
   return `<div class="chead"><div><h1>Aide</h1><p>Les réponses aux questions les plus fréquentes de l'équipe.</p></div></div>
@@ -3338,7 +3342,7 @@ function pfileHTML(){
         <div class="row2"><label class="fld">Rôle<input type="text" list="pf-roles" data-f="role" maxlength="40" value="${esc(c.role||"")}" placeholder="Infirmière à domicile"></label><label class="fld">Nom<input type="text" data-f="name" maxlength="100" value="${esc(c.name||"")}" placeholder="Julie, Soins à domicile Anderlecht"></label></div>
         <div class="row2"><label class="fld">Téléphone<input type="tel" data-f="phone" maxlength="40" value="${esc(c.phone||"")}"></label><label class="fld">E-mail<input type="email" data-f="email" maxlength="160" value="${esc(c.email||"")}"></label></div>
         <div class="pfcrow"><label class="fld">Remarque<input type="text" data-f="note" maxlength="200" value="${esc(c.note||"")}" placeholder="Passe le mardi et le vendredi"></label><button type="button" class="linkbtn tdel" data-pfcdel="${n}">Retirer</button></div></div>`).join("")}
-      ${E.contacts.length<10?`<button type="button" class="btn ghost" id="pf-cadd">＋ Ajouter un contact</button>`:""}
+      ${E.contacts.length<10?`<div class="pfcadd"><button type="button" class="btn ghost" id="pf-cadd">＋ Ajouter un contact</button>${S.dir&&S.dir.length?`<label class="fld pfdir">📇 Ou depuis l'annuaire<select id="pf-dir"><option value="">— Choisir —</option>${S.dir.slice().sort((a,b)=>a.name.localeCompare(b.name,"fr")).map(d=>`<option value="${d.id}">${esc(d.name)}${d.specialty?` · ${esc(d.specialty)}`:""}${d.org?` · ${esc(d.org)}`:""}</option>`).join("")}</select></label>`:""}</div>`:""}
       <p class="hint">Visible uniquement par l'équipe du centre. Pas d'informations médicales : le dossier médical reste dans CareConnect.</p>
       <div class="btnrow"><button type="button" class="btn" id="pf-save">Enregistrer</button><button type="button" class="btn ghost" id="pf-x">Annuler</button></div></section>`:"";
   const own=k==="p"?p:parent;
@@ -3379,6 +3383,10 @@ function bindPfile(){
   const sync=()=>{ E.street=$("#pf-street").value; E.postal_code=$("#pf-postal").value; E.city=$("#pf-city").value; E.note=$("#pf-note").value;
     $$("[data-pfc]").forEach(row=>{ const c=E.contacts[+row.dataset.pfc]; row.querySelectorAll("[data-f]").forEach(x=>c[x.dataset.f]=x.value); }); };
   $$(".pfform input,.pfform textarea").forEach(x=>x.oninput=sync);
+  if(E&&!S.dirLoaded&&!S.dirLoading){ S.dirLoading=true; loadDirectory().finally(()=>{ S.dirLoading=false; if(S.cscreen==="pfile"&&S.pfEdit===E&&S.dir.length&&!isTyping()) render(); }); }
+  const pd=$("#pf-dir"); if(pd) pd.onchange=()=>{ const d=S.dir.find(x=>x.id===+pd.value); if(!d) return; sync();
+    const c={role:(d.specialty||dirCat(d.category)[2]).slice(0,40),name:[d.name,d.org].filter(Boolean).join(", ").slice(0,100),phone:d.phone||d.phone2||"",email:d.email||"",note:""};
+    const last=E.contacts[E.contacts.length-1]; if(last&&!Object.values(last).some(v=>(v||"").trim())) E.contacts[E.contacts.length-1]=c; else E.contacts.push(c); render(); };
   const ca=$("#pf-cadd"); if(ca) ca.onclick=()=>{ sync(); E.contacts.push({}); render(); $$("[data-pfc]").slice(-1)[0]?.querySelector("input")?.focus(); };
   $$("[data-pfcdel]").forEach(b=>b.onclick=()=>{ sync(); E.contacts.splice(+b.dataset.pfcdel,1); render(); });
   $("#pf-x").onclick=()=>{ S.pfEdit=null; render(); };
@@ -3391,6 +3399,9 @@ function bindPfile(){
 }
 
 S.hoRead=new Set(); S.hos=[];
+SI.contacts='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6z"/><path d="M4 7h4M4 12h4M4 17h4"/><circle cx="13" cy="10" r="2.5"/><path d="M9.5 17c.6-2 2-3 3.5-3s2.9 1 3.5 3"/></svg>';
+SI.stats='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg>';
+SI.shield='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8.2-8 9-4.6-.8-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg>';
 SI.poll='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>';
 SI.coffee='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9h12v5a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z"/><path d="M16 11h1.5a2.5 2.5 0 0 1 0 5H16"/><path d="M8 3c0 1.5 1 1.5 1 3M12 3c0 1.5 1 1.5 1 3"/></svg>';
 SI.house='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10v10h13V10"/><path d="M10 20v-5h4v5"/></svg>';
@@ -3454,7 +3465,7 @@ function bindPpick(P,id,onPick){
 const staffOpts = (cur,withMe=true) => activeStaff().filter(t=>withMe||t.id!==S.me.id).map(t=>`<option value="${t.id}" ${cur===t.id?"selected":""}>${esc(t.id===S.me.id?"Moi":staffName(t.id))}</option>`).join("");
 
 /* ----- PDF texte simple (procès-verbal…) ----- */
-async function textPdf(title, sub, blocks){
+async function textPdf(title, sub, blocks, opts={}){
   const W=595.28, H=841.89, M=50, CW=W-2*M, pages=[]; let ops=[], y=0;
   const RED="0.439 0.149 0.161", GOLD="0.624 0.510 0.282", GREY="0.43 0.37 0.36", INK="0.17 0.11 0.11";
   const newPage=()=>{ ops=[]; pages.push(ops); y=H-M; };
@@ -3477,7 +3488,7 @@ async function textPdf(title, sub, blocks){
   obj(2,()=>push(`<< /Type /Pages /Kids [${pages.map((_,i)=>`${P0+i*2} 0 R`).join(" ")}] /Count ${N} >>`));
   obj(3,()=>push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>"));
   obj(4,()=>push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>"));
-  pages.forEach((o,i)=>{ y=M-4; ops=o; text(winText(`Document interne · Page ${i+1}/${N}`),M,8,{color:GREY}); const cs=o.join("\n");
+  pages.forEach((o,i)=>{ y=M-4; ops=o; text(winText(`${opts.footer||"Document interne"} · Page ${i+1}/${N}`),M,8,{color:GREY}); const cs=o.join("\n");
     obj(P0+i*2,()=>push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${W} ${H}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${P0+i*2+1} 0 R >>`));
     obj(P0+i*2+1,()=>push(`<< /Length ${cs.length} >>\nstream\n${cs}\nendstream`)); });
   const xref=len; let x=`xref\n0 ${total}\n0000000000 65535 f \n`; for(let n=1;n<total;n++) x+=String(offs[n]).padStart(10,"0")+" 00000 n \n";
@@ -4000,7 +4011,7 @@ function renderStaff(a){
   const sc=S.cscreen;
   const nav=staffNavHTML(sc);
   let body="";
-  if(sc==="dash") body=dashHTML(); else if(sc==="pfile") body=pfileHTML(); else if(sc==="visits") body=visitsHTML(); else if(sc==="handovers") body=handoversHTML(); else if(sc==="rooms") body=roomsHTML(); else if(sc==="checklists") body=checklistsHTML(); else if(sc==="meetings") body=meetingsHTML(); else if(sc==="pause") body=pauseHTML(); else if(sc==="polls") body=pollsHTML(); else if(sc==="compose") body=composeHTML(); else if(sc==="inventory") body=inventoryHTML(); else if(sc==="tasks") body=tasksHTML(); else if(sc==="accounts") body=accountsHTML(); else if(sc==="news") body=newsAdminHTML(); else if(sc==="team") body=teamHTML(); else if(sc==="settings") body=settingsHTML(); else if(sc==="help") body=staffHelpHTML(); else if(sc==="leaves") body=leavesHTML(); else if(sc==="patients") body=patientsHTML(); else if(sc==="messages") body=teamHTML2(); else if(sc==="templates") body=templatesHTML(); else if(sc==="binder") body=binderHTML(); else if(sc==="desk") body=deskHTML(); else if(sc==="waitlist") body=waitlistHTML(); else if(sc==="fiches") body=fichesHTML(); else if(sc==="infos") body=infosHTML(); else if(sc==="feedback"&&isAdmin()) body=feedbackHTML(); else if(sc==="annonces"&&isAdmin()) body=annoncesHTML(); else if(sc==="hours"&&canOffice()) body=hoursHTML(); else if(sc==="cash"&&canOffice()) body=cashHTML(); else body=inboxHTML();
+  if(sc==="dash") body=dashHTML(); else if(sc==="pfile") body=pfileHTML(); else if(sc==="visits") body=visitsHTML(); else if(sc==="handovers") body=handoversHTML(); else if(sc==="rooms") body=roomsHTML(); else if(sc==="checklists") body=checklistsHTML(); else if(sc==="meetings") body=meetingsHTML(); else if(sc==="pause") body=pauseHTML(); else if(sc==="polls") body=pollsHTML(); else if(sc==="directory") body=directoryHTML(); else if(sc==="stats"&&isAdmin()) body=statsHTML(); else if(sc==="journal"&&isAdmin()) body=journalHTML(); else if(sc==="compose") body=composeHTML(); else if(sc==="inventory") body=inventoryHTML(); else if(sc==="tasks") body=tasksHTML(); else if(sc==="accounts") body=accountsHTML(); else if(sc==="news") body=newsAdminHTML(); else if(sc==="team") body=teamHTML(); else if(sc==="settings") body=settingsHTML(); else if(sc==="help") body=staffHelpHTML(); else if(sc==="leaves") body=leavesHTML(); else if(sc==="patients") body=patientsHTML(); else if(sc==="messages") body=teamHTML2(); else if(sc==="templates") body=templatesHTML(); else if(sc==="binder") body=binderHTML(); else if(sc==="desk") body=deskHTML(); else if(sc==="waitlist") body=waitlistHTML(); else if(sc==="fiches") body=fichesHTML(); else if(sc==="infos") body=infosHTML(); else if(sc==="feedback"&&isAdmin()) body=feedbackHTML(); else if(sc==="annonces"&&isAdmin()) body=annoncesHTML(); else if(sc==="hours"&&canOffice()) body=hoursHTML(); else if(sc==="cash"&&canOffice()) body=cashHTML(); else body=inboxHTML();
   document.body.classList.add("hasbar","sidenav"); document.body.classList.remove("ddopen");
   a.innerHTML=nav+(sc==="dash"?"":urgBannerHTML()+annBannerHTML())+(sc==="inbox"||sc==="messages"?bdayBannerHTML():"")+body;
   bindAnnBanner();
@@ -4018,7 +4029,7 @@ function renderStaff(a){
   $$("[data-dd]").forEach(b=>b.onclick=e=>{ e.stopPropagation(); openDD(b.dataset.dd); });
   const bk=$(".ddback"); if(bk) bk.onclick=closeDD;
   $$("[data-cs]").forEach(b=>b.onclick=()=>{ closeDD(); if(CREC&&b.dataset.cs!=="compose") composeRecStop(false); S.cscreen=b.dataset.cs; render(); window.scrollTo(0,0); });
-  if(sc==="dash") bindDash(); else if(sc==="pfile") bindPfile(); else if(sc==="visits") bindVisits(); else if(sc==="handovers") bindHandovers(); else if(sc==="rooms") bindRooms(); else if(sc==="checklists") bindChecklists(); else if(sc==="meetings") bindMeetings(); else if(sc==="pause") bindPause(); else if(sc==="polls") bindPolls(); else if(sc==="compose") bindCompose(); else if(sc==="inventory") bindInventory(); else if(sc==="tasks") bindTasks(); else if(sc==="accounts") bindAccounts(); else if(sc==="news") bindNewsAdmin(); else if(sc==="team") bindTeam(); else if(sc==="settings") bindSettings(); else if(sc==="help"||sc==="leaves") {} else if(sc==="patients") bindPatients(); else if(sc==="messages") bindTeam2(); else if(sc==="templates") bindTemplates(); else if(sc==="binder") bindBinder(); else if(sc==="desk") bindDesk(); else if(sc==="waitlist"){ if(S.waitlist) bindWaitlist(); } else if(sc==="fiches") bindFiches(); else if(sc==="infos") bindInfos(); else if(sc==="feedback"&&isAdmin()) bindFeedback(); else if(sc==="annonces"&&isAdmin()) bindAnnonces(); else if(sc==="hours"&&canOffice()) bindHours(); else if(sc==="cash"&&canOffice()) bindCash(); else bindInbox();
+  if(sc==="dash") bindDash(); else if(sc==="pfile") bindPfile(); else if(sc==="visits") bindVisits(); else if(sc==="handovers") bindHandovers(); else if(sc==="rooms") bindRooms(); else if(sc==="checklists") bindChecklists(); else if(sc==="meetings") bindMeetings(); else if(sc==="pause") bindPause(); else if(sc==="polls") bindPolls(); else if(sc==="directory") bindDirectory(); else if(sc==="stats"&&isAdmin()) bindStats(); else if(sc==="journal"&&isAdmin()) bindJournal(); else if(sc==="compose") bindCompose(); else if(sc==="inventory") bindInventory(); else if(sc==="tasks") bindTasks(); else if(sc==="accounts") bindAccounts(); else if(sc==="news") bindNewsAdmin(); else if(sc==="team") bindTeam(); else if(sc==="settings") bindSettings(); else if(sc==="help"||sc==="leaves") {} else if(sc==="patients") bindPatients(); else if(sc==="messages") bindTeam2(); else if(sc==="templates") bindTemplates(); else if(sc==="binder") bindBinder(); else if(sc==="desk") bindDesk(); else if(sc==="waitlist"){ if(S.waitlist) bindWaitlist(); } else if(sc==="fiches") bindFiches(); else if(sc==="infos") bindInfos(); else if(sc==="feedback"&&isAdmin()) bindFeedback(); else if(sc==="annonces"&&isAdmin()) bindAnnonces(); else if(sc==="hours"&&canOffice()) bindHours(); else if(sc==="cash"&&canOffice()) bindCash(); else bindInbox();
 }
 
 /* ----- durée estimée des rendez-vous de médecine générale (visible par l'équipe seulement) ----- */
@@ -4215,6 +4226,7 @@ function bindDetail(){
   $$("[data-prio]").forEach(b=>b.onclick=async()=>{ if(await run(()=>sb.rpc("set_request_priority",{p_id:r.id,p_priority:b.dataset.prio}),`Priorité : ${PRIO_LABEL[b.dataset.prio]}`)) await refresh(); });
   $$("[data-dec]").forEach(b=>b.onclick=()=>{ const [id,d]=b.dataset.dec.split(":"); dec[id]=dec[id]===d?undefined:d; if(!dec[id]) delete dec[id]; render(); });
   close.onclick=async()=>{ close.disabled=true; const text=($("#c-text")?.value||"").trim();
+
     const decisions={}; for(const [k,v] of Object.entries(dec)) decisions[k]=v;
     if(await run(()=>sb.rpc("close_request",{p_id:r.id,p_body:text||null,p_decisions:decisions}),"Conversation classée")){ S.drafts[key]=""; delete S.drafts["d"+r.id]; clearPend(); await refresh(); } else close.disabled=false; };
   const sn=$("#seen"); if(sn) sn.onclick=async()=>{ sn.disabled=true; if(await run(()=>sb.rpc("mark_request_seen",{p_id:r.id}),"Patient prévenu : demande vue")) await refresh(); else sn.disabled=false; };
@@ -4741,7 +4753,8 @@ const docFileName = d => `${d.kind==="recu"?"Recu":"Facture"}-${d.number}.pdf`;
 async function loadInfos(){
   const [c,dc,pi,se]=await Promise.all([
     sb.from("center_info").select("data").maybeSingle(),
-    sb.from("office_docs").select("id,kind,year,seq,number,doc_date,party,amount,method,data,created_by,created_at,cancelled_at,cancelled_by,cancel_reason").order("created_at",{ascending:false}).limit(500),
+    Promise.resolve(sb.from("office_docs").select("id,kind,year,seq,number,doc_date,party,amount,method,data,created_by,created_at,cancelled_at,cancelled_by,cancel_reason,paid_at,paid_by,paid_note,reminded_at").order("created_at",{ascending:false}).limit(500))
+      .then(r=>{ S.invOk=!r.error; return r.error?sb.from("office_docs").select("id,kind,year,seq,number,doc_date,party,amount,method,data,created_by,created_at,cancelled_at,cancelled_by,cancel_reason").order("created_at",{ascending:false}).limit(500):r; }),
     sb.from("provider_info").select("*"),
     canOffice()?sb.from("office_secrets").select("id,label,url,username,notes,updated_by,updated_at").order("label"):Promise.resolve({data:[]})]);
   S.infoOk=!c.error; if(c.data) S.centerInfo=c.data.data;
@@ -4832,13 +4845,16 @@ function doneHTML(dc){
 /* --- documents créés --- */
 function docsHTML(){
   const I=S.inf, f=I.dfil||"tout", q=norm(I.dq||"").split(/\s+/).filter(Boolean);
-  const L=(S.offDocs||[]).filter(d=>f==="tout"||d.kind===f).filter(d=>!q.length||q.every(w=>norm(`${d.number} ${d.party} ${d.method||""} ${eur(d.amount)}`).includes(w)));
+  const U=invUnpaid(), uLate=U.filter(d=>invState(d)==="late").length;
+  const L=(S.offDocs||[]).filter(d=>f==="tout"||(f==="impayees"?U.includes(d):d.kind===f)).filter(d=>!q.length||q.every(w=>norm(`${d.number} ${d.party} ${d.method||""} ${eur(d.amount)}`).includes(w)));
   return `<div class="stktools"><input id="doc-q" type="search" class="pcq" placeholder="Rechercher : nom, numéro, montant…" value="${esc(I.dq||"")}" aria-label="Rechercher un document">
-    <div class="pchips">${[["tout","Tous"],["recu","Reçus"],["facture","Factures"]].map(([k,l])=>`<button type="button" class="pchip" data-dfil="${k}" aria-pressed="${f===k}">${l}</button>`).join("")}</div></div>
+    <div class="pchips">${[["tout","Tous"],["recu","Reçus"],["facture","Factures"],...(S.invOk!==false?[["impayees",`Impayées${U.length?` <i>${U.length}</i>`:""}`]]:[])].map(([k,l])=>`<button type="button" class="pchip${k==="impayees"&&uLate?" late":""}" data-dfil="${k}" aria-pressed="${f===k}">${l}</button>`).join("")}</div></div>
+   ${f==="impayees"&&U.length?`<p class="invsum">${U.length} facture${U.length>1?"s":""} à encaisser · total <b>${eur(U.reduce((a,d)=>a+(Number(d.amount)||0),0))}</b>${uLate?` · <b class="invst late">${uLate} en retard</b>`:""}</p>`:""}
    <div class="list doclist">${L.map(d=>`<div class="docrow${d.cancelled_at?" cancelled":""}"><div class="dic" aria-hidden="true">${d.kind==="recu"?"🧾":"📄"}</div>
-     <div class="dtx"><b>${esc(d.number)} · ${esc(d.party.split("\n")[0])}</b><small>${fmtDate(d.doc_date+"T12:00")} · ${eur(d.amount)}${d.method?` · ${esc(d.method)}`:""} · par ${esc(teamName(d.created_by))}${d.cancelled_at?` · <b class="stkst exp">Annulé</b> ${esc(d.cancel_reason||"")}`:""}</small></div>
-     <div class="dacts"><button type="button" class="mini" data-docopen="${d.id}">Ouvrir</button>${d.cancelled_at?"":`<button type="button" class="linkbtn" data-doccancel="${d.id}">Annuler</button>`}</div>
-     ${I.cancel===d.id?`<div class="doccancel"><input id="dc-reason" maxlength="300" placeholder="Pourquoi ? (ex. erreur de montant)"><button type="button" class="btn ghost" id="dc-ok">Confirmer l'annulation</button></div>`:""}</div>`).join("")||`<div class="empty">${q.length?"Rien ne correspond.":"Aucun document pour l'instant."}</div>`}</div>
+     <div class="dtx"><b>${esc(d.number)} · ${esc(d.party.split("\n")[0])}</b><small>${fmtDate(d.doc_date+"T12:00")} · ${eur(d.amount)}${d.method?` · ${esc(d.method)}`:""} · par ${esc(teamName(d.created_by))}${d.cancelled_at?` · <b class="stkst exp">Annulé</b> ${esc(d.cancel_reason||"")}`:""}${invBadge(d)}</small></div>
+     <div class="dacts">${invActs(d)}<button type="button" class="mini" data-docopen="${d.id}">Ouvrir</button>${d.cancelled_at||d.paid_at?"":`<button type="button" class="linkbtn" data-doccancel="${d.id}">Annuler</button>`}</div>
+     ${I.pay===d.id?`<div class="doccancel invpay"><label class="hint">Payée le <input type="date" id="ip-date" value="${todayISO()}" max="${todayISO()}"></label><input id="ip-note" maxlength="200" placeholder="Remarque (facultatif) : virement du 3/11, espèces…"><button type="button" class="btn" id="ip-ok">✓ Confirmer</button><button type="button" class="btn ghost" id="ip-x">Annuler</button></div>`:""}
+     ${I.cancel===d.id?`<div class="doccancel"><input id="dc-reason" maxlength="300" placeholder="Pourquoi ? (ex. erreur de montant)"><button type="button" class="btn ghost" id="dc-ok">Confirmer l'annulation</button></div>`:""}</div>`).join("")||`<div class="empty">${q.length?"Rien ne correspond.":f==="impayees"?"Aucune facture en attente de paiement 🎉":"Aucun document pour l'instant."}</div>`}</div>
    <p class="hint">Un reçu ou une facture ne s'efface pas : en cas d'erreur, annulez-le (il reste visible, barré) et créez-en un nouveau. Gardés 10 ans.</p>`;
 }
 /* --- prestataires --- */
@@ -4961,6 +4977,7 @@ function bindInfos(){
   const dq=$("#doc-q"); if(dq){ let t; dq.oninput=()=>{ clearTimeout(t); t=setTimeout(()=>{ I.dq=dq.value; render(); const n=$("#doc-q"); n.focus(); n.setSelectionRange(n.value.length,n.value.length); },250); }; }
   $$("[data-dfil]").forEach(b=>b.onclick=()=>{ I.dfil=b.dataset.dfil; render(); });
   $$("[data-doccancel]").forEach(b=>b.onclick=()=>{ I.cancel=+b.dataset.doccancel; render(); $("#dc-reason")?.focus(); });
+  bindInvoices();
   const dok=$("#dc-ok"); if(dok) dok.onclick=async()=>{ const r=$("#dc-reason").value.trim(); if(!r) return toast("Indiquez pourquoi.");
     if(await run(()=>sb.rpc("cancel_office_doc",{p_id:I.cancel,p_reason:r}),"Document annulé")){ const d=S.offDocs.find(x=>x.id===I.cancel); if(d){ d.cancelled_at=new Date().toISOString(); d.cancel_reason=r; d.cancelled_by=S.me.id; } I.cancel=null; render(); } };
   // prestataires
@@ -5796,6 +5813,273 @@ SI.dot='<svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><circ
 SI.pin='<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17v5"/><path d="M9 3h6l-1 6 4 3v2H6v-2l4-3z"/></svg>';
 
 /* ---------- navigation par rubriques ---------- */
+/* ===================== Annuaire des correspondants ===================== */
+const DIR_CATS=[["specialiste","🩺","Spécialistes"],["hopital","🏥","Hôpitaux"],["labo","🧪","Laboratoires"],["imagerie","🩻","Imagerie"],["kine","🤸","Kinés"],["infirmier","💉","Infirmiers à domicile"],["maison_repos","🏡","Maisons de repos"],["pharmacie","💊","Pharmacies"],["paramedical","🗣️","Paramédicaux"],["social","🤝","Social (CPAS, mutuelles…)"],["autre","📌","Autres"]];
+const dirCat=k=>DIR_CATS.find(c=>c[0]===k)||DIR_CATS[DIR_CATS.length-1];
+async function loadDirectory(){ const {data,error}=await sb.from("directory").select("*").order("name"); S.dirOk=!error; S.dir=error?[]:(data||[]); S.dirLoaded=true; }
+const webHref=u=>/^https?:\/\//i.test(u)?u:"https://"+u;
+const dirText=d=>[d.name,[d.specialty,d.org].filter(Boolean).join(" · "),d.phone&&("Tél. "+d.phone),d.phone2&&("Tél. "+d.phone2),d.fax&&("Fax "+d.fax),d.email,d.address,d.website].filter(Boolean).join("\n");
+function directoryHTML(){
+  const head=`<div class="chead"><div><h1>📇 Annuaire</h1><p>Les correspondants du centre : spécialistes, hôpitaux, labos, kinés, infirmiers… Un seul carnet d'adresses pour toute l'équipe.</p></div></div>`;
+  if(!S.dirLoaded) return head+`<p class="hint">Chargement…</p>`;
+  if(!S.dirOk) return head+`<div class="err">L'annuaire sera disponible après la mise à jour de la base de données (migration 073).</div>`;
+  const D=S.dirUi||(S.dirUi={cat:"",q:""}), F=S.dirForm;
+  const q=norm(D.q||"").split(/\s+/).filter(Boolean);
+  const L=S.dir.filter(d=>!D.cat||(D.cat==="fav"?d.favorite:d.category===D.cat))
+    .filter(d=>!q.length||q.every(w=>norm(`${d.name} ${d.specialty||""} ${d.org||""} ${d.address||""} ${d.note||""} ${d.phone||""} ${d.email||""} ${dirCat(d.category)[2]}`).includes(w)))
+    .sort((a,b)=>(b.favorite-a.favorite)||a.name.localeCompare(b.name,"fr"));
+  const cnt=k=>S.dir.filter(d=>d.category===k).length;
+  const inp=(id,l,v,ph,o="")=>`<label class="fld">${l}<input type="${o||"text"}" id="${id}" maxlength="${/note|addr/.test(id)?300:160}" value="${esc(v||"")}" placeholder="${esc(ph)}"></label>`;
+  const form=F?`<section class="card dirform"><h3>${F.id?"Modifier le contact":"Nouveau contact"}</h3>
+    <div class="row2">${inp("dr-name","Nom",F.name,"Dr Claire Martin")}<label class="fld">Catégorie<select id="dr-cat">${DIR_CATS.map(([k,i,l])=>`<option value="${k}" ${F.category===k?"selected":""}>${i} ${l}</option>`).join("")}</select></label></div>
+    <div class="row2">${inp("dr-spec","Spécialité ou fonction",F.specialty,"Cardiologue")}${inp("dr-org","Hôpital, cabinet, service",F.org,"CHU Saint-Pierre, cardiologie")}</div>
+    <div class="row2">${inp("dr-phone","Téléphone",F.phone,"02 535 31 11","tel")}${inp("dr-phone2","Autre téléphone (secrétariat, GSM…)",F.phone2,"","tel")}</div>
+    <div class="row2">${inp("dr-email","E-mail",F.email,"","email")}${inp("dr-fax","Fax",F.fax,"")}</div>
+    <div class="row2">${inp("dr-addr","Adresse",F.address,"Rue Haute 322, 1000 Bruxelles")}${inp("dr-web","Site internet",F.website,"www.exemple.be")}</div>
+    <label class="fld">Remarques pour l'équipe<textarea id="dr-note" rows="3" maxlength="1000" placeholder="Ex. délai de rendez-vous 3 semaines, demander Nadia au secrétariat, reçoit via eHealthBox, consultations le mardi…">${esc(F.note||"")}</textarea></label>
+    <label class="chk2"><input type="checkbox" id="dr-fav" ${F.favorite?"checked":""}> ⭐ Favori (affiché en premier)</label>
+    <p class="hint">Visible par toute l'équipe, jamais par les patients.</p>
+    <div class="btnrow"><button type="button" class="btn" id="dr-save">Enregistrer</button><button type="button" class="btn ghost" id="dr-x">Annuler</button></div></section>`:"";
+  const card=d=>{ const c=dirCat(d.category); return `<article class="card dircard"><div class="dirh"><span class="dirico" aria-hidden="true">${c[1]}</span>
+     <div class="dirt"><h3>${esc(d.name)}</h3><small>${esc([d.specialty,d.org].filter(Boolean).join(" · ")||c[2])}</small></div>
+     <button type="button" class="dirstar" data-drfav="${d.id}" aria-pressed="${!!d.favorite}" title="${d.favorite?"Retirer des favoris":"Ajouter aux favoris"}" aria-label="Favori">${d.favorite?"★":"☆"}</button></div>
+    <div class="dirl">${d.phone?`<a href="${telHref(d.phone)}">📞 ${esc(d.phone)}</a>`:""}${d.phone2?`<a href="${telHref(d.phone2)}">📞 ${esc(d.phone2)}</a>`:""}${d.fax?`<span>📠 ${esc(d.fax)}</span>`:""}${d.email?`<a href="mailto:${esc(d.email)}">✉️ ${esc(d.email)}</a>`:""}${d.address?`<a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(d.address)}" target="_blank" rel="noopener">📍 ${esc(d.address)}</a>`:""}${d.website?`<a href="${esc(webHref(d.website))}" target="_blank" rel="noopener">🌐 ${esc(d.website.replace(/^https?:\/\//i,"").replace(/\/$/,""))}</a>`:""}</div>
+    ${d.note?`<p class="dirnote">${esc(d.note)}</p>`:""}
+    <div class="dirf"><small class="hint">${esc(c[2])} · modifié par ${esc(teamName(d.updated_by||d.created_by))} · ${fmt(d.updated_at)}</small><span><button type="button" class="linkbtn" data-drcopy="${d.id}">Copier</button><button type="button" class="linkbtn" data-dred="${d.id}">Modifier</button><button type="button" class="linkbtn tdel" data-drdel="${d.id}">Supprimer</button></span></div></article>`; };
+  return head+`<div class="stktools"><input id="dr-q" type="search" class="pcq" placeholder="Rechercher : nom, spécialité, hôpital, commune…" value="${esc(D.q||"")}" aria-label="Rechercher dans l'annuaire">
+     ${F?"":`<button type="button" class="btn" id="dr-new">＋ Ajouter</button>`}${S.dir.length?`<button type="button" class="btn ghost" id="dr-xlsx">⬇ Excel</button>`:""}</div>
+   <div class="pchips dirchips"><button type="button" class="pchip" data-drcat="" aria-pressed="${!D.cat}">Tous <i>${S.dir.length}</i></button>${S.dir.some(d=>d.favorite)?`<button type="button" class="pchip" data-drcat="fav" aria-pressed="${D.cat==="fav"}">⭐ Favoris</button>`:""}${DIR_CATS.filter(([k])=>cnt(k)).map(([k,i,l])=>`<button type="button" class="pchip" data-drcat="${k}" aria-pressed="${D.cat===k}">${i} ${l} <i>${cnt(k)}</i></button>`).join("")}</div>
+   ${form}
+   <div class="dirlist">${L.map(card).join("")||`<div class="empty">${q.length||D.cat?"Rien ne correspond.":"L'annuaire est vide. Ajoutez le premier correspondant !"}</div>`}</div>`;
+}
+function dirXlsx(list=S.dir){
+  const H=["Catégorie","Nom","Spécialité","Hôpital / cabinet","Téléphone","Autre téléphone","Fax","E-mail","Adresse","Site","Remarques"];
+  return xlsxTable("Annuaire",H,(list||[]).map(d=>[dirCat(d.category)[2],d.name,d.specialty,d.org,d.phone,d.phone2,d.fax,d.email,d.address,d.website,d.note]),[18,26,20,28,16,16,14,26,32,22,40]);
+}
+function bindDirectory(){
+  if(!S.dirLoaded){ if(!S.dirLoading){ S.dirLoading=true; loadDirectory().finally(()=>{ S.dirLoading=false; softRender("directory"); }); } return; }
+  const D=S.dirUi||(S.dirUi={cat:"",q:""}), reload=async()=>{ await loadDirectory(); render(); };
+  const dq=$("#dr-q"); if(dq){ let t; dq.oninput=()=>{ clearTimeout(t); t=setTimeout(()=>{ D.q=dq.value; render(); const n=$("#dr-q"); n.focus(); n.setSelectionRange(n.value.length,n.value.length); },250); }; }
+  $$("[data-drcat]").forEach(b=>b.onclick=()=>{ D.cat=b.dataset.drcat; render(); });
+  const nw=$("#dr-new"); if(nw) nw.onclick=()=>{ S.dirForm={category:D.cat&&D.cat!=="fav"?D.cat:"specialiste"}; render(); $("#dr-name")?.focus(); };
+  const xl=$("#dr-xlsx"); if(xl) xl.onclick=()=>saveFile(buildXlsxBook([dirXlsx()]),`Annuaire CMPL ${todayISO()}.xlsx`);
+  $$("[data-drcopy]").forEach(b=>b.onclick=()=>{ const d=S.dir.find(x=>x.id===+b.dataset.drcopy); if(d) copyText(dirText(d)); });
+  $$("[data-dred]").forEach(b=>b.onclick=()=>{ const d=S.dir.find(x=>x.id===+b.dataset.dred); if(!d) return; S.dirForm={...d}; render(); scrollTo({top:0,behavior:"smooth"}); $("#dr-name")?.focus(); });
+  $$("[data-drdel]").forEach(b=>b.onclick=async()=>{ if(!confirmInline(b,"Supprimer ?")) return; if(await run(()=>sb.from("directory").delete().eq("id",+b.dataset.drdel),"Contact supprimé")) await reload(); });
+  $$("[data-drfav]").forEach(b=>b.onclick=async()=>{ const d=S.dir.find(x=>x.id===+b.dataset.drfav); if(!d) return;
+    const {error}=await sb.from("directory").update({favorite:!d.favorite}).eq("id",d.id); if(error) return toast(frError(error)); d.favorite=!d.favorite; render(); });
+  const x=$("#dr-x"); if(x) x.onclick=()=>{ S.dirForm=null; render(); };
+  const sv=$("#dr-save"); if(sv) sv.onclick=async()=>{ const F=S.dirForm, v=id=>($(id)?.value||"").trim()||null;
+    const row={name:v("#dr-name"),category:$("#dr-cat").value,specialty:v("#dr-spec"),org:v("#dr-org"),phone:v("#dr-phone"),phone2:v("#dr-phone2"),fax:v("#dr-fax"),email:v("#dr-email"),address:v("#dr-addr"),website:v("#dr-web"),note:v("#dr-note"),favorite:$("#dr-fav").checked,updated_by:S.me.id,updated_at:new Date().toISOString()};
+    if(!row.name) return toast("Indiquez le nom.");
+    if(row.email&&!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(row.email)) return toast("Cet e-mail ne semble pas valide.");
+    sv.disabled=true;
+    const ok=await run(()=>F.id?sb.from("directory").update(row).eq("id",F.id):sb.from("directory").insert(row),F.id?"Contact modifié":"Contact ajouté à l'annuaire");
+    if(ok){ S.dirForm=null; await reload(); } else sv.disabled=false; };
+}
+// feuille Excel simple : une ligne de titres puis les données
+function xlsxTable(name, headers, rows, widths){
+  const cells=new Map();
+  headers.forEach((h,c)=>cells.set(`0,${c}`,{v:h,bold:true,fill:"#F3E7DA",border:true}));
+  rows.forEach((r,i)=>r.forEach((v,c)=>cells.set(`${i+1},${c}`,{v:v==null?"":typeof v==="number"?v:String(v),border:true,wrap:typeof v==="string"&&v.length>40})));
+  return [name,{cells,widths}];
+}
+
+/* ===================== Factures : suivi du paiement ===================== */
+const invState=d=>{ if(d.kind!=="facture"||d.cancelled_at) return null; if(d.paid_at) return "paid"; const e=d.data?.echeance; return e&&e<todayISO()?"late":"wait"; };
+const invUnpaid=()=>(S.offDocs||[]).filter(d=>{ const s=invState(d); return s==="wait"||s==="late"; });
+function invBadge(d){ const s=invState(d); if(!s||S.invOk===false) return "";
+  const e=d.data?.echeance, rem=d.reminded_at?` · rappel envoyé le ${fmtDate(d.reminded_at)}`:"";
+  if(s==="paid") return ` · <b class="invst ok">✓ Payée le ${fmtDate(d.paid_at+"T12:00")}</b>${d.paid_note?` (${esc(d.paid_note)})`:""}`;
+  if(s==="late") return ` · <b class="invst late">En retard · échéance ${fmtDate(e+"T12:00")}</b>${rem}`;
+  return ` · <b class="invst wait">À payer${e?` avant le ${fmtDate(e+"T12:00")}`:""}</b>${rem}`; }
+function invActs(d){ const s=invState(d); if(!s||S.invOk===false||!canOffice()) return "";
+  return s==="paid"?`<button type="button" class="linkbtn" data-invunpay="${d.id}">Annuler le paiement</button>`
+    :`<button type="button" class="mini" data-invpay="${d.id}">✓ Payée</button><button type="button" class="linkbtn" data-invrem="${d.id}">📄 Rappel</button>`; }
+async function invReminderPdf(d){
+  const C=ci(), e=d.data?.echeance, obj=d.data?.objet, today=new Date().toLocaleDateString("fr-BE",{day:"numeric",month:"long",year:"numeric"});
+  const blocks=[{h:"Destinataire"},...String(d.party||"").split("\n").filter(Boolean).map(l=>({p:l})),{rule:true},
+    {p:"Madame, Monsieur,"},
+    {p:`Sauf erreur de notre part, la facture ${d.number} du ${fmtDate(d.doc_date+"T12:00")}${obj?` (${obj})`:""}, d'un montant de ${eur(d.amount)}, ${e?`arrivée à échéance le ${fmtDate(e+"T12:00")}, `:""}n'a pas encore été réglée.`},
+    {p:`Nous vous remercions de bien vouloir effectuer le paiement dans les 15 jours, par virement sur le compte ${C.iban}${C.bic?` (BIC ${C.bic})`:""} au nom de ${C.societe}, avec la communication : ${d.number}.`},
+    {p:"Si le paiement a été effectué entre-temps, merci de ne pas tenir compte de ce rappel."},
+    {p:`Pour toute question : ${C.telephone} · ${C.email}.`},
+    {p:"Avec nos salutations distinguées,"},
+    {p:`L'administration du ${C.nom}`,bold:true}];
+  return textPdf("Rappel de paiement",[`Anderlecht, le ${today}`,`Facture ${d.number} · ${eur(d.amount)}`],blocks,{footer:`${C.nom} · ${C.societe} · BCE ${C.bce} · IBAN ${C.iban}`});
+}
+function bindInvoices(){
+  const I=S.inf;
+  $$("[data-invpay]").forEach(b=>b.onclick=()=>{ I.pay=+b.dataset.invpay; render(); $("#ip-note")?.focus(); });
+  const ix=$("#ip-x"); if(ix) ix.onclick=()=>{ I.pay=null; render(); };
+  const ok=$("#ip-ok"); if(ok) ok.onclick=async()=>{ const day=$("#ip-date").value, note=$("#ip-note").value.trim();
+    if(!day) return toast("Indiquez la date du paiement.");
+    if(await run(()=>sb.rpc("set_invoice_paid",{p_id:I.pay,p_paid:day,p_note:note||null}),"Facture marquée payée ✓")){ const d=S.offDocs.find(x=>x.id===I.pay); if(d){ d.paid_at=day; d.paid_note=note||null; d.paid_by=S.me.id; } I.pay=null; render(); } };
+  $$("[data-invunpay]").forEach(b=>b.onclick=async()=>{ if(!confirmInline(b,"Annuler le paiement ?")) return; const id=+b.dataset.invunpay;
+    if(await run(()=>sb.rpc("set_invoice_paid",{p_id:id,p_paid:null,p_note:null}),"Paiement annulé")){ const d=S.offDocs.find(x=>x.id===id); if(d){ d.paid_at=null; d.paid_note=null; } render(); } });
+  $$("[data-invrem]").forEach(b=>b.onclick=async()=>{ const d=S.offDocs.find(x=>x.id===+b.dataset.invrem); if(!d) return; b.disabled=true;
+    try{ const blob=await invReminderPdf(d); await openPdf(blob,`Rappel ${d.number}.pdf`);
+      const {error}=await sb.rpc("set_invoice_reminded",{p_id:d.id}); if(!error){ d.reminded_at=new Date().toISOString(); render(); } }
+    catch(e){ console.error(e); toast("Le rappel n'a pas pu être créé."); } finally{ b.disabled=false; } });
+}
+
+/* ===================== Statistiques du mois (administrateur) ===================== */
+const QUEUE_LABEL={secretariat:"Secrétariat",prestataires:"Prestataires",administration:"Administration"};
+const ymOf=d=>d.slice(0,7);
+const prevYm=ym=>{ const [y,m]=ym.split("-").map(Number); return m===1?`${y-1}-12`:`${y}-${String(m-1).padStart(2,"0")}`; };
+async function loadStats(ym){
+  S.stats=S.stats||{};
+  const get=async k=>{ if(S.stats[k]) return; const {data,error}=await sb.rpc("month_stats",{p_month:k+"-01"}); S.stats[k]=error?{error:frError(error)}:data; };
+  await Promise.all([get(ym),get(prevYm(ym))]);
+}
+function statsHTML(){
+  const ym=S.statYm||(S.statYm=ymOf(todayISO())), cur=S.stats?.[ym], prev=S.stats?.[prevYm(ym)];
+  const label=k=>new Date(k+"-15").toLocaleDateString("fr-BE",{month:"long",year:"numeric"});
+  const head=`<div class="chead"><div><h1>📈 Statistiques du mois</h1><p>Combien de demandes, en combien de temps on répond, qui reçoit quoi… Des chiffres d'ensemble, sans aucun nom de patient.</p></div></div>
+   <div class="stktools"><label class="fld stmonth">Mois<input type="month" id="st-month" value="${ym}" max="${ymOf(todayISO())}"></label>
+   <button type="button" class="btn ghost" id="st-prev">‹ ${esc(label(prevYm(ym)))}</button>${ym<ymOf(todayISO())?`<button type="button" class="btn ghost" id="st-next">Mois suivant ›</button>`:""}</div>`;
+  if(!cur) return head+`<p class="hint">Chargement…</p>`;
+  if(cur.error) return head+`<div class="err">${/month_stats|function/i.test(cur.error)?"Les statistiques seront disponibles après la mise à jour de la base de données (migration 073).":esc(cur.error)}</div>`;
+  const p=prev&&!prev.error?prev:null;
+  const delta=(a,b,inv)=>{ if(b==null||a==null||!p) return ""; if(!b&&!a) return ""; const d=a-b; if(!d) return `<small class="stdl">= ${esc(label(prevYm(ym)).split(" ")[0])}</small>`;
+    const good=inv?d<0:d>0; return `<small class="stdl ${good?"up":"down"}">${d>0?"▲":"▼"} ${Math.abs(d)%1?Math.abs(d).toFixed(1).replace(".",","):Math.abs(d)} vs ${esc(label(prevYm(ym)).split(" ")[0])}</small>`; };
+  const pct=(a,b)=>b?Math.round(a/b*100):0;
+  const hrs=h=>h==null?"—":h<1?`${Math.round(h*60)} min`:h<48?`${String(h).replace(".",",")} h`:`${Math.round(h/24)} j`;
+  const tile=(ic,v,l,dl="")=>`<div class="sttile"><span aria-hidden="true">${ic}</span><b>${v}</b><small>${l}</small>${dl}</div>`;
+  const onTime=cur.requests?100-pct(cur.late,cur.requests):null;
+  const bars=(obj,lab)=>{ const E=Object.entries(obj||{}).sort((a,b)=>b[1]-a[1]); const mx=Math.max(1,...E.map(e=>e[1]));
+    return E.length?E.map(([k,n])=>`<div class="stbar"><span class="stbl">${esc(lab(k))}</span><span class="stbt"><i style="width:${Math.round(n/mx*100)}%"></i></span><b>${n}</b></div>`).join(""):`<p class="hint">Rien ce mois-ci.</p>`; };
+  const hours=Array.from({length:24},(_,h)=>cur.hours?.[h]||0), hmx=Math.max(1,...hours);
+  const WD=["","Lun","Mar","Mer","Jeu","Ven","Sam","Dim"], wds=[1,2,3,4,5,6,7].map(d=>cur.weekdays?.[d]||0), wmx=Math.max(1,...wds);
+  return head+`<div class="sttiles">
+     ${tile("📥",cur.requests,"demandes reçues",delta(cur.requests,p?.requests))}
+     ${tile("⏱️",hrs(cur.median_hours),"délai de 1re réponse (médiane)",delta(cur.median_hours,p?.median_hours,true))}
+     ${tile("✅",onTime==null?"—":onTime+" %","dans le délai annoncé",p&&p.requests?delta(onTime,100-pct(p.late,p.requests)):"")}
+     ${tile("👥",cur.patients_active,"patients différents",delta(cur.patients_active,p?.patients_active))}
+     ${tile("🆕",cur.new_accounts,"nouveaux comptes patients",delta(cur.new_accounts,p?.new_accounts))}
+     ${tile("💬",cur.staff_messages,`messages de l'équipe · ${cur.patient_messages} des patients${cur.staff_started?` · ${cur.staff_started} conversation${cur.staff_started>1?"s":""} ouverte${cur.staff_started>1?"s":""} par l'équipe`:""}`,delta(cur.staff_messages,p?.staff_messages))}
+     ${tile("☑️",`${cur.tasks_done}/${cur.tasks_created}`,"tâches faites / créées")}
+     ${tile("📄",eur(cur.invoices_total),`${cur.invoices} facture${cur.invoices>1?"s":""} · reçus ${eur(cur.receipts_total)}`)}
+   </div>
+   <div class="stcols">
+     <section class="card"><h3>Par type de demande</h3>${bars(cur.by_type,k=>TYPES[k]?.label||k)}</section>
+     <section class="card"><h3>Par destinataire</h3>${bars(Object.fromEntries((cur.by_provider||[]).map(x=>[x.provider,x.n])),k=>k)}
+       <h3 style="margin-top:14px">Par file</h3>${bars(cur.by_queue,k=>QUEUE_LABEL[k]||k)}</section>
+     <section class="card"><h3>Quand les patients écrivent</h3>
+       <div class="sthours" role="img" aria-label="Demandes par heure de la journée">${hours.map((n,h)=>`<span title="${h} h : ${n}"><i style="height:${Math.round(n/hmx*100)}%"></i><small>${h%3===0?h:""}</small></span>`).join("")}</div>
+       <div class="stwd">${wds.map((n,i)=>`<div class="stbar"><span class="stbl">${WD[i+1]}</span><span class="stbt"><i style="width:${Math.round(n/wmx*100)}%"></i></span><b>${n}</b></div>`).join("")}</div></section>
+   </div>
+   <p class="hint">Délai de 1re réponse : temps entre l'envoi de la demande et le premier message écrit par l'équipe (les messages automatiques ne comptent pas). « Dans le délai annoncé » : demandes auxquelles on a répondu avant l'échéance (24 h / 72 h).</p>`;
+}
+function bindStats(){
+  const ym=S.statYm||(S.statYm=ymOf(todayISO()));
+  const go=k=>{ if(!k||k>ymOf(todayISO())) return; S.statYm=k; render(); };
+  if(!S.stats?.[ym]&&!S.statLoading){ S.statLoading=true; loadStats(ym).finally(()=>{ S.statLoading=false; softRender("stats"); }); }
+  const m=$("#st-month"); if(m) m.onchange=()=>go(m.value);
+  const pv=$("#st-prev"); if(pv) pv.onclick=()=>go(prevYm(ym));
+  const nx=$("#st-next"); if(nx) nx.onclick=()=>{ const [y,mm]=ym.split("-").map(Number); go(mm===12?`${y+1}-01`:`${y}-${String(mm+1).padStart(2,"0")}`); };
+}
+
+/* ===================== Journal des accès et sauvegarde (administrateur) ===================== */
+const AUDIT_LABEL={lecture:"a ouvert une demande",message:"a écrit dans une conversation",message_initie:"a écrit en premier à un patient",envoi:"a envoyé une demande",cloture:"a classé une demande",reouverture:"a rouvert une demande",reouverture_patient:"a rouvert sa demande",prise_en_charge:"a pris une demande en charge",transfert:"a transféré une demande",patient_prevenu_vu:"a prévenu le patient (demande vue)",patient_prevenu_transfert:"a prévenu le patient d'un transfert",priorite:"a changé une priorité",fiche_creee:"a créé une fiche patient",fiche_reliee:"a relié une fiche à un compte",fiche_supprimee:"a supprimé une fiche patient",fiche_invitation:"a invité un patient à créer son compte",statut_compte:"a changé le statut d'un compte",statut_enfant:"a changé le statut d'un enfant",enfant_ajoute:"a ajouté un enfant",enfant_retire:"a retiré un enfant",invitation_famille:"a invité un membre de la famille",famille_rejointe:"a rejoint une famille",famille_quittee:"a quitté une famille",suppression_compte:"a supprimé un compte",role:"a changé un rôle",administrateur:"a changé des droits administrateur",annonce:"a publié une annonce",pause_notifications:"a mis ses notifications en pause",tache_patient:"a créé une tâche liée à un patient",liste_attente_ajout:"a ajouté un patient en liste d'attente",consentement_annonces:"a changé son choix d'actualités",conservation_automatique:"conservation automatique",effacement_automatique:"effacement automatique"};
+const JR_KINDS=[["all","Tout"],["conv","Conversations"],["acc","Comptes et fiches"],["mdp","Mots de passe"],["docs","Reçus et factures"]];
+const jrKind=a=>/^(lecture|message|message_initie|envoi|cloture|reouverture|reouverture_patient|prise_en_charge|transfert|patient_prevenu_vu|patient_prevenu_transfert|priorite)$/.test(a)?"conv":"acc";
+const UUIDRE=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+async function loadJournal(){
+  const since=new Date(Date.now()-90*864e5).toISOString();
+  const [a,s,d]=await Promise.all([
+    sb.from("audit_log").select("id,actor_id,action,request_id,detail,at").gte("at",since).order("at",{ascending:false}).limit(3000),
+    sb.from("office_secret_log").select("secret_id,label,user_id,action,at").gte("at",since).order("at",{ascending:false}).limit(1000),
+    S.offDocs?Promise.resolve({data:S.offDocs}):sb.from("office_docs").select("id,kind,number,party,amount,created_by,created_at,cancelled_at,cancelled_by,cancel_reason").order("created_at",{ascending:false}).limit(500)]);
+  S.jrOk=!a.error;
+  const rows=[];
+  for(const r of a.data||[]) rows.push({at:r.at,who:r.actor_id,kind:jrKind(r.action),what:AUDIT_LABEL[r.action]||r.action.replace(/_/g," "),req:r.request_id,detail:r.detail});
+  for(const r of s.data||[]) rows.push({at:r.at,who:r.user_id,kind:"mdp",what:`a ${r.action} le mot de passe`,txt:r.label});
+  for(const r of d.data||[]){ if(r.created_at&&r.created_at>=since) rows.push({at:r.created_at,who:r.created_by,kind:"docs",what:`a créé ${r.kind==="recu"?"le reçu":"la facture"}`,txt:`${r.number} · ${eur(r.amount)}`});
+    if(r.cancelled_at&&r.cancelled_at>=since) rows.push({at:r.cancelled_at,who:r.cancelled_by,kind:"docs",what:`a annulé ${r.kind==="recu"?"le reçu":"la facture"}`,txt:`${r.number}${r.cancel_reason?" · "+r.cancel_reason:""}`}); }
+  rows.sort((x,y)=>y.at<x.at?-1:1);
+  // noms des personnes qui ne font pas partie de l'équipe (patients)
+  const ids=[...new Set(rows.flatMap(r=>[r.who,...Object.values(r.detail||{}).filter(v=>typeof v==="string"&&UUIDRE.test(v))]).filter(id=>id&&!S.team.some(t=>t.id===id)&&!S.profiles[id]))];
+  for(let i=0;i<ids.length;i+=100){ const {data}=await sb.from("profiles").select("id,first_name,last_name").in("id",ids.slice(i,i+100)); for(const p of data||[]) S.profiles[p.id]={...(S.profiles[p.id]||{}),...p}; }
+  S.journal=rows; S.jrLoaded=true;
+}
+const jrName=id=>{ if(!id) return "Le système"; if(S.team.some(t=>t.id===id)||id===S.me.id) return teamName(id)==="moi"?`${S.me.first_name||""} ${S.me.last_name||""}`.trim()||"moi":teamName(id); const p=S.profiles[id]; return p?`${p.first_name||""} ${p.last_name||""}`.trim()||"Patient":"Patient"; };
+function jrDetail(r){ if(r.txt) return r.txt; const D=r.detail||{}, out=[];
+  for(const [k,v] of Object.entries(D)){ if(v==null||v==="") continue; if(typeof v==="string"&&UUIDRE.test(v)){ out.push(jrName(v)); continue; } if(typeof v==="object") continue; out.push(`${k.replace(/_/g," ")} : ${v}`); }
+  return out.join(" · "); }
+function journalRows(){ const J=S.jrUi||(S.jrUi={kind:"all",who:"",q:""}), q=norm(J.q||"").split(/\s+/).filter(Boolean);
+  return (S.journal||[]).filter(r=>J.kind==="all"||r.kind===J.kind).filter(r=>!J.who||r.who===J.who).filter(r=>!q.length||q.every(w=>norm(`${jrName(r.who)} ${r.what} ${jrDetail(r)} ${r.req||""}`).includes(w))); }
+function journalHTML(){
+  const head=`<div class="chead"><div><h1>🛡️ Journal et sauvegarde</h1><p>Qui a fait quoi ces 3 derniers mois (ouvertures de demandes, messages, comptes, mots de passe, reçus et factures), et la sauvegarde mensuelle des données du centre.</p></div></div>`;
+  const backup=`<section class="card jrbk"><h3>💾 Sauvegarde mensuelle</h3>
+     <p>Un fichier Excel avec les patients, les enfants, les fiches sans compte, les pages patients (adresses et contacts), l'annuaire, les tâches, les reçus et factures et l'équipe. <b>Les conversations ne sont pas incluses</b> : ce qui doit rester au dossier est déjà reporté dans CareConnect.</p>
+     <p class="warn">⚠️ Ce fichier contient des données personnelles de patients. Enregistrez-le uniquement sur un ordinateur du centre protégé par mot de passe (ou une clé USB chiffrée), jamais sur un ordinateur partagé, ni par e-mail. Supprimez les anciennes sauvegardes de plus d'un an.</p>
+     <div class="btnrow"><button type="button" class="btn" id="bk-go">⬇ Télécharger la sauvegarde</button>${S.bkLast?`<small class="hint">Dernière sauvegarde sur cet appareil : ${fmt(S.bkLast)}</small>`:""}</div>
+     <p class="hint">Un rappel (notification) est envoyé aux administrateurs le 1er de chaque mois.</p></section>`;
+  if(!S.jrLoaded) return head+backup+`<p class="hint">Chargement du journal…</p>`;
+  if(!S.jrOk) return head+backup+`<div class="err">Le journal n'a pas pu être chargé.</div>`;
+  const J=S.jrUi||(S.jrUi={kind:"all",who:"",q:""}), R=journalRows(), shown=R.slice(0,J.more?2000:200);
+  const people=[...new Set((S.journal||[]).map(r=>r.who).filter(Boolean))].map(id=>[id,jrName(id)]).sort((a,b)=>a[1].localeCompare(b[1],"fr"));
+  let day="";
+  return head+backup+`<section class="card jrcard"><h3>📜 Journal des accès <small class="hint">(${R.length} ligne${R.length>1?"s":""})</small></h3>
+   <div class="stktools"><input id="jr-q" type="search" class="pcq" placeholder="Rechercher : nom, action, n° de demande…" value="${esc(J.q||"")}" aria-label="Rechercher dans le journal">
+     <select id="jr-who" aria-label="Personne"><option value="">Tout le monde</option>${people.map(([id,n])=>`<option value="${id}" ${J.who===id?"selected":""}>${esc(n)}</option>`).join("")}</select>
+     <button type="button" class="btn ghost" id="jr-xlsx">⬇ Excel</button></div>
+   <div class="pchips">${JR_KINDS.map(([k,l])=>`<button type="button" class="pchip" data-jrk="${k}" aria-pressed="${J.kind===k}">${l}</button>`).join("")}</div>
+   <div class="jrlist">${shown.map(r=>{ const d=new Date(r.at).toLocaleDateString(LOC,{weekday:"long",day:"numeric",month:"long"}); const sep=d!==day?(day=d,`<div class="jrday">${esc(d)}</div>`):"";
+     const det=jrDetail(r);
+     return sep+`<div class="jrrow jr-${r.kind}"><span class="jrt">${new Date(r.at).toLocaleTimeString(LOC,{hour:"2-digit",minute:"2-digit"})}</span><span class="jrx"><b>${esc(jrName(r.who))}</b> ${esc(r.what)}${r.req?` <button type="button" class="linkbtn" data-jrreq="${r.req}">(n° ${r.req})</button>`:""}${det?`<small>${esc(det)}</small>`:""}</span></div>`; }).join("")||`<div class="empty">Rien ne correspond.</div>`}</div>
+   ${R.length>shown.length?`<button type="button" class="btn ghost" id="jr-more">Afficher tout (${R.length})</button>`:""}</section>`;
+}
+async function backupXlsx(){
+  const all=async(t,cols,order)=>{ const out=[]; for(let i=0;i<50000;i+=1000){ let q=sb.from(t).select(cols).range(i,i+999); if(order) q=q.order(order); const {data,error}=await q; if(error) return {error}; out.push(...(data||[])); if(!data||data.length<1000) break; } return {data:out}; };
+  const [pt,ch,rc,pi,dr,tk,od]=await Promise.all([
+    all("profiles","id,first_name,last_name,birth_date,phone,lang,status,created_at,extra_contacts,contact_note","last_name"),
+    all("children","id,first_name,last_name,birth_date,status,created_by,created_at,removed_at","last_name"),
+    all("patient_records","*","last_name"),
+    all("patient_info","*"),
+    all("directory","*","name"),
+    all("tasks","*","created_at"),
+    all("office_docs","id,kind,number,doc_date,party,amount,method,data,created_by,cancelled_at,cancel_reason,paid_at,paid_note","created_at").then(r=>r.error?all("office_docs","id,kind,number,doc_date,party,amount,method,data,created_by,cancelled_at,cancel_reason","created_at"):r)]);
+  const pts=(pt.data||[]).filter(p=>!S.team.some(t=>t.id===p.id));
+  const pname=id=>{ const p=(pt.data||[]).find(x=>x.id===id); return p?`${p.first_name||""} ${p.last_name||""}`.trim():""; };
+  const cname=id=>{ const c=(ch.data||[]).find(x=>x.id===id); return c?`${c.first_name||""} ${c.last_name||""}`.trim():""; };
+  const rname=id=>{ const r=(rc.data||[]).find(x=>x.id===id); return r?`${r.first_name||""} ${r.last_name||""}`.trim():""; };
+  const d10=v=>v?String(v).slice(0,10):"";
+  const contacts=l=>(Array.isArray(l)?l:[]).map(c=>[c.role||c.lien,c.name||c.nom,c.phone||c.tel,c.email,c.note].filter(Boolean).join(" · ")).filter(Boolean).join("\n");
+  const sheets=[
+    xlsxTable("Patients",["Nom","Prénom","Naissance","Téléphone","Langue","Statut","Inscrit le","Autres contacts","Infos pratiques"],
+      pts.map(p=>[p.last_name,p.first_name,d10(p.birth_date),p.phone,p.lang,p.status,d10(p.created_at),contacts(p.extra_contacts),p.contact_note]),[20,18,12,16,8,10,12,36,36]),
+    xlsxTable("Enfants",["Nom","Prénom","Naissance","Statut","Parent","Ajouté le"],(ch.data||[]).filter(c=>!c.removed_at).map(c=>[c.last_name,c.first_name,d10(c.birth_date),c.status,pname(c.created_by),d10(c.created_at)]),[20,18,12,10,26,12]),
+    ...(rc.error?[]:[xlsxTable("Fiches sans compte",["Nom","Prénom","Naissance","Téléphone","Créée le"],(rc.data||[]).map(r=>[r.last_name,r.first_name,d10(r.birth_date),r.phone,d10(r.created_at)]),[20,18,12,16,12])]),
+    ...(pi.error?[]:[xlsxTable("Pages patients",["Patient","Rue","Code postal","Commune","Infos pratiques","Contacts utiles","Modifié le"],
+      (pi.data||[]).map(i=>[i.patient_id?pname(i.patient_id):i.child_id?cname(i.child_id):rname(i.record_id),i.street,i.postal_code,i.city,i.note,contacts(i.contacts),d10(i.updated_at)]),[26,30,10,16,40,40,12])]),
+    ...(dr.error?[]:[dirXlsx(dr.data)]),
+    ...(tk.error?[]:[xlsxTable("Tâches",["Titre","Pour","Échéance","Priorité","Créée le","Faite le","Patient"],
+      (tk.data||[]).map(t=>[t.title,t.assigned_to?teamName(t.assigned_to):t.assigned_group||"Tous",d10(t.due_date),t.priority||"",d10(t.created_at),d10(t.done_at),t.patient_id?pname(t.patient_id):t.child_id?cname(t.child_id):t.record_id?rname(t.record_id):""]),[40,18,12,10,12,12,24])]),
+    ...(od.error?[]:[xlsxTable("Reçus et factures",["Numéro","Date","Type","Destinataire","Montant","Paiement","Échéance","Payée le","Annulé","Créé par"],
+      (od.data||[]).map(d=>[d.number,d.doc_date,d.kind==="recu"?"Reçu":"Facture",String(d.party||"").split("\n")[0],Number(d.amount)||0,d.method||"",d.data?.echeance||"",d.paid_at||"",d.cancelled_at?`Oui · ${d.cancel_reason||""}`:"",teamName(d.created_by)]),[14,12,9,32,10,12,12,12,24,18])]),
+    xlsxTable("Équipe",["Nom","Prénom","Rôle","Statut","Admin"],S.team.map(t=>[t.last_name,t.first_name,ROLE_LABEL[t.role]||t.role,t.status,t.is_admin?"oui":""]),[20,18,16,10,8])];
+  if(pt.error) throw new Error(frError(pt.error));
+  return buildXlsxBook(sheets);
+}
+function bindJournal(){
+  if(!S.jrLoaded&&!S.jrLoading){ S.jrLoading=true; loadJournal().catch(e=>{ console.error(e); S.jrOk=false; S.jrLoaded=true; }).finally(()=>{ S.jrLoading=false; softRender("journal"); }); }
+  try{ if(S.bkLast===undefined) S.bkLast=localStorage.getItem("cmpl_backup_at")||null; }catch(e){ S.bkLast=null; }
+  const J=S.jrUi||(S.jrUi={kind:"all",who:"",q:""});
+  const q=$("#jr-q"); if(q){ let t; q.oninput=()=>{ clearTimeout(t); t=setTimeout(()=>{ J.q=q.value; render(); const n=$("#jr-q"); n.focus(); n.setSelectionRange(n.value.length,n.value.length); },250); }; }
+  const w=$("#jr-who"); if(w) w.onchange=()=>{ J.who=w.value; render(); };
+  $$("[data-jrk]").forEach(b=>b.onclick=()=>{ J.kind=b.dataset.jrk; render(); });
+  const mo=$("#jr-more"); if(mo) mo.onclick=()=>{ J.more=true; render(); };
+  $$("[data-jrreq]").forEach(b=>b.onclick=()=>{ const id=+b.dataset.jrreq; if(!S.reqs.some(r=>r.id===id)) return toast("Cette demande n'est plus dans la liste (classée depuis longtemps ou effacée).");
+    const r=S.reqs.find(x=>x.id===id); S.archive=r.status==="traite"; S.sel=id; S.cscreen="inbox"; render(); });
+  const x=$("#jr-xlsx"); if(x) x.onclick=()=>{ const R=journalRows();
+    saveFile(buildXlsxBook([xlsxTable("Journal",["Date","Heure","Personne","Action","Demande","Détail"],R.map(r=>{ const d=new Date(r.at); return [d.toLocaleDateString(LOC),d.toLocaleTimeString(LOC,{hour:"2-digit",minute:"2-digit"}),jrName(r.who),r.what,r.req||"",jrDetail(r)]; }),[12,8,24,40,10,50])]),`Journal CMPL ${todayISO()}.xlsx`); };
+  const bk=$("#bk-go"); if(bk) bk.onclick=async()=>{ bk.disabled=true; const old=bk.textContent; bk.textContent="Préparation…";
+    try{ const blob=await backupXlsx(); await saveFile(blob,`Sauvegarde CMPL ${todayISO()}.xlsx`); S.bkLast=new Date().toISOString(); try{ localStorage.setItem("cmpl_backup_at",S.bkLast); }catch(e){} toast("Sauvegarde téléchargée 💾"); render(); }
+    catch(e){ console.error(e); toast("La sauvegarde n'a pas pu être préparée : "+(e.message||e)); bk.disabled=false; bk.textContent=old; } };
+}
+
 function navGroups(){
   const nIn=S.reqs.filter(awaitingStaff).length;
   const G=[
@@ -5819,6 +6103,7 @@ function navGroups(){
    {h:"Secrétariat",it:[
      {cs:"desk",ic:SI.phone,t:"Accueil",n:isDesk()?deskTodayCount():0},
      {cs:"infos",ic:SI.idcard,t:"Infos et documents"},
+     {cs:"directory",ic:SI.contacts,t:"Annuaire"},
      {cs:"rooms",ic:SI.door,t:"Locaux"},
      {cs:"checklists",ic:SI.checks,t:"Checklists",n:clAlerts().length},
      ...(canOffice()?[{cs:"hours",ic:SI.clock,t:"Horaires"},{cs:"cash",ic:SI.euro,t:"Caisse"}]:[])]},
@@ -5827,7 +6112,7 @@ function navGroups(){
      {cs:"binder",ic:SI.book,t:"Classeur"},
      {cs:"fiches",ic:IC.doc,t:"Fiches conseils"},
      {cs:"inventory",ic:SI.box,t:"Inventaire",n:invOpen()},
-     ...(isAdmin()?[{cs:"annonces",ic:SI.mega,t:"Annonces"},{cs:"feedback",ic:SI.idea,t:"Suggestions",n:fbNew()}]:[])]}];
+     ...(isAdmin()?[{cs:"annonces",ic:SI.mega,t:"Annonces"},{cs:"feedback",ic:SI.idea,t:"Suggestions",n:fbNew()},{cs:"stats",ic:SI.stats,t:"Statistiques"},{cs:"journal",ic:SI.shield,t:"Journal et sauvegarde"}]:[])]}];
   return G;
 }
 const ME_SCREENS=["settings","help","templates"];
@@ -6344,27 +6629,31 @@ function zipStore(files){ // files: [[name, string]]
 const xesc = s => String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g,"");
 const colName = n => { let s=""; n++; while(n>0){ const m=(n-1)%26; s=String.fromCharCode(65+m)+s; n=Math.floor((n-1)/26); } return s; };
 // feuille : cells = Map("r,c" -> {v, fill, bold, border, align, wrap, italic, size}), merges=[[r1,c1,r2,c2]], widths=[...], heights={r:h}
-function buildXlsx(sheetName, sh){
+function buildXlsx(sheetName, sh){ return buildXlsxBook([[sheetName,sh]]); }
+// classeur de plusieurs feuilles : list = [[nom, feuille], …]
+function buildXlsxBook(list){
   const fills=["none","gray125"], xfs=[], xfKey=new Map(), fontsL=[`<font><sz val="11"/><name val="Calibri"/></font>`];
   const fontIdx=(b,i,sz)=>{ const k=`<font>${b?"<b/>":""}${i?"<i/>":""}<sz val="${sz||11}"/><name val="Calibri"/></font>`; let ix=fontsL.indexOf(k); if(ix<0){ fontsL.push(k); ix=fontsL.length-1; } return ix; };
   const fillIdx=c=>{ if(!c) return 0; const k=c.replace("#","").toUpperCase(); let ix=fills.indexOf(k); if(ix<0){ fills.push(k); ix=fills.length-1; } return ix; };
   const style=c=>{ const f=fontIdx(c.bold,c.italic,c.size), fi=fillIdx(c.fill), b=c.border?1:0, al=c.align||"", w=c.wrap?1:0;
     const k=`${f}|${fi}|${b}|${al}|${w}`; if(!xfKey.has(k)){ xfs.push({f,fi,b,al,w}); xfKey.set(k,xfs.length); } return xfKey.get(k); };
+  const sheets=list.map(([sheetName,sh])=>{
   const rows=new Map(); for(const [key,c] of sh.cells){ const [r,cc]=key.split(",").map(Number); if(!rows.has(r)) rows.set(r,[]); rows.get(r).push([cc,c]); }
   let sd=""; [...rows.keys()].sort((a,b)=>a-b).forEach(r=>{ const cs=rows.get(r).sort((a,b)=>a[0]-b[0]);
     sd+=`<row r="${r+1}"${sh.heights&&sh.heights[r]?` ht="${sh.heights[r]}" customHeight="1"`:""}>`+cs.map(([cc,c])=>{ const ref=colName(cc)+(r+1), s=style(c);
       return c.v===undefined||c.v===""?`<c r="${ref}" s="${s}"/>`:typeof c.v==="number"?`<c r="${ref}" s="${s}"><v>${c.v}</v></c>`:`<c r="${ref}" s="${s}" t="inlineStr"><is><t xml:space="preserve">${xesc(c.v)}</t></is></c>`; }).join("")+`</row>`; });
   const cols=(sh.widths||[]).map((w,i)=>w?`<col min="${i+1}" max="${i+1}" width="${w}" customWidth="1"/>`:"").join("");
-  const sheet=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><sheetViews><sheetView workbookViewId="0" showGridLines="1"/></sheetViews><sheetFormatPr defaultRowHeight="18"/>${cols?`<cols>${cols}</cols>`:""}<sheetData>${sd}</sheetData>${sh.merges&&sh.merges.length?`<mergeCells count="${sh.merges.length}">${sh.merges.map(([r1,c1,r2,c2])=>`<mergeCell ref="${colName(c1)}${r1+1}:${colName(c2)}${r2+1}"/>`).join("")}</mergeCells>`:""}<pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/><pageSetup orientation="landscape" fitToWidth="1" fitToHeight="0"/></worksheet>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><sheetViews><sheetView workbookViewId="0" showGridLines="1"/></sheetViews><sheetFormatPr defaultRowHeight="18"/>${cols?`<cols>${cols}</cols>`:""}<sheetData>${sd}</sheetData>${sh.merges&&sh.merges.length?`<mergeCells count="${sh.merges.length}">${sh.merges.map(([r1,c1,r2,c2])=>`<mergeCell ref="${colName(c1)}${r1+1}:${colName(c2)}${r2+1}"/>`).join("")}</mergeCells>`:""}<pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/><pageSetup orientation="landscape" fitToWidth="1" fitToHeight="0"/></worksheet>`;
+  });
   const thin=`<left style="thin"><color rgb="FF000000"/></left><right style="thin"><color rgb="FF000000"/></right><top style="thin"><color rgb="FF000000"/></top><bottom style="thin"><color rgb="FF000000"/></bottom><diagonal/>`;
   const styles=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="${fontsL.length}">${fontsL.join("")}</fonts><fills count="${fills.length}"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>${fills.slice(2).map(c=>`<fill><patternFill patternType="solid"><fgColor rgb="FF${c}"/><bgColor indexed="64"/></patternFill></fill>`).join("")}</fills><borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border>${thin}</border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="${xfs.length+1}"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>${xfs.map(x=>`<xf numFmtId="0" fontId="${x.f}" fillId="${x.fi}" borderId="${x.b}" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"${x.al?` horizontal="${x.al}"`:""}${x.w?` wrapText="1"`:""}/></xf>`).join("")}</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
-  const nm=xesc(sheetName).slice(0,31);
+  const used=new Set(), nms=list.map(([n],i)=>{ let x=String(n).replace(/[\[\]:*?\/\\]/g," ").slice(0,31)||("Feuille "+(i+1)); while(used.has(x)) x=x.slice(0,28)+" "+i; used.add(x); return xesc(x); });
   return zipStore([
-    ["[Content_Types].xml",`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`],
+    ["[Content_Types].xml",`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>${sheets.map((_,i)=>`<Override PartName="/xl/worksheets/sheet${i+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join("")}<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`],
     ["_rels/.rels",`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`],
-    ["xl/workbook.xml",`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="${nm}" sheetId="1" r:id="rId1"/></sheets></workbook>`],
-    ["xl/_rels/workbook.xml.rels",`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`],
-    ["xl/styles.xml",styles],["xl/worksheets/sheet1.xml",sheet]]);
+    ["xl/workbook.xml",`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${nms.map((n,i)=>`<sheet name="${n}" sheetId="${i+1}" r:id="rId${i+1}"/>`).join("")}</sheets></workbook>`],
+    ["xl/_rels/workbook.xml.rels",`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheets.map((_,i)=>`<Relationship Id="rId${i+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i+1}.xml"/>`).join("")}<Relationship Id="rId${sheets.length+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`],
+    ["xl/styles.xml",styles],...sheets.map((x,i)=>[`xl/worksheets/sheet${i+1}.xml`,x])]);
 }
 // --- le planning du mois, au format du tableau du secrétariat ---
 const hTxt = t => { if(!t) return ""; const [h,m]=t.split(":").map(Number); return m?`${h}h${String(m).padStart(2,"0")}`:`${h}h`; };

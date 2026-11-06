@@ -2072,3 +2072,69 @@ select.tprio,span.tprio{font:inherit;font-size:12.5px;font-weight:700;border:1.5
 @media (max-width:1200px){.joydeco{left:auto;right:8px}}
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .dpoll{background:var(--surface-2)}}
 :root[data-theme="dark"] .dpoll{background:var(--surface-2)}
+
+/* ===== 20261107 : annuaire, factures, statistiques, journal ===== */
+/* annuaire */
+.dirchips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}
+.pchip i{font-style:normal;font-weight:600;color:var(--muted);margin-left:3px;font-size:12.5px}
+.pchip[aria-pressed="true"] i{color:inherit;opacity:.8}
+.dirlist{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:12px}
+.dircard{margin:0;display:flex;flex-direction:column;gap:8px}
+.dirh{display:flex;gap:10px;align-items:flex-start}
+.dirico{font-size:22px;width:40px;height:40px;border-radius:12px;background:var(--surface-2);display:grid;place-items:center;flex:none}
+.dirt{flex:1;min-width:0}
+.dirt h3{margin:0;font-size:16px}
+.dirt small{color:var(--muted)}
+.dirstar{border:0;background:none;font-size:21px;line-height:1;color:var(--gold);cursor:pointer;padding:2px 4px}
+.dirl{display:flex;flex-direction:column;gap:3px;font-size:14px}
+.dirl a{color:var(--ink);text-decoration:none;overflow-wrap:anywhere}
+.dirl a:hover{color:var(--accent);text-decoration:underline}
+.dirnote{margin:0;padding:7px 9px;border-radius:9px;background:var(--gold-soft);font-size:13.5px;white-space:pre-wrap}
+.dirf{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-top:auto;border-top:1px solid var(--line);padding-top:7px}
+.dirf span{display:flex;gap:10px}
+.dirform{margin-bottom:12px}
+.pfcadd{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
+.pfcadd .pfdir{flex:1;min-width:220px;margin:0}
+/* factures : paiement */
+.dtx b.invst,.invst{display:inline-block;width:auto;font-style:normal;font-weight:800;border-radius:6px;padding:1px 6px;font-size:11.5px}
+.invst.ok{background:var(--ok-soft);color:var(--ok)}
+.invst.wait{background:var(--warn-soft);color:var(--warn)}
+.invst.late{background:var(--danger-soft);color:var(--danger)}
+.pchip.late:not([aria-pressed="true"]){border-color:var(--danger);color:var(--danger)}
+.invsum{margin:0 0 10px;padding:9px 12px;border-radius:10px;background:var(--surface-2);font-size:14px}
+.invpay{align-items:center}
+.invpay input[type=date]{margin-left:6px}
+.invpay #ip-note{flex:1;min-width:180px}
+/* statistiques */
+.stmonth{margin:0;display:flex;align-items:center;gap:8px;flex-direction:row}
+.sttiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;margin:4px 0 14px}
+.sttile{background:var(--surface);border:1px solid var(--line);border-radius:var(--r,14px);padding:12px 14px;display:flex;flex-direction:column;gap:2px}
+.sttile>span{font-size:20px}
+.sttile b{font-size:26px;font-family:var(--font-display,inherit);line-height:1.15}
+.sttile small{color:var(--muted);font-size:13px}
+.sttile .stdl{font-weight:700;font-size:12px}
+.stdl.up{color:var(--ok)} .stdl.down{color:var(--danger)}
+.stcols{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}
+.stcols .card{margin:0}
+.stcols h3{margin:0 0 8px;font-size:15px}
+.stbar{display:grid;grid-template-columns:minmax(80px,38%) 1fr 34px;gap:8px;align-items:center;font-size:13.5px;margin:4px 0}
+.stbl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stbt{height:12px;background:var(--surface-2);border-radius:6px;overflow:hidden}
+.stbt i{display:block;height:100%;background:var(--accent);border-radius:6px;min-width:2px}
+.stbar b{text-align:right}
+.sthours{display:grid;grid-template-columns:repeat(24,1fr);gap:2px;height:110px;align-items:end;margin:6px 0 14px}
+.sthours span{display:flex;flex-direction:column;justify-content:flex-end;height:100%;position:relative}
+.sthours i{display:block;background:var(--accent);border-radius:3px 3px 0 0;min-height:2px}
+.sthours small{position:absolute;bottom:-15px;left:0;font-size:10px;color:var(--muted)}
+/* journal et sauvegarde */
+.jrbk .warn{padding:8px 11px;border-radius:10px;background:var(--warn-soft);font-size:13.5px}
+.jrcard .stktools select{min-width:170px}
+.jrlist{margin-top:8px;max-height:65vh;overflow:auto;border:1px solid var(--line);border-radius:12px}
+.jrday{position:sticky;top:0;background:var(--surface-2);font-weight:800;font-size:12.5px;padding:5px 12px;color:var(--muted)}
+.jrday::first-letter{text-transform:uppercase}
+.jrrow{display:flex;gap:12px;padding:7px 12px;border-top:1px solid var(--line);font-size:14px}
+.jrt{flex:none;width:44px;color:var(--muted);font-variant-numeric:tabular-nums}
+.jrx{flex:1;min-width:0}
+.jrx small{display:block;color:var(--muted);overflow-wrap:anywhere}
+.jrrow.jr-mdp{background:color-mix(in srgb,var(--warn-soft) 55%,transparent)}
+@media (max-width:640px){ .stbar{grid-template-columns:minmax(70px,40%) 1fr 30px} .sttile b{font-size:22px} }
