@@ -1216,6 +1216,7 @@ function render(){
   updateBadges();
   if(S.me&&S.me.role!=="patient"&&$("[data-pfpeek]")) fillPfPeeks().catch(e=>console.error(e));
   clearTimeout(render.ann); render.ann=setTimeout(annCheck,250);
+  try{ joyWatch(); }catch(e){ console.error(e); }
 }
 
 /* ---------- pastille « nouveau » : titre de l'onglet, icône de l'onglet, icône de l'app ---------- */
@@ -2087,7 +2088,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261106f";
+const APP_VERSION="20261106g";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -2942,6 +2943,9 @@ function staffHelpHTML(){
    ["Réunions d'équipe","Équipe → Réunions : chacun ajoute ses points à l'ordre du jour. Pendant la réunion, « Rédiger le procès-verbal » : présents, décisions point par point (« En faire une tâche »), compte rendu. « Clôturer » archive le PV, téléchargeable en PDF."],
    ["Réponses types du centre","Dans une conversation, le bouton 💬 propose d'abord les réponses du type de la demande (rendez-vous, prescription…). Tout le monde peut proposer une réponse du centre, avec un ton courtois et respectueux."],
    ["Page patient (adresse, infos pratiques, contacts)","Chaque patient a sa page, visible uniquement par l'équipe : ouvrez-la avec « 👤 Page patient » dans une demande ou une tâche, avec la recherche (Ctrl K) ou depuis Fiches patients. Notez l'adresse, les infos pratiques (étage, sonnette, code de la porte, maison de repos…) et les contacts utiles (infirmière, famille, aidant…). L'adresse et les infos pratiques s'affichent aussi en résumé dans ses demandes. Jamais d'informations médicales : le dossier reste dans CareConnect."],
+   ["Pause café","Équipe → Pause café : le mot du jour (5 lettres, 6 essais, le même pour toute l'équipe), la devinette du jour et une minute de respiration guidée. Masquable dans Réglages → Ambiance."],
+   ["Sondages","Équipe → Sondages : posez une question à l'équipe (« Où mange-t-on vendredi ? »), avec 2 à 8 réponses, un ou plusieurs choix, anonyme ou non, et une date de fin. L'équipe reçoit une notification sans la question."],
+   ["Mercis, emoji et couleur","Sur le tableau de bord, « ＋ Dire merci » pour remercier un collègue : il reçoit une notification et le merci reste affiché deux semaines. Dans Réglages, choisissez votre emoji et votre couleur (affichés à côté de votre nom) et activez ou non les petites célébrations."],
    ["Tableau de bord","Sur ordinateur, l'app s'ouvre sur le tableau de bord : vos demandes à traiter (les urgentes en premier), vos tâches, les messages de l'équipe non lus, les examens à suivre et ce qui se passe aujourd'hui au centre (absences, anniversaires, annonces, inventaire). Touchez un compteur ou une ligne pour y aller. Sur téléphone, l'app s'ouvre toujours sur les demandes ; le tableau de bord est dans « Plus »."],
    ["Annonces importantes (administrateurs)","Le centre → Annonces importantes : choisissez pour qui (équipe, patients ou tout le monde), un titre, un message et jusqu'à quand. L'annonce s'affiche en grand à l'ouverture de l'app (chacun touche « J'ai compris »), puis reste épinglée en haut de l'écran jusqu'au dernier jour choisi. Vous voyez combien de personnes l'ont lue et pouvez l'arrêter à tout moment. Notification sur le téléphone en option ; les patients ne la reçoivent que s'ils ont accepté les annonces du centre."],
    ["Face ID sur l'iPhone","Dans l'app iPhone : Mon profil et notifications → Face ID. Ensuite l'app se déverrouille avec votre visage, sans code."],
@@ -2956,53 +2960,299 @@ SI.dash='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="cur
 const dashReqs = () => (S.reqs||[]).filter(r=>r.status!=="traite"&&awaitingStaff(r)&&(myQueue(r)||(!S.me.provider_id&&S.me.role==="admin")))
   .sort((x,y)=>reqGroup(x)-reqGroup(y)||new Date(x.due_at||8.64e15)-new Date(y.due_at||8.64e15));
 const dashExams = () => (S.tasks||[]).filter(t=>!t.done_at&&isExam(t)&&forMe(t));
+/* =====================================================================
+   AMBIANCE (072) : emoji et couleur, pensée du jour, saisons, célébrations, mercis
+   ===================================================================== */
+S.flair={}; S.kudos=[]; S.polls=[]; S.pvotes={}; S.pcounts={}; S.presults={}; S.pauseRes=[];
+const FLAIR_EMOJIS=["🌻","🌷","🌿","🍀","🌈","☀️","🌙","⭐","🍊","🍓","🫐","🥑","☕","🍵","🧁","🐝","🦋","🐢","🦊","🐼","🐧","🐳","🎈","🎵","📚","🚲","⚽","🎾","🧩","🩺"];
+const FLAIR_COLORS=["#ffe3d6","#fde3ef","#ebe4fb","#dcebfb","#d9f1ee","#e2f2d9","#fdf0c9","#f0e4d8"];
+const flairOf = id => S.flair[id]||{};
+const flairEmoji = id => flairOf(id).emoji||"";
+const joyFxOn = () => { try{ return localStorage.getItem("cmpl_fx")!=="0"; }catch(e){ return true; } };
+const pauseOn = () => { try{ return localStorage.getItem("cmpl_pause")!=="0"; }catch(e){ return true; } };
+const dayNum = () => Math.floor(Date.parse(todayISO()+"T00:00:00Z")/864e5);
+// pensées du jour (textes originaux)
+const JOY_LINES=["Un sourire à l'accueil vaut bien un bon traitement.","Aujourd'hui, une chose à la fois — et un café entre les deux ☕","Chaque patient rassuré est une petite victoire.","On avance mieux en équipe qu'en courant seul.","Pensez à boire un verre d'eau : vous aussi, vous comptez 💧","Une journée bien remplie commence par un bonjour.","Le travail bien fait, c'est aussi celui qu'on partage.","Une pause de deux minutes, c'est aussi du soin.","Un merci dit aujourd'hui fait du bien toute la semaine.","Rien ne presse au point de ne pas pouvoir respirer un grand coup.","Les petites attentions font les grandes équipes.","Écouter, c'est déjà soigner un peu.","Aujourd'hui, félicitez-vous pour une chose bien faite.","La patience est un médicament sans ordonnance.","Un bon rire vaut mieux qu'une longue réunion 😄","Prenez soin de vous comme vous prenez soin des autres.","Chaque jour est une nouvelle page : écrivons-la ensemble.","Le meilleur outil du centre, c'est l'équipe.","Une question bête ? Ça n'existe pas : demandez !","Ranger son bureau, c'est ranger un peu sa tête.","Un pas après l'autre, on arrive toujours quelque part.","La bienveillance est contagieuse : propagez-la !","Ce que vous faites compte, même quand personne ne le voit.","Un café partagé vaut deux cafés bus seul.","Fermez les yeux dix secondes. Voilà, ça va mieux.","Le sourire est la plus courte distance entre deux personnes.","Aujourd'hui, soyons fiers du travail accompli.","On n'est jamais trop nombreux pour dire bonjour.","Respirez : le monde tourne aussi pendant votre pause.","Une équipe qui rit ensemble travaille mieux ensemble."];
+const joyLine = () => JOY_LINES[(dayNum()*7)%JOY_LINES.length];
+// décor de saison (discret)
+function seasonDeco(){
+  const m=new Date().getMonth()+1;
+  const g=(m>=9&&m<=11)?`<path d="M40 30c14-18 40-16 46 2-16 12-34 12-46-2z" fill="#f4a261"/><path d="M150 18c10-14 30-12 34 2-12 9-26 9-34-2z" fill="#e9c46a"/><path d="M110 70c12-16 36-14 41 2-14 11-30 11-41-2z" fill="#e76f51"/><path d="M178 78c8-11 24-10 27 1-9 7-20 7-27-1z" fill="#f4a261"/><circle cx="20" cy="88" r="5" fill="#e9c46a"/><circle cx="200" cy="44" r="4" fill="#e76f51"/>`
+    :(m===12||m<=2)?`<g fill="none" stroke="#8ab4f8" stroke-width="2.5" stroke-linecap="round">${[[40,34,12],[150,26,9],[112,78,11],[190,80,8]].map(([x,y,r])=>`<path d="M${x-r} ${y}h${2*r}M${x} ${y-r}v${2*r}M${x-r*.7} ${y-r*.7}l${1.4*r} ${1.4*r}M${x-r*.7} ${y+r*.7}l${1.4*r} ${-1.4*r}"/>`).join("")}</g><circle cx="80" cy="92" r="3" fill="#f4c542"/><circle cx="205" cy="40" r="3" fill="#f4c542"/>`
+    :(m>=3&&m<=5)?`${[[44,36,"#f7a8c4"],[150,24,"#c9a7f5"],[112,76,"#f7c873"],[188,82,"#f7a8c4"]].map(([x,y,c])=>`<g fill="${c}">${[0,72,144,216,288].map(a=>`<ellipse cx="${x}" cy="${y-8}" rx="5" ry="8" transform="rotate(${a} ${x} ${y})"/>`).join("")}</g><circle cx="${x}" cy="${y}" r="4" fill="#ffd166"/>`).join("")}`
+    :`<circle cx="170" cy="40" r="22" fill="#ffd166"/><g stroke="#ffd166" stroke-width="3" stroke-linecap="round">${[0,45,90,135,180,225,270,315].map(a=>`<path d="M170 40m${Math.cos(a*Math.PI/180)*30} ${Math.sin(a*Math.PI/180)*30}l${Math.cos(a*Math.PI/180)*9} ${Math.sin(a*Math.PI/180)*9}"/>`).join("")}</g><path d="M30 90c20-14 40 14 60 0s40 14 60 0" fill="none" stroke="#8ecae6" stroke-width="3" stroke-linecap="round"/>`;
+  return `<svg class="joydeco" viewBox="0 0 220 120" aria-hidden="true"><g opacity=".85">${g}</g></svg>`;
+}
+// célébration : confettis (si activés) + petit message
+function joyCelebrate(msg,key){
+  if(key){ const k="cmpl_joy_"+key+"_"+todayISO(); try{ if(sessionStorage.getItem(k)) return; sessionStorage.setItem(k,"1"); }catch(e){} }
+  if(Date.now()-(joyCelebrate.last||0)<90e3) return; joyCelebrate.last=Date.now();
+  const t=document.createElement("div"); t.className="joytoast"; t.setAttribute("role","status"); t.textContent=msg; document.body.appendChild(t); setTimeout(()=>t.remove(),3800);
+  if(!joyFxOn()||matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const c=document.createElement("div"); c.className="joyconf"; const col=["#e76f51","#f4a261","#e9c46a","#2a9d8f","#8ab4f8","#c77dff"];
+  for(let i=0;i<70;i++){ const x=document.createElement("i"); x.style.left=Math.random()*100+"vw"; x.style.background=col[i%6]; x.style.animationDelay=(Math.random()*.6)+"s"; x.style.setProperty("--r",Math.round(Math.random()*90)+"deg"); c.appendChild(x); }
+  document.body.appendChild(c); setTimeout(()=>c.remove(),3600);
+}
+// surveille quelques compteurs : passage à zéro = petite fête
+function joyWatch(){
+  if(!S.me||S.me.role==="patient"||S.me.status!=="active"||!S.reqs) return;
+  const n=dashReqs().length, t=myTasks().filter(x=>!x.done_at).length;
+  if(S.joyR>0&&n===0) joyCelebrate("🎉 Plus aucune demande en attente — bravo !","inbox");
+  else if(S.joyT>0&&t===0) joyCelebrate("✨ Toutes vos tâches sont faites. Bravo !","tasks");
+  S.joyR=n; S.joyT=t;
+}
+
+/* ----- mercis ----- */
+const kudosRecent = () => (S.kudos||[]).filter(k=>Date.now()-new Date(k.created_at)<14*864e5);
+function kudoNoteHTML(k){
+  const mine=k.from_id===S.me.id||k.to_id===S.me.id||isAdmin();
+  return `<div class="mnote" style="--mc:${esc(k.color||"#fff1c9")}"><p>Merci <b>${esc(flairEmoji(k.to_id))} ${esc(staffFirst(k.to_id))}</b> ${esc(k.body)}</p><small>— ${esc(flairEmoji(k.from_id))} ${esc(staffFirst(k.from_id))} · ${fmt(k.created_at)}${mine?` <button type="button" class="linkbtn" data-kdel="${k.id}">retirer</button>`:""}</small></div>`;
+}
+function kudoFormHTML(){
+  const F=S.kdForm; if(!F) return "";
+  return `<div class="kform"><label class="fld">Merci à<select id="kd-to"><option value="">Choisir…</option>${activeStaff().filter(t=>t.id!==S.me.id).map(t=>`<option value="${t.id}" ${F.to===t.id?"selected":""}>${esc(staffName(t.id))}</option>`).join("")}</select></label>
+    <label class="fld">Pour…<input type="text" id="kd-b" maxlength="280" value="${esc(F.body)}" placeholder="ton aide ce matin à l'accueil 🙏"></label>
+    <div class="kcols">${FLAIR_COLORS.slice(0,6).map(c=>`<button type="button" class="kcol" style="background:${c}" data-kcol="${c}" aria-pressed="${F.color===c}" aria-label="Couleur"></button>`).join("")}</div>
+    <div class="btnrow"><button type="button" class="btn" id="kd-go">🙏 Envoyer le merci</button><button type="button" class="btn ghost" id="kd-x">Annuler</button></div></div>`;
+}
+function bindKudos(){
+  const n=$("#kd-new"); if(n) n.onclick=()=>{ S.kdForm={to:"",body:"",color:FLAIR_COLORS[(dayNum()+S.kudos.length)%6]}; render(); $("#kd-to")?.focus(); };
+  $$("[data-kdel]").forEach(b=>b.onclick=async()=>{ if(!confirmInline(b,"Retirer ?")) return; if(await run(()=>sb.from("kudos").delete().eq("id",+b.dataset.kdel),"Retiré")){ S.kudos=S.kudos.filter(k=>k.id!==+b.dataset.kdel); render(); } });
+  const F=S.kdForm; if(!F||!$("#kd-go")) return;
+  const keep=()=>{ F.to=$("#kd-to").value; F.body=$("#kd-b").value; };
+  $("#kd-to").onchange=keep; $("#kd-b").oninput=keep;
+  $$("[data-kcol]").forEach(b=>b.onclick=()=>{ keep(); F.color=b.dataset.kcol; render(); });
+  $("#kd-x").onclick=()=>{ S.kdForm=null; render(); };
+  $("#kd-go").onclick=async e=>{ keep(); if(!F.to) return toast("Choisissez le collègue à remercier."); if(!F.body.trim()) return toast("Écrivez pourquoi vous le remerciez.");
+    e.target.disabled=true; let body=F.body.trim(); if(!/^(pour|d'|de |du |des )/i.test(body)) body="pour "+body;
+    if(await run(()=>sb.from("kudos").insert({from_id:S.me.id,to_id:F.to,body,color:F.color}),"Merci envoyé 🙏")){ S.kdForm=null; await loadOrg(); render(); joyCelebrate("🙏 Merci envoyé !"); } else e.target.disabled=false; };
+}
+
+/* ----- réglages : mon emoji, ma couleur, ambiance ----- */
+function flairSettingsHTML(){
+  const f=flairOf(S.me.id);
+  return `<section class="card tscard"><h3>Mon emoji et ma couleur</h3><p class="hint">Affichés à côté de votre nom : tableau de bord, mercis, locaux.</p>
+    <div class="flgrid">${FLAIR_EMOJIS.map(e=>`<button type="button" class="flem" data-flem="${e}" aria-pressed="${f.emoji===e}">${e}</button>`).join("")}</div>
+    <div class="kcols">${FLAIR_COLORS.map(c=>`<button type="button" class="kcol" style="background:${c}" data-flcol="${c}" aria-pressed="${f.color===c}" aria-label="Couleur ${c}"></button>`).join("")}</div></section>
+  <section class="card tscard"><h3>Ambiance</h3>
+    <label class="chk2"><input type="checkbox" id="fx-on" ${joyFxOn()?"checked":""}> Petites célébrations (confettis quand tout est traité)</label>
+    <label class="chk2"><input type="checkbox" id="pause-on" ${pauseOn()?"checked":""}> Afficher l'onglet « ☕ Pause café »</label>
+    <p class="hint">Ces deux réglages ne valent que pour cet appareil.</p></section>`;
+}
+function bindFlairSettings(){
+  const save=async patch=>{ const cur={...flairOf(S.me.id),...patch}; S.flair[S.me.id]=cur;
+    const {error}=await sb.from("staff_flair").upsert({user_id:S.me.id,emoji:cur.emoji||null,color:cur.color||null,updated_at:new Date().toISOString()});
+    if(error){ toast(/staff_flair/.test(error.message||"")?"Disponible après la mise à jour du serveur (migration 072).":frError(error)); return; } toast("Enregistré"); render(); };
+  $$("[data-flem]").forEach(b=>b.onclick=()=>save({emoji:b.dataset.flem}));
+  $$("[data-flcol]").forEach(b=>b.onclick=()=>save({color:b.dataset.flcol}));
+  const fx=$("#fx-on"); if(fx) fx.onchange=()=>{ try{ localStorage.setItem("cmpl_fx",fx.checked?"1":"0"); }catch(e){} if(fx.checked) joyCelebrate("🎉 Voilà à quoi ça ressemble !"); };
+  const pz=$("#pause-on"); if(pz) pz.onchange=()=>{ try{ localStorage.setItem("cmpl_pause",pz.checked?"1":"0"); }catch(e){} render(); };
+}
+
+/* =====================================================================
+   TABLEAU DE BORD (compact : tout sur une page)
+   ===================================================================== */
 function dashHTML(){
   const now=new Date(), td=todayISO(), R=dashReqs(), U=R.filter(r=>reqGroup(r)===0), rep=R.filter(r=>reqGroup(r)===1);
   const T=myTasks().filter(t=>!isExam(t)).sort(byPrio), Tl=T.filter(t=>t.due_date&&t.due_date<td), Tt=T.filter(t=>t.due_date===td), Th=T.filter(t=>prioOf(t)==="haute");
   const E=dashExams(), Eg=E.filter(t=>t.exam_results_at), El=E.filter(t=>!t.exam_results_at&&t.due_date&&t.due_date<td);
-  const th=tSorted().filter(t=>tUnread(t)||tFlagged(t)).slice(0,5), nU=teamUnread(), nF=(S.team2.threads||[]).filter(tFlagged).length;
+  const th=tSorted().filter(t=>tUnread(t)||tFlagged(t)).slice(0,6), nU=teamUnread(), nF=(S.team2.threads||[]).filter(tFlagged).length;
   const rx=R.filter(isSimpleRx).length;
   const abs=(S.teamAbs||[]).filter(x=>x.starts<=td&&(!x.ends||x.ends>=td));
   const bd=(S.bdays||[]).filter(b=>isBdayOn(b,now)&&(b.shared||b.user_id===S.me.id));
-  const kpi=(go,n,l,sub,cls="")=>`<button type="button" class="dkpi ${cls}${n?"":" zero"}" data-dgo="${go}"><b>${n}</b><span>${l}</span>${sub?`<small>${sub}</small>`:""}</button>`;
-  const nm=r=>{ const p=reqName(r).split(/\s+/); return p[0]+(p[1]?" "+p.slice(1).join(" "):""); };
+  const KIC={inbox:"📥",messages:"💬",tasks:"✅",exams:"🧪"};
+  const kpi=(go,n,l,sub,cls="")=>`<button type="button" class="dkpi k-${go} ${cls}${n?"":" zero"}" data-dgo="${go}"><i class="kic" aria-hidden="true">${KIC[go]}</i><span class="kt"><b>${n}</b> <span>${l}</span></span>${sub?`<small>${sub}</small>`:""}</button>`;
+  const nm=r=>reqName(r);
   const reqRow=r=>`<button type="button" class="drow${reqGroup(r)===0?" hot":""}" data-dreq="${r.id}"><span class="dic t-${r.type}" aria-hidden="true">${IEMO[r.type]||"📋"}</span>
     <span class="dtx"><b>${esc(nm(r))}</b><small>${TYPES[r.type]?.label||""}${newPatientMsg(r)?" · a répondu":""}</small></span>${dueTagI(r)}</button>`;
   const taskRow=t=>{ const late=t.due_date&&t.due_date<td, d=t.due_date?(t.due_date===td?"Aujourd'hui":new Date(t.due_date+"T12:00").toLocaleDateString(LOC,{day:"numeric",month:"short"})):"";
     return `<button type="button" class="drow" data-dtask="${t.id}"><span class="tprio pr-${prioOf(t)}">${PRIO[prioOf(t)][0]}</span><span class="dtx"><b>${esc(t.title)}</b>${taskPatShort(t)?`<small>👤 ${esc(taskPatShort(t))}</small>`:""}</span><span class="ddue${late?" late":t.due_date===td?" today":""}">${late?"⚠️ ":""}${d}</span></button>`; };
-  const examRow=t=>`<button type="button" class="drow" data-dtask="${t.id}"><span class="dic" aria-hidden="true">🧪</span><span class="dtx"><b>${esc(taskPatShort(t))}</b><small>${esc((t.exam_types||[]).join(", "))}</small></span>${t.exam_results_at?`<span class="ipill rep">à communiquer</span>`:t.due_date&&t.due_date<td?`<span class="ipill late">résultats en retard</span>`:`<span class="ipill wait">en attente</span>`}</button>`;
+  const examRow=t=>`<button type="button" class="drow" data-dtask="${t.id}"><span class="dic" aria-hidden="true">🧪</span><span class="dtx"><b>${esc(taskPatShort(t))}</b><small>${esc((t.exam_types||[]).join(", "))}</small></span>${t.exam_results_at?`<span class="ipill rep">à communiquer</span>`:t.due_date&&t.due_date<td?`<span class="ipill late">en retard</span>`:`<span class="ipill wait">en attente</span>`}</button>`;
   const thRow=t=>{ const last=tMsgs(t.id).slice(-1)[0], u=tUnread(t); return `<button type="button" class="drow" data-dthread="${t.id}">${tAvatar(t)}<span class="dtx"><b>${tFlagged(t)?"🚩 ":""}${esc(tTitle(t))}</b><small>${esc(tPreview(last))}</small></span>${u?`<span class="dnum">${u}</span>`:""}</button>`; };
-  const card=(ic,title,go,body,empty,extra="")=>`<section class="card dcard"><header><h3>${ic} ${title}</h3>${go?`<button type="button" class="linkbtn" data-dgo="${go}">Tout voir ›</button>`:""}</header>${body||`<p class="dempty">${empty}</p>`}${extra}</section>`;
+  const empty=(ic,b,s)=>`<span class="joyempty"><span class="yay">${ic}</span><b>${b}</b><small>${s}</small></span>`;
+  const card=(ic,title,go,body,emptyH,extra="",cls="")=>`<section class="card dcard ${cls}"><header><h3><span class="cic" aria-hidden="true">${ic}</span>${title}</h3>${go?`<button type="button" class="linkbtn" data-dgo="${go}">Tout voir ›</button>`:""}</header><div class="dbody">${body||emptyH}${extra}</div></section>`;
   const adm=isAdmin(), nAcc=adm?S.pending.length+(S.pendingKids||[]).length:0, nInv=invOpen(), nFb=adm?fbNew():0;
-  return `<div class="dbhead"><div><p class="greet">${greetWord()} ${esc(S.me.first_name||"")} 👋</p>
-    <h1>${now.toLocaleDateString(LOC,{weekday:"long",day:"numeric",month:"long"}).replace(/^./,c=>c.toUpperCase())}</h1>
-    <p>${isOpen(now)?'<span class="state on">Centre ouvert</span>':`<span class="state off">Fermé · réouverture ${fmtWhen(nextOpen(now))}</span>`}${abs.length?` · ${abs.length} absent${abs.length>1?"s":""} aujourd'hui`:""}</p></div>
-    <div class="dquick"><button type="button" class="btn" data-cs="compose">${SI.pen}<span>Écrire à un patient</span></button><button type="button" class="btn ghost" data-dnew="task">＋ Tâche</button>${canExam()?`<button type="button" class="btn ghost" data-dnew="exam">🧪 Examen</button>`:""}<button type="button" class="btn ghost" data-rosa>${SI.cal}<span>Agenda Rosa</span></button></div></div>
-  <div class="dkpis">
-    ${kpi("inbox",R.length,"demande"+(R.length>1?"s":"")+" à traiter",U.length?`<em>🔴 ${U.length} urgente${U.length>1?"s":""} ou en retard</em>`:rep.length?`${rep.length} patient${rep.length>1?"s ont":" a"} répondu`:"",U.length?"hot":"")}
-    ${kpi("messages",nU,"message"+(nU>1?"s":"")+" de l'équipe",nF?`🚩 ${nF} prioritaire${nF>1?"s":""}`:nU?"non lu"+(nU>1?"s":""):"tout est lu")}
-    ${kpi("tasks",T.length,"tâche"+(T.length>1?"s":"")+" à faire",Tl.length?`<em>⚠️ ${Tl.length} en retard</em>`+(Tt.length?` · ${Tt.length} aujourd'hui`:""):Tt.length?`${Tt.length} pour aujourd'hui`:Th.length?`${Th.length} prioritaire${Th.length>1?"s":""}`:"",Tl.length?"warn":"")}
-    ${canExam()?kpi("exams",Eg.length,"résultat"+(Eg.length>1?"s":"")+" à communiquer",`${E.length-Eg.length} examen${E.length-Eg.length>1?"s":""} en attente${El.length?` · <em>${El.length} en retard</em>`:""}`,Eg.length?"ok":""):""}
-  </div>
-  <div class="dgrid">
-    ${dashHoHTML()}
-    ${card("📥","À traiter en priorité","inbox",R.slice(0,7).map(reqRow).join(""),`<span class="yay">🎉</span> Aucune demande en attente.`,
-      (R.length>7?`<p class="dmore">+ ${R.length-7} autre${R.length-7>1?"s":""}</p>`:"")+(rx>=2?`<button type="button" class="drx" data-dgo="inbox">💊 <b>${rx} prescriptions simples</b> à accorder en série ›</button>`:""))}
-    ${card("✅","Mes tâches","tasks",T.slice(0,6).map(taskRow).join(""),"✨ Rien à faire pour l'instant.")}
-    ${card("💬","Équipe","messages",th.map(thRow).join(""),"Tous les messages sont lus.")}
-    ${canExam()?card("🧪","Examens à suivre","exams",[...Eg,...El,...E.filter(t=>!Eg.includes(t)&&!El.includes(t))].slice(0,5).map(examRow).join(""),"Aucun examen en attente."):""}
-    <section class="card dcard dtoday"><header><h3>📅 Aujourd'hui au centre</h3></header>
-      ${bd.map(b=>`<p class="dline">🎂 ${b.user_id===S.me.id?"<b>Joyeux anniversaire !</b>":`Anniversaire de <b>${esc(staffFirst(b.user_id))}</b> <button type="button" class="linkbtn" data-bdwrite="${b.user_id}">Lui écrire</button>`}</p>`).join("")}
+  const fl=flairOf(S.me.id), pollsTodo=(S.polls||[]).filter(p=>pollOpen(p)&&!S.pvotes[p.id]);
+  const motDone=(()=>{ try{ const st=JSON.parse(localStorage.getItem("cmpl_mot_"+todayISO())||"null"); return st&&st.done; }catch(e){ return false; } })();
+  const KU=kudosRecent().slice(0,4);
+  const today=`${bd.map(b=>`<p class="dline">🎂 ${b.user_id===S.me.id?"<b>Joyeux anniversaire !</b> 🎉":`Anniversaire de <b>${esc(staffFirst(b.user_id))}</b> <button type="button" class="linkbtn" data-bdwrite="${b.user_id}">Lui écrire</button>`}</p>`).join("")}
       ${abs.length?abs.map(x=>`<p class="dline">🌴 <b>${esc(x.provider_id?provName(x.provider_id):(x.name||"—"))}</b> ${x.kind==="absence"?"absent(e)":"en congé"}${x.ends?` jusqu'au ${fmtDate(x.ends+"T12:00")}`:""}</p>`).join(""):`<p class="dline">👥 Toute l'équipe est présente.</p>`}
       ${myAnns().map(b=>`<button type="button" class="dline dlink dann" data-annopen="${b.id}">📢 <b>${esc(b.title)}</b></button>`).join("")}
       ${dashOrgHTML()}
+      ${pollsTodo.slice(0,2).map(p=>`<button type="button" class="dline dlink dpoll" data-cs="polls">📊 Sondage : <b>${esc(p.question)}</b> · voter ›</button>`).join("")}
+      ${pauseOn()&&!motDone?`<button type="button" class="dline dlink" data-cs="pause">🧩 Le mot du jour vous attend ›</button>`:""}
       ${nInv?`<button type="button" class="dline dlink" data-cs="inventory">📦 <b>${nInv}</b> article${nInv>1?"s":""} à commander ›</button>`:""}
       ${nAcc?`<button type="button" class="dline dlink" data-cs="accounts">🧑‍⚕️ <b>${nAcc}</b> compte${nAcc>1?"s":""} patient à valider ›</button>`:""}
-      ${nFb?`<button type="button" class="dline dlink" data-cs="feedback">💡 <b>${nFb}</b> nouvelle${nFb>1?"s":""} suggestion${nFb>1?"s":""} ›</button>`:""}
-    </section>
-  </div>`;
+      ${nFb?`<button type="button" class="dline dlink" data-cs="feedback">💡 <b>${nFb}</b> nouvelle${nFb>1?"s":""} suggestion${nFb>1?"s":""} ›</button>`:""}`;
+  return `<div class="dash">
+  <div class="dbhead joyhero">${seasonDeco()}
+    <div class="dbh"><p class="greet"><span class="joyav" style="background:${esc(fl.color||"#ffe3d6")}" title="Votre emoji (Réglages)">${fl.emoji||"🙂"}</span>${greetWord()} ${esc(S.me.first_name||"")} 👋 <b class="dday">${now.toLocaleDateString(LOC,{weekday:"long",day:"numeric",month:"long"}).replace(/^./,c=>c.toUpperCase())}</b>
+      ${isOpen(now)?'<span class="state on">Centre ouvert</span>':`<span class="state off">Fermé · réouverture ${fmtWhen(nextOpen(now))}</span>`}</p>
+      <p class="joyline">💭 ${esc(joyLine())}</p></div>
+    <div class="dquick"><button type="button" class="btn" data-cs="compose">${SI.pen}<span>Écrire à un patient</span></button><button type="button" class="btn ghost" data-dnew="task">＋ Tâche</button>${canExam()?`<button type="button" class="btn ghost" data-dnew="exam">🧪 Examen</button>`:""}<button type="button" class="btn ghost" data-rosa>${SI.cal}<span>Rosa</span></button></div></div>
+  <div class="dkpis">
+    ${kpi("inbox",R.length,"demande"+(R.length>1?"s":"")+" à traiter",U.length?`<em>🔴 ${U.length} urgente${U.length>1?"s":""} ou en retard</em>`:rep.length?`${rep.length} patient${rep.length>1?"s ont":" a"} répondu`:"",U.length?"hot":"")}
+    ${kpi("messages",nU,"message"+(nU>1?"s":"")+" d'équipe",nF?`🚩 ${nF} prioritaire${nF>1?"s":""}`:nU?"non lu"+(nU>1?"s":""):"tout est lu")}
+    ${kpi("tasks",T.length,"tâche"+(T.length>1?"s":"")+" à faire",Tl.length?`<em>⚠️ ${Tl.length} en retard</em>`+(Tt.length?` · ${Tt.length} aujourd'hui`:""):Tt.length?`${Tt.length} pour aujourd'hui`:Th.length?`${Th.length} prioritaire${Th.length>1?"s":""}`:"",Tl.length?"warn":"")}
+    ${canExam()?kpi("exams",Eg.length,"résultat"+(Eg.length>1?"s":"")+" à communiquer",`${E.length-Eg.length} en attente${El.length?` · <em>${El.length} en retard</em>`:""}`,Eg.length?"ok":""):""}
+  </div>
+  <div class="dcols">
+    <div class="dcol">
+      ${dashHoHTML()}
+      ${card("📥","À traiter en priorité","inbox",R.slice(0,15).map(reqRow).join(""),empty("🎉","Plus rien en attente !","Bravo à toute l'équipe. Un petit café ? ☕"),
+        (R.length>15?`<p class="dmore">+ ${R.length-15} autre${R.length-15>1?"s":""}</p>`:"")+(rx>=2?`<button type="button" class="drx" data-dgo="inbox">💊 <b>${rx} prescriptions simples</b> à accorder en série ›</button>`:""),"dgrow")}
+    </div>
+    <div class="dcol">
+      ${card("✅","Mes tâches","tasks",T.slice(0,12).map(taskRow).join(""),empty("✨","Liste vide !","Profitez-en pour souffler un peu."),"","dgrow")}
+      ${canExam()?card("🧪","Examens à suivre","exams",[...Eg,...El,...E.filter(t=>!Eg.includes(t)&&!El.includes(t))].slice(0,8).map(examRow).join(""),`<p class="dempty">Aucun examen en attente.</p>`):""}
+    </div>
+    <div class="dcol">
+      <section class="card dcard dtoday"><header><h3><span class="cic" aria-hidden="true">📅</span>Aujourd'hui au centre</h3></header><div class="dbody">${today}</div></section>
+      ${card("💬","Équipe","messages",th.map(thRow).join(""),empty("📭","Tout est lu","Rien de neuf du côté de l'équipe."))}
+      <section class="card dcard dmerci"><header><h3><span class="cic" aria-hidden="true">🙏</span>Mercis de l'équipe</h3>${S.kdForm?"":`<button type="button" class="linkbtn" id="kd-new">＋ Dire merci</button>`}</header>
+        <div class="dbody">${kudoFormHTML()}${KU.map(kudoNoteHTML).join("")||(S.kdForm?"":`<p class="dempty">Un collègue vous a aidé ? Dites-lui merci 🙂</p>`)}</div></section>
+    </div>
+  </div></div>`;
 }
+
+/* =====================================================================
+   PAUSE CAFÉ : mot du jour, devinette du jour, une minute pour respirer
+   ===================================================================== */
+// mots de 5 lettres (sans accents) — le même mot pour toute l'équipe, chaque jour
+const MOTS=("ARBRE AVION BALLE BARBE BATON BIERE BLANC BOIRE BOITE BRUIT CABLE CADRE CALME CANNE CARTE CAUSE CHAIR CHAMP CHANT CHAUD CHIEN CHOSE CIDRE CLAIR CLOUS COEUR CORDE CORPS COUPE COURS COURT CRABE CREME CRIER CROIX DANSE DATTE DEBUT DOIGT DOUCE DRAPS ECOLE EPICE ETAGE FABLE FARCE FERME FETES FIBRE FILLE FLEUR FORET FORME FRAIS FRUIT GARDE GLACE GRAIN GRAND GUIDE HERBE HEURE HIVER HOTEL HUILE IMAGE JAUNE JEUNE JOUER JOURS JUPES LAINE LAMPE LAPIN LARGE LIVRE LOUPE LUNDI MAGIE MAIRE MANGO MARIN MELON MERCI METRE MIEUX MONDE MONTS MOTOS MUSEE NAGER NEIGE NOIRE NUAGE OCEAN OLIVE OMBRE ONGLE ORAGE ORGUE PAGES PANDA PARCS PATES PAUSE PECHE PEINE PELLE PERLE PETIT PHARE PIANO PIECE PIEDS PISTE PLAGE PLANT PLATS PLUIE POIRE POMME PONTS PORTE POSTE POUCE PRIER PRUNE QUAIS RADIO RANGE RAYON REGLE REINE RESTE REVES RIRES RIVES ROCHE ROUGE ROUTE RUCHE SABLE SALON SAPIN SAUCE SAULE SAVON SIGNE SINGE SOLDE SOUPE STADE STYLO SUCRE TABLE TAPIS TARTE TASSE TEMPS TERRE TETES TIGRE TITRE TOILE TRAIN VACHE VAGUE VALSE VENTS VERRE VIGNE VILLE VITRE VOILE ZEBRE ACIER AIDER AIMER AMOUR ANGLE ARENE ATOME AUTRE BADGE BAGUE BASSE BELLE BLOND BOSSE BULLE CAFES CANOT CERFS CLOWN COLLE CONTE COUDE CRAIE CYGNE DEFIS DINER DOUZE DROLE EPAIS FACES FAUNE FEVES FILET FINAL FOIRE FOLLE FOULE GANTS GENOU GLOBE GOMME GORGE GRUES HAMAC HIBOU KAYAK KIWIS LIANE LILAS LITRE LOTUS LUTIN MARGE MASSE MERLE MINCE MOINE NAPPE NICHE NOYAU OASIS OPERA PAUME PIPES PIZZA PLUME POELE POLKA POUPE PRISE PUNCH RADIS RECIT ROBOT ROSES RUBAN SALSA SAUTS SIROP SONGE SPORT SUITE TACHE TANGO THONS TRAME VELOS VERTS VIDEO").split(/\s+/).filter(w=>/^[A-Z]{5}$/.test(w));
+const AZERTY=["AZERTYUIOP","QSDFGHJKLM","↵WXCVBN⌫"];
+const motOfDay = () => MOTS[(dayNum()*7919)%MOTS.length];
+function motEval(g,a){ const r=Array(5).fill("x"), left={};
+  for(let i=0;i<5;i++){ if(g[i]===a[i]) r[i]="g"; else left[a[i]]=(left[a[i]]||0)+1; }
+  for(let i=0;i<5;i++){ if(r[i]!=="g"&&left[g[i]]){ r[i]="y"; left[g[i]]--; } } return r; }
+const motKey = () => "cmpl_mot_"+todayISO();
+function motState(){ try{ const s=JSON.parse(localStorage.getItem(motKey())||"null"); if(s&&Array.isArray(s.g)) return s; }catch(e){} return {g:[],done:false,won:false,cur:""}; }
+function motSave(s){ try{ localStorage.setItem(motKey(),JSON.stringify(s)); }catch(e){} }
+const MOT_EMO={g:"🟩",y:"🟨",x:"⬜"};
+const motGrid = (s,a) => s.g.map(w=>motEval(w,a).map(c=>MOT_EMO[c]).join("")).join("\n");
+
+// devinettes (classiques populaires)
+const DEVINETTES=[["Qu'est-ce qui a des dents mais ne mord jamais ?","Un peigne."],["Plus on en prend, plus on en laisse derrière soi. Qu'est-ce que c'est ?","Des pas."],["Qu'est-ce qui monte et ne redescend jamais ?","L'âge."],["Je suis plein de trous mais je retiens l'eau. Qui suis-je ?","Une éponge."],["Qu'est-ce qui a des aiguilles mais ne coud jamais ?","Une horloge (ou un sapin !)."],["Qu'est-ce qui court sans jamais marcher ?","L'eau d'une rivière."],["Je commence la nuit et je termine le matin. Qui suis-je ?","La lettre N."],["Qu'est-ce qui est à toi, mais que les autres utilisent plus que toi ?","Ton prénom."],["Qu'est-ce qui se mouille en séchant ?","Une serviette."],["Plus je suis chaud, plus je suis frais. Qui suis-je ?","Le pain."],["Qu'est-ce qui a un cou mais pas de tête ?","Une bouteille."],["Qu'est-ce qui peut remplir une pièce sans prendre de place ?","La lumière."],["Je ne peux pas parler, mais je réponds quand on me parle. Qui suis-je ?","L'écho."],["Qu'est-ce qui a quatre pieds le matin, deux à midi et trois le soir ?","L'homme (énigme du Sphinx) : bébé, adulte, puis avec une canne."],["Qu'est-ce qui est noir quand on l'achète, rouge quand on l'utilise et gris quand on le jette ?","Le charbon."],["Qu'est-ce qui a une tête et une queue mais pas de corps ?","Une pièce de monnaie."],["On me trouve une fois dans une minute, deux fois dans un moment, jamais dans cent ans. Qui suis-je ?","La lettre M."],["Qu'est-ce qui voyage dans le monde entier en restant dans un coin ?","Un timbre."],["Plus il y en a, moins on voit. Qu'est-ce que c'est ?","Le brouillard (ou l'obscurité)."],["Qu'est-ce qui a un lit mais ne dort jamais ?","Une rivière."],["Qu'est-ce qui se casse dès qu'on prononce son nom ?","Le silence."],["J'ai des villes mais pas de maisons, des forêts mais pas d'arbres, de l'eau mais pas de poissons. Qui suis-je ?","Une carte."],["Qu'est-ce qui a des yeux mais ne voit pas ?","Une pomme de terre (ou une aiguille !)."],["Qu'est-ce qui monte quand la pluie descend ?","Un parapluie (qu'on ouvre)."],["Je suis toujours devant toi mais tu ne peux jamais me voir. Qui suis-je ?","Le futur."],["Qu'est-ce qui a une bouche mais ne mange jamais ?","Une rivière (son embouchure) — ou un volcan !"],["Qu'est-ce qui fait le tour de la maison sans bouger ?","Le mur (ou la clôture)."],["Qu'est-ce qui est plus léger qu'une plume, mais que même l'homme le plus fort ne peut retenir plus de quelques minutes ?","Son souffle."],["Qu'est-ce qui s'allonge quand on lui coupe les deux bouts ?","Un fossé (ou une tranchée)."],["Le père de Toto a trois fils : Riri, Fifi et… ?","Toto !"],["Qu'est-ce qui est jaune et qui attend ?","Jonathan."],["Qu'est-ce qui a des feuilles mais n'est pas un arbre ?","Un livre."],["Quel est le comble pour un médecin ?","D'avoir un patient… impatient !"],["Pourquoi les plongeurs plongent-ils toujours en arrière ?","Parce que sinon, ils tombent dans le bateau."],["Qu'est-ce qui est vert, qui monte et qui descend ?","Un petit pois dans un ascenseur."],["Je suis grand quand je suis jeune et petit quand je suis vieux. Qui suis-je ?","Une bougie."],["Qu'est-ce qui peut voyager autour du monde en restant immobile ?","Un timbre sur une lettre (ou la Terre elle-même !)."]];
+const devOfDay = () => DEVINETTES[(dayNum()*13)%DEVINETTES.length];
+
+async function loadPauseRes(){ const {data,error}=await sb.from("pause_results").select("*").eq("day",todayISO()); if(!error) S.pauseRes=data||[]; S.pauseLoaded=true; }
+function pauseHTML(){
+  const P=S.pz||(S.pz={tab:"mot",devOpen:false,breath:false}), a=motOfDay(), st=motState();
+  const tabs=`<div class="seg" role="group" aria-label="Pause"><button type="button" data-pztab="mot" aria-pressed="${P.tab==="mot"}">🧩 Mot du jour</button><button type="button" data-pztab="dev" aria-pressed="${P.tab==="dev"}">🤔 Devinette</button><button type="button" data-pztab="resp" aria-pressed="${P.tab==="resp"}">🌬️ Respirer</button></div>`;
+  const head=`<div class="chead pzhead"><div><h1>☕ Pause café</h1><p>Deux minutes pour souffler entre deux patients. Le même mot et la même devinette pour toute l'équipe, chaque jour.</p></div></div>`;
+  let body="";
+  if(P.tab==="mot"){
+    const rows=[...st.g,...(st.done?[]:[st.cur])]; while(rows.length<6) rows.push("");
+    const keyState={}; for(const w of st.g){ motEval(w,a).forEach((c,i)=>{ const k=w[i], o=keyState[k]; if(c==="g"||(c==="y"&&o!=="g")||(!o)) keyState[k]=c==="x"&&o?o:c; }); }
+    const grid=rows.slice(0,6).map((w,ri)=>{ const ev=ri<st.g.length?motEval(st.g[ri],a):null; return `<div class="mrow">${[0,1,2,3,4].map(i=>`<span class="mt${ev?" "+ev[i]:w[i]?" f":""}">${w[i]||""}</span>`).join("")}</div>`; }).join("");
+    const team=(S.pauseRes||[]).filter(r=>r.game==="mot");
+    body=`<section class="card pzcard"><div class="mgrid" aria-label="Grille du mot du jour">${grid}</div>
+      ${st.done?`<div class="mend">${st.won?`<b>🎉 Trouvé en ${st.g.length}/6 !</b>`:`<b>Le mot était <span class="mword">${a}</span></b>`}<p class="hint">Revenez demain pour un nouveau mot.</p><button type="button" class="btn ghost" id="mot-share">📋 Copier mon résultat</button></div>`
+        :`<div class="mkb">${AZERTY.map(r=>`<div>${[...r].map(k=>`<button type="button" class="mk${k==="↵"||k==="⌫"?" wide":""} ${keyState[k]||""}" data-mk="${k}" aria-label="${k==="↵"?"Valider":k==="⌫"?"Effacer":k}">${k==="↵"?"Valider":k}</button>`).join("")}</div>`).join("")}</div>
+         <p class="hint mhelp">Trouvez le mot de 5 lettres en 6 essais. 🟩 bonne lettre bien placée · 🟨 lettre présente ailleurs · ⬜ absente. Sans accents.</p>`}
+      </section>
+      <section class="card pzcard"><h3>Aujourd'hui dans l'équipe</h3>${team.length?team.map(r=>`<p class="pzres">${esc(flairEmoji(r.user_id))} <b>${esc(whoS(r.user_id))}</b> : ${r.solved?`trouvé en ${r.tries}/6`:"pas trouvé"}</p>`).join(""):`<p class="hint">Personne n'a encore fini le mot du jour. À vous de jouer !</p>`}</section>`;
+  } else if(P.tab==="dev"){
+    const [q,r]=devOfDay();
+    body=`<section class="card pzcard devcard"><p class="devq">${esc(q)}</p>${P.devOpen?`<p class="deva">💡 ${esc(r)}</p>`:`<button type="button" class="btn" id="dev-show">Voir la réponse</button>`}<p class="hint">Une nouvelle devinette chaque jour. Posez-la à vos collègues avant de regarder 😉</p></section>`;
+  } else {
+    body=`<section class="card pzcard breath"><div class="bcircle${P.breath?" on":""}" aria-hidden="true"><span id="br-t">${P.breath?"Inspirez…":"Prêt ?"}</span></div>
+      <p class="hint">Cohérence cardiaque : inspirez 5 secondes, expirez 5 secondes, pendant une minute. Suivez le cercle.</p>
+      <button type="button" class="btn" id="br-go">${P.breath?"Arrêter":"▶ Commencer (1 minute)"}</button></section>`;
+  }
+  return head+tabs+body;
+}
+function bindPause(){
+  if(!S.pauseLoaded&&!S.pauseLoading){ S.pauseLoading=true; loadPauseRes().catch(()=>{ S.pauseLoaded=true; }).finally(()=>{ S.pauseLoading=false; if(S.cscreen==="pause") render(); }); }
+  const P=S.pz; $$("[data-pztab]").forEach(b=>b.onclick=()=>{ P.tab=b.dataset.pztab; stopBreath(); render(); });
+  if(P.tab==="mot"){
+    const a=motOfDay();
+    const press=async k=>{ const st=motState(); if(st.done) return;
+      if(k==="⌫"||k==="BACKSPACE"){ st.cur=st.cur.slice(0,-1); }
+      else if(k==="↵"||k==="ENTER"){ if(st.cur.length<5){ toast("Il faut 5 lettres."); return; }
+        st.g.push(st.cur); st.cur=""; const won=st.g[st.g.length-1]===a;
+        if(won||st.g.length>=6){ st.done=true; st.won=won; motSave(st); render();
+          if(won) joyCelebrate(`🧩 Mot du jour trouvé en ${st.g.length}/6 !`);
+          const {error}=await sb.from("pause_results").insert({user_id:S.me.id,day:todayISO(),game:"mot",tries:st.g.length,solved:won,grid:motGrid(st,a).replace(/\n/g," ")});
+          if(!error) await loadPauseRes(); if(S.cscreen==="pause") render(); return; } }
+      else if(/^[A-Z]$/.test(k)&&st.cur.length<5){ st.cur+=k; }
+      motSave(st); render(); };
+    $$("[data-mk]").forEach(b=>b.onclick=()=>press(b.dataset.mk));
+    document.onkeydown=e=>{ if(S.cscreen!=="pause"||S.pz?.tab!=="mot"||e.metaKey||e.ctrlKey||e.altKey) return; const el=document.activeElement; if(el&&/INPUT|TEXTAREA|SELECT/.test(el.tagName)) return;
+      const k=e.key.toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g,""); if(/^[A-Z]$/.test(k)||k==="ENTER"||k==="BACKSPACE"){ e.preventDefault(); press(k); } };
+    const sh=$("#mot-share"); if(sh) sh.onclick=()=>{ const st=motState(); copyText(`Mot du jour CMPL ${new Date().toLocaleDateString("fr-BE")} — ${st.won?st.g.length:"X"}/6\n${motGrid(st,a)}`); };
+  } else document.onkeydown=null;
+  const dv=$("#dev-show"); if(dv) dv.onclick=()=>{ P.devOpen=true; render(); };
+  const br=$("#br-go"); if(br) br.onclick=()=>{ if(P.breath){ stopBreath(); render(); return; } P.breath=true; render(); runBreath(); };
+}
+function runBreath(){ let n=0; stopBreath.t=setInterval(()=>{ n++; const t=$("#br-t"); if(!t||S.cscreen!=="pause"){ stopBreath(); return; }
+  if(n>=12){ stopBreath(); S.pz.breath=false; render(); toast("Bravo, une minute pour vous 🌿"); return; } t.textContent=n%2?"Expirez…":"Inspirez…"; },5000); }
+function stopBreath(){ clearInterval(stopBreath.t); if(S.pz) S.pz.breath=false; }
+
+/* =====================================================================
+   SONDAGES D'ÉQUIPE
+   ===================================================================== */
+const pollOpen = p => !p.closed_at&&(!p.closes_at||new Date(p.closes_at)>new Date());
+const POLL_END=[["","Pas de date limite"],["tonight","Ce soir"],["1","Demain soir"],["3","Dans 3 jours"],["7","Dans 1 semaine"]];
+function pollEnd(k){ if(!k) return null; const d=new Date(); if(k!=="tonight") d.setDate(d.getDate()+(+k)); d.setHours(20,0,0,0); return d.toISOString(); }
+async function loadPolls(){
+  const [p,v,c]=await Promise.all([sb.from("polls").select("*").order("created_at",{ascending:false}).limit(40), sb.from("poll_votes").select("*").eq("user_id",S.me.id), sb.rpc("poll_counts")]);
+  if(p.error){ S.pollOk=false; return; } S.pollOk=true; S.polls=p.data||[]; S.pvotes=Object.fromEntries((v.data||[]).map(x=>[x.poll_id,x.choices])); S.pcounts=Object.fromEntries((c.data||[]).map(x=>[x.poll_id,x.voters]));
+}
+async function loadPollResults(ids){ await Promise.all(ids.map(id=>sb.rpc("poll_results",{p_poll:id}).then(r=>{ if(!r.error) S.presults[id]=r.data||[]; }))); }
+function pollsHTML(){
+  const head=`<div class="chead"><div><h1>📊 Sondages</h1><p>Une petite question à l'équipe : où manger vendredi, quelle date pour la réunion, quel cadeau pour un départ… Chacun vote en un geste.</p></div></div>`;
+  if(!S.orgLoaded) return head+`<p class="hint">Chargement…</p>`;
+  if(S.pollOk===false) return head+`<div class="err">Les sondages seront disponibles après la mise à jour de la base de données (migration 072).</div>`;
+  const F=S.plForm, open=S.polls.filter(pollOpen), past=S.polls.filter(p=>!pollOpen(p)).slice(0,10);
+  const form=F?`<section class="card plform"><h3>Nouveau sondage</h3>
+    <label class="fld">Question<input type="text" id="pl-q" maxlength="200" value="${esc(F.q)}" placeholder="Ex. Où mange-t-on vendredi ?"></label>
+    <p class="fldl">Réponses possibles</p>${F.opts.map((o,i)=>`<div class="ploe"><input type="text" data-plo="${i}" maxlength="120" value="${esc(o)}" placeholder="Réponse ${i+1}">${F.opts.length>2?`<button type="button" class="linkbtn tdel" data-plox="${i}">Retirer</button>`:""}</div>`).join("")}
+    ${F.opts.length<8?`<button type="button" class="btn ghost" id="pl-oadd">＋ Ajouter une réponse</button>`:""}
+    <div class="row2"><label class="fld">Fin du vote<select id="pl-end">${POLL_END.map(([k,l])=>`<option value="${k}" ${F.end===k?"selected":""}>${l}</option>`).join("")}</select></label><div>
+      <label class="chk2"><input type="checkbox" id="pl-multi" ${F.multi?"checked":""}> Plusieurs choix possibles</label>
+      <label class="chk2"><input type="checkbox" id="pl-anon" ${F.anon?"checked":""}> Vote anonyme</label></div></div>
+    <p class="hint">L'équipe reçoit une notification (sans la question).</p>
+    <div class="btnrow"><button type="button" class="btn" id="pl-go">📊 Lancer le sondage</button><button type="button" class="btn ghost" id="pl-x">Annuler</button></div></section>`:"";
+  const card=p=>{ const mine=S.pvotes[p.id], opn=pollOpen(p), res=S.presults[p.id], showRes=!!res&&(!!mine||!opn||p.created_by===S.me.id), n=S.pcounts[p.id]||0, E=S.plEdit===p.id;
+    const counts=p.options.map((_,i)=>(res||[]).filter(v=>(v.choices||[]).includes(i)).length), max=Math.max(1,...counts);
+    return `<article class="card plcard${opn?"":" past"}"><header><div><h3>${esc(p.question)}</h3><small>${esc(flairEmoji(p.created_by))} ${esc(whoS(p.created_by))} · ${fmt(p.created_at)}${p.anonymous?" · anonyme":""}${p.multi?" · plusieurs choix":""} · ${n} vote${n>1?"s":""}${opn?(p.closes_at?` · jusqu'au ${fmt(p.closes_at)}`:""):" · terminé"}</small></div>
+      ${(p.created_by===S.me.id||isAdmin())?`<span>${opn?`<button type="button" class="linkbtn" data-plclose="${p.id}">Clôturer</button> `:""}<button type="button" class="linkbtn tdel" data-pldel="${p.id}">Supprimer</button></span>`:""}</header>
+      ${opn&&(!mine||E)?`<div class="plopts">${p.options.map((o,i)=>`<button type="button" class="plopt" data-plv="${p.id}:${i}" aria-pressed="${!!(S.plSel?.[p.id]||mine||[]).includes(i)}">${p.multi?"☐":"○"} ${esc(o)}</button>`).join("")}</div>
+        ${p.multi?`<button type="button" class="btn" data-plsend="${p.id}">Voter</button>`:""}`
+       :showRes?`<div class="plres">${p.options.map((o,i)=>`<div class="plbar${(mine||[]).includes(i)?" plme":""}"><span class="plfill" style="width:${Math.round(counts[i]/max*100)}%"></span><span class="pll">${esc(o)}</span><b>${counts[i]}</b>${!p.anonymous&&counts[i]?`<small>${(res||[]).filter(v=>(v.choices||[]).includes(i)).map(v=>esc(flairEmoji(v.user_id)+" "+staffFirst(v.user_id))).join(", ")}</small>`:""}</div>`).join("")}</div>
+         ${opn&&mine?`<button type="button" class="linkbtn" data-pledit="${p.id}">Changer mon vote</button>`:""}`:`<p class="hint">Chargement des résultats…</p>`}
+    </article>`; };
+  return head+`${F?form:`<div class="btnrow" style="margin:0 0 12px"><button type="button" class="btn" id="pl-new">＋ Nouveau sondage</button></div>`}
+    ${open.length?open.map(card).join(""):`<div class="empty">Aucun sondage en cours. Lancez le premier !</div>`}
+    ${past.length?`<h3 class="secth">Sondages terminés</h3>${past.map(card).join("")}`:""}`;
+}
+function bindPolls(){
+  if(!S.orgLoaded&&!S.orgLoading){ S.orgLoading=true; loadOrg().catch(e=>{ console.error(e); S.orgOk=false; S.orgLoaded=true; }).finally(()=>{ S.orgLoading=false; softRender("polls"); }); return; }
+  const need=S.polls.filter(p=>!S.presults[p.id]&&(S.pvotes[p.id]||!pollOpen(p)||p.created_by===S.me.id)).map(p=>p.id);
+  if(need.length&&!S.plLoading){ S.plLoading=true; loadPollResults(need).finally(()=>{ S.plLoading=false; softRender("polls"); }); }
+  const reload=async()=>{ await loadPolls(); S.presults={}; render(); };
+  const nw=$("#pl-new"); if(nw) nw.onclick=()=>{ S.plForm={q:"",opts:["",""],end:"",multi:false,anon:false}; render(); $("#pl-q")?.focus(); };
+  const vote=async(id,choices)=>{ const {error}=await sb.rpc("poll_vote",{p_poll:id,p_choices:choices}); if(error){ toast(frError(error)); return; } S.plEdit=null; S.plSel={}; toast("Vote enregistré 👍"); await reload(); };
+  $$("[data-plv]").forEach(b=>b.onclick=()=>{ const [id,i]=b.dataset.plv.split(":").map(Number), p=S.polls.find(x=>x.id===id);
+    if(!p.multi) return vote(id,[i]); S.plSel=S.plSel||{}; const cur=S.plSel[id]||[...(S.pvotes[id]||[])]; S.plSel[id]=cur.includes(i)?cur.filter(x=>x!==i):[...cur,i]; render(); });
+  $$("[data-plsend]").forEach(b=>b.onclick=()=>{ const id=+b.dataset.plsend, c=(S.plSel||{})[id]||S.pvotes[id]||[]; if(!c.length) return toast("Choisissez au moins une réponse."); vote(id,c); });
+  $$("[data-pledit]").forEach(b=>b.onclick=()=>{ S.plEdit=+b.dataset.pledit; render(); });
+  $$("[data-plclose]").forEach(b=>b.onclick=async()=>{ if(!confirmInline(b,"Clôturer ?")) return; if(await run(()=>sb.from("polls").update({closed_at:new Date().toISOString()}).eq("id",+b.dataset.plclose),"Sondage clôturé")) await reload(); });
+  $$("[data-pldel]").forEach(b=>b.onclick=async()=>{ if(!confirmInline(b,"Supprimer ?")) return; if(await run(()=>sb.from("polls").delete().eq("id",+b.dataset.pldel),"Sondage supprimé")) await reload(); });
+  const F=S.plForm; if(!F) return;
+  const keep=()=>{ F.q=$("#pl-q").value; $$("[data-plo]").forEach(i=>F.opts[+i.dataset.plo]=i.value); F.end=$("#pl-end").value; F.multi=$("#pl-multi").checked; F.anon=$("#pl-anon").checked; };
+  $$(".plform input,.plform select").forEach(el=>{ el.oninput=el.onchange=keep; });
+  const oa=$("#pl-oadd"); if(oa) oa.onclick=()=>{ keep(); F.opts.push(""); render(); $$("[data-plo]").slice(-1)[0]?.focus(); };
+  $$("[data-plox]").forEach(b=>b.onclick=()=>{ keep(); F.opts.splice(+b.dataset.plox,1); render(); });
+  $("#pl-x").onclick=()=>{ S.plForm=null; render(); };
+  $("#pl-go").onclick=async e=>{ keep(); const opts=F.opts.map(o=>o.trim()).filter(Boolean);
+    if(!F.q.trim()) return toast("Écrivez la question."); if(opts.length<2) return toast("Il faut au moins deux réponses."); e.target.disabled=true;
+    if(await run(()=>sb.from("polls").insert({question:F.q.trim(),options:opts,multi:F.multi,anonymous:F.anon,closes_at:pollEnd(F.end),created_by:S.me.id}),"Sondage lancé 📊")){ S.plForm=null; await reload(); } else e.target.disabled=false; };
+}
+
 function bindDash(){
+  bindKudos();
   const go=k=>{ if(k==="exams"){ S.cscreen="tasks"; S.tview="todo"; S.tkind="exam"; } else if(k==="inbox"){ S.cscreen="inbox"; S.archive=false; S.itype="all"; S.iq=""; if(S.me.provider_id) S.scope="mine"; } else S.cscreen=k; render(); scrollTo(0,0); };
   $$("[data-dgo]").forEach(b=>b.onclick=()=>go(b.dataset.dgo));
   $$("[data-dreq]").forEach(b=>b.onclick=()=>{ const r=S.reqs.find(x=>x.id===+b.dataset.dreq); if(!r) return;
@@ -3141,6 +3391,8 @@ function bindPfile(){
 }
 
 S.hoRead=new Set(); S.hos=[];
+SI.poll='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>';
+SI.coffee='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9h12v5a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z"/><path d="M16 11h1.5a2.5 2.5 0 0 1 0 5H16"/><path d="M8 3c0 1.5 1 1.5 1 3M12 3c0 1.5 1 1.5 1 3"/></svg>';
 SI.house='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10v10h13V10"/><path d="M10 20v-5h4v5"/></svg>';
 SI.handover='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 3.5h6v3H9z"/><path d="M8.5 11h7M8.5 15h5"/></svg>';
 SI.door='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 21V4a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v17"/><path d="M3 21h18"/><circle cx="15" cy="12" r="1"/></svg>';
@@ -3251,6 +3503,9 @@ async function loadOrg(){
   S.hos=h.data||[]; S.hoRead=new Set((hr.data||[]).map(x=>x.handover_id));
   S.rooms=rm.data||[]; S.rslots=sl.data||[]; S.rbook=bk.data||[]; S.rbookFrom=from;
   S.cltpl=ct.data||[]; S.clruns=cr.data||[]; S.meetings=mt.data||[]; S.mitems=mi.data||[];
+  const [fl,ku]=await Promise.all([sb.from("staff_flair").select("*"), sb.from("kudos").select("*").order("created_at",{ascending:false}).limit(30)]);
+  if(!fl.error) S.flair=Object.fromEntries((fl.data||[]).map(f=>[f.user_id,f])); if(!ku.error) S.kudos=ku.data||[];
+  await loadPolls().catch(()=>{ S.pollOk=false; });
   S.orgLoaded=true;
 }
 const orgMissing = () => S.orgLoaded&&S.orgOk===false?`<div class="err">Cette rubrique sera disponible après la mise à jour de la base de données (migration 069).</div>`:"";
@@ -3470,7 +3725,7 @@ const TPL_CAT={general:"Général",rdv:"Rendez-vous",question:"Question",prescri
    ===================================================================== */
 const RM_DAYS=["Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi","Dimanche"];
 const RM_PAL=["#ffe3d6","#d9f1ee","#e2f2d9","#ebe4fb","#dcebfb","#fdf0c9","#fde3ef","#e6f0d8","#f0e4d8"];
-const rmColor = key => { let h=0; for(const c of String(key||"")) h=(h*31+c.charCodeAt(0))>>>0; return RM_PAL[h%RM_PAL.length]; };
+const rmColor = key => { if(S.flair&&S.flair[key]&&S.flair[key].color) return S.flair[key].color; let h=0; for(const c of String(key||"")) h=(h*31+c.charCodeAt(0))>>>0; return RM_PAL[h%RM_PAL.length]; };
 const tmin = t => { const [h,m]=String(t).split(":"); return (+h)*60+(+m||0); };
 const rmWho = b => b.user_id?staffName(b.user_id):(b.label||"—");
 const canRooms = () => isAdmin()||["secretariat","gestion"].includes(S.me.role);
@@ -3623,7 +3878,8 @@ function bindChecklists(){
     let r=clRun(t,p); if(!r){ r={template_id:tid,period:p,vals:{},note:null}; S.clruns.push(r); }
     if(item){ if(value===null||value===false) delete r.vals[item]; else r.vals[item]={v:value,by:S.me.id,at:new Date().toISOString()}; }
     if(note!=null) r.note=note||null; return true; };
-  $$("[data-clc]").forEach(b=>b.onclick=async()=>{ const [t,i]=b.dataset.clc.split(":"), on=b.getAttribute("aria-pressed")!=="true"; b.disabled=true; if(await set(+t,i,on?true:null)) render(); else b.disabled=false; });
+  $$("[data-clc]").forEach(b=>b.onclick=async()=>{ const [t,i]=b.dataset.clc.split(":"), on=b.getAttribute("aria-pressed")!=="true"; b.disabled=true; const tt=S.cltpl.find(x=>x.id===+t), before=clDone(tt,clRun(tt,clPeriod(tt)));
+    if(await set(+t,i,on?true:null)){ render(); if(on&&before<tt.items.length&&clDone(tt,clRun(tt,clPeriod(tt)))>=tt.items.length) joyCelebrate(`✅ ${tt.title} : tout est coché, merci !`); } else b.disabled=false; });
   $$("[data-clv]").forEach(inp=>inp.onchange=async()=>{ const [t,i]=inp.dataset.clv.split(":"), v=inp.value.trim().replace(",","."); if(v!==""&&isNaN(+v)) return toast("Indiquez un nombre.");
     if(await set(+t,i,v===""?null:+v)){ const tt=S.cltpl.find(x=>x.id===+t), it=tt.items.find(x=>x.id===i); if(clTempBad(it,v)) toast("⚠️ Température en dehors des normes"); render(); } });
   $$("[data-cln]").forEach(inp=>inp.onchange=async()=>{ if(await set(+inp.dataset.cln,null,null,inp.value.trim())) toast("Remarque enregistrée"); });
@@ -3738,13 +3994,13 @@ function dashHoHTML(){
   const L=hoForMe().filter(h=>h.starts_on<=addDays(todayISO(),3)&&hoActive(h)); if(!L.length) return "";
   return `<section class="card dcard dho"><header><h3>📋 Transmissions</h3><button type="button" class="linkbtn" data-cs="handovers">Tout voir ›</button></header>${L.map(h=>`<button type="button" class="drow${S.hoRead.has(h.id)?"":" hot"}" data-cs="handovers"><span class="dtx"><b>${esc(staffName(h.author_id))}${S.hoRead.has(h.id)?"":" · nouveau"}</b><small>Du ${dShort(h.starts_on)} au ${dShort(h.ends_on)}${(h.patients||[]).length?` · ${h.patients.length} patient${h.patients.length>1?"s":""} à suivre`:""}</small></span></button>`).join("")}</section>`;
 }
-function orgRt(){ if(!S.me||S.me.role==="patient") return; clearTimeout(orgRt.t); orgRt.t=setTimeout(async()=>{ try{ await loadOrg(); }catch(e){ return; } if(["dash","checklists","meetings"].includes(S.cscreen)&&!isTyping()&&!$(".modal")) render(); },800); }
+function orgRt(){ if(!S.me||S.me.role==="patient") return; clearTimeout(orgRt.t); orgRt.t=setTimeout(async()=>{ try{ await loadOrg(); }catch(e){ return; } if(["dash","checklists","meetings","polls"].includes(S.cscreen)&&!isTyping()&&!$(".modal")) render(); },800); }
 function renderStaff(a){
   a.className="wrap wide staff";
   const sc=S.cscreen;
   const nav=staffNavHTML(sc);
   let body="";
-  if(sc==="dash") body=dashHTML(); else if(sc==="pfile") body=pfileHTML(); else if(sc==="visits") body=visitsHTML(); else if(sc==="handovers") body=handoversHTML(); else if(sc==="rooms") body=roomsHTML(); else if(sc==="checklists") body=checklistsHTML(); else if(sc==="meetings") body=meetingsHTML(); else if(sc==="compose") body=composeHTML(); else if(sc==="inventory") body=inventoryHTML(); else if(sc==="tasks") body=tasksHTML(); else if(sc==="accounts") body=accountsHTML(); else if(sc==="news") body=newsAdminHTML(); else if(sc==="team") body=teamHTML(); else if(sc==="settings") body=settingsHTML(); else if(sc==="help") body=staffHelpHTML(); else if(sc==="leaves") body=leavesHTML(); else if(sc==="patients") body=patientsHTML(); else if(sc==="messages") body=teamHTML2(); else if(sc==="templates") body=templatesHTML(); else if(sc==="binder") body=binderHTML(); else if(sc==="desk") body=deskHTML(); else if(sc==="waitlist") body=waitlistHTML(); else if(sc==="fiches") body=fichesHTML(); else if(sc==="infos") body=infosHTML(); else if(sc==="feedback"&&isAdmin()) body=feedbackHTML(); else if(sc==="annonces"&&isAdmin()) body=annoncesHTML(); else if(sc==="hours"&&canOffice()) body=hoursHTML(); else if(sc==="cash"&&canOffice()) body=cashHTML(); else body=inboxHTML();
+  if(sc==="dash") body=dashHTML(); else if(sc==="pfile") body=pfileHTML(); else if(sc==="visits") body=visitsHTML(); else if(sc==="handovers") body=handoversHTML(); else if(sc==="rooms") body=roomsHTML(); else if(sc==="checklists") body=checklistsHTML(); else if(sc==="meetings") body=meetingsHTML(); else if(sc==="pause") body=pauseHTML(); else if(sc==="polls") body=pollsHTML(); else if(sc==="compose") body=composeHTML(); else if(sc==="inventory") body=inventoryHTML(); else if(sc==="tasks") body=tasksHTML(); else if(sc==="accounts") body=accountsHTML(); else if(sc==="news") body=newsAdminHTML(); else if(sc==="team") body=teamHTML(); else if(sc==="settings") body=settingsHTML(); else if(sc==="help") body=staffHelpHTML(); else if(sc==="leaves") body=leavesHTML(); else if(sc==="patients") body=patientsHTML(); else if(sc==="messages") body=teamHTML2(); else if(sc==="templates") body=templatesHTML(); else if(sc==="binder") body=binderHTML(); else if(sc==="desk") body=deskHTML(); else if(sc==="waitlist") body=waitlistHTML(); else if(sc==="fiches") body=fichesHTML(); else if(sc==="infos") body=infosHTML(); else if(sc==="feedback"&&isAdmin()) body=feedbackHTML(); else if(sc==="annonces"&&isAdmin()) body=annoncesHTML(); else if(sc==="hours"&&canOffice()) body=hoursHTML(); else if(sc==="cash"&&canOffice()) body=cashHTML(); else body=inboxHTML();
   document.body.classList.add("hasbar","sidenav"); document.body.classList.remove("ddopen");
   a.innerHTML=nav+(sc==="dash"?"":urgBannerHTML()+annBannerHTML())+(sc==="inbox"||sc==="messages"?bdayBannerHTML():"")+body;
   bindAnnBanner();
@@ -3762,7 +4018,7 @@ function renderStaff(a){
   $$("[data-dd]").forEach(b=>b.onclick=e=>{ e.stopPropagation(); openDD(b.dataset.dd); });
   const bk=$(".ddback"); if(bk) bk.onclick=closeDD;
   $$("[data-cs]").forEach(b=>b.onclick=()=>{ closeDD(); if(CREC&&b.dataset.cs!=="compose") composeRecStop(false); S.cscreen=b.dataset.cs; render(); window.scrollTo(0,0); });
-  if(sc==="dash") bindDash(); else if(sc==="pfile") bindPfile(); else if(sc==="visits") bindVisits(); else if(sc==="handovers") bindHandovers(); else if(sc==="rooms") bindRooms(); else if(sc==="checklists") bindChecklists(); else if(sc==="meetings") bindMeetings(); else if(sc==="compose") bindCompose(); else if(sc==="inventory") bindInventory(); else if(sc==="tasks") bindTasks(); else if(sc==="accounts") bindAccounts(); else if(sc==="news") bindNewsAdmin(); else if(sc==="team") bindTeam(); else if(sc==="settings") bindSettings(); else if(sc==="help"||sc==="leaves") {} else if(sc==="patients") bindPatients(); else if(sc==="messages") bindTeam2(); else if(sc==="templates") bindTemplates(); else if(sc==="binder") bindBinder(); else if(sc==="desk") bindDesk(); else if(sc==="waitlist"){ if(S.waitlist) bindWaitlist(); } else if(sc==="fiches") bindFiches(); else if(sc==="infos") bindInfos(); else if(sc==="feedback"&&isAdmin()) bindFeedback(); else if(sc==="annonces"&&isAdmin()) bindAnnonces(); else if(sc==="hours"&&canOffice()) bindHours(); else if(sc==="cash"&&canOffice()) bindCash(); else bindInbox();
+  if(sc==="dash") bindDash(); else if(sc==="pfile") bindPfile(); else if(sc==="visits") bindVisits(); else if(sc==="handovers") bindHandovers(); else if(sc==="rooms") bindRooms(); else if(sc==="checklists") bindChecklists(); else if(sc==="meetings") bindMeetings(); else if(sc==="pause") bindPause(); else if(sc==="polls") bindPolls(); else if(sc==="compose") bindCompose(); else if(sc==="inventory") bindInventory(); else if(sc==="tasks") bindTasks(); else if(sc==="accounts") bindAccounts(); else if(sc==="news") bindNewsAdmin(); else if(sc==="team") bindTeam(); else if(sc==="settings") bindSettings(); else if(sc==="help"||sc==="leaves") {} else if(sc==="patients") bindPatients(); else if(sc==="messages") bindTeam2(); else if(sc==="templates") bindTemplates(); else if(sc==="binder") bindBinder(); else if(sc==="desk") bindDesk(); else if(sc==="waitlist"){ if(S.waitlist) bindWaitlist(); } else if(sc==="fiches") bindFiches(); else if(sc==="infos") bindInfos(); else if(sc==="feedback"&&isAdmin()) bindFeedback(); else if(sc==="annonces"&&isAdmin()) bindAnnonces(); else if(sc==="hours"&&canOffice()) bindHours(); else if(sc==="cash"&&canOffice()) bindCash(); else bindInbox();
 }
 
 /* ----- durée estimée des rendez-vous de médecine générale (visible par l'équipe seulement) ----- */
@@ -5447,7 +5703,7 @@ function settingsHTML(){
    ${photoCardHTML("Facultatif. Visible par les patients dans les conversations, et par l'équipe.")}
    ${faceIdCardHTML()}
    ${trustCardHTML()}
-   ${textSizeHTML()}${themeHTML()}
+   ${textSizeHTML()}${themeHTML()}${flairSettingsHTML()}
    ${bdayCardHTML()}
    <section class="card"><h3>Quand me prévenir</h3><div class="pgrid">
     <label class="fld">Haute priorité (à voir en moins de 24 h)${sel("s-haute",s.haute)}</label>
@@ -5491,7 +5747,7 @@ function awayDefaultText(u=$("#s-until")?.value, fwId=$("#s-fw")?.value){
   return `Bonjour,\nJe suis absent(e)${until}. Votre message a bien été reçu${fw?` et sera traité par ${(fw.first_name||"")+" "+(fw.last_name||"")}`:" et sera traité à mon retour"}.\nPour une question qui ne peut pas attendre, appelez le secrétariat au 02 781 18 75. Urgence vitale : 112.`;
 }
 function bindSettings(){
-  bindPhotoCard(); bindPush(); bindTextSize(); bindTheme(); bindFaceIdCard(); bindTrustCard(); bindBdayCard();
+  bindPhotoCard(); bindPush(); bindTextSize(); bindTheme(); bindFlairSettings(); bindFaceIdCard(); bindTrustCard(); bindBdayCard();
   const dc=$("#s-direct"); if(dc) dc.onchange=async()=>{ const v=dc.checked;
     if(await run(()=>sb.rpc("set_my_direct_contact",{p_ok:v}),v?"Les patients peuvent vous écrire directement":"Les demandes passeront d'abord par le secrétariat")){ const pr=P.byId(S.me.provider_id); if(pr) pr.direct_contact=v; } else dc.checked=!v; };
   $("#lv-add").onclick=async()=>{ const f=$("#lv-from").value, t=$("#lv-to").value;
@@ -5556,6 +5812,8 @@ function navGroups(){
      {cs:"tasks",ic:SI.tasks,t:"Tâches",n:myTasks().length},
      {cs:"handovers",ic:SI.handover,t:"Transmissions",n:hoUnread().length},
      {cs:"meetings",ic:SI.meet,t:"Réunions"},
+     {cs:"polls",ic:SI.poll,t:"Sondages",n:(S.polls||[]).filter(p=>pollOpen(p)&&!S.pvotes[p.id]).length},
+     ...(pauseOn()?[{cs:"pause",ic:SI.coffee,t:"Pause café"}]:[]),
      {cs:"leaves",ic:SI.cal,t:"Congés"},
      ...(isAdmin()||isGestion()?[{cs:"team",ic:SI.team,t:"Comptes de l'équipe"}]:[])]},
    {h:"Secrétariat",it:[
@@ -6177,6 +6435,7 @@ function startRealtime(){
       .on("postgres_changes",{event:"*",schema:"public",table:"broadcasts"},()=>annRt())
       .on("postgres_changes",{event:"*",schema:"public",table:"checklist_runs"},()=>orgRt())
       .on("postgres_changes",{event:"*",schema:"public",table:"meeting_items"},()=>orgRt())
+      .on("postgres_changes",{event:"INSERT",schema:"public",table:"kudos"},()=>orgRt())
       .subscribe();
   }catch(e){ console.error(e); RT=null; }
 }
