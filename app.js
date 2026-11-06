@@ -2087,7 +2087,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261106d";
+const APP_VERSION="20261106e";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -2933,6 +2933,7 @@ function staffHelpHTML(){
    ["Ordinateur de confiance (accueil)","Au moment du code de sécurité, cochez « Faire confiance à cet ordinateur » : pendant 90 jours, l'e-mail et le mot de passe suffisent sur cet ordinateur, avec déconnexion après 2 heures d'inactivité. Uniquement sur un ordinateur du centre. Pour le retirer : Mon profil et notifications → Ordinateurs de confiance."],
    ["Valider les comptes des patients","Seul un administrateur valide les nouveaux comptes et les enfants ajoutés par un parent (Patients → Comptes à valider). Un administrateur peut donner ces droits à n'importe quel membre de l'équipe (secrétariat compris) : Équipe → Comptes de l'équipe → case « Administrateur ». La personne garde son rôle."],
    ["Priorité des tâches et récapitulatif par e-mail","Équipe → Tâches : chaque tâche a une priorité (haute, normale, basse), modifiable directement dans le tableau. Triez par priorité ou par échéance ; touchez une ligne pour voir ses détails (note, documents, rappel, personnes). En haut de la liste, « Récapitulatif de mes tâches par e-mail » : choisissez les jours et une ou plusieurs heures pour recevoir la liste de vos tâches à faire. Rien n'est envoyé s'il n'y a rien à faire, et l'e-mail ne contient jamais de nom de patient."],
+   ["Mes tâches dans mon calendrier","Tâches → « Mes tâches dans mon calendrier » → Activer : vos tâches avec échéance, vos visites à domicile prévues et les réunions d'équipe apparaissent dans le Calendrier de l'iPhone ou du Mac, dans Google Agenda ou dans Outlook, avec une alerte, et se mettent à jour toutes seules. Le lien est personnel ; les tâches liées à un patient y apparaissent sans nom. « Arrêter » ou « Nouveau lien » le désactive."],
    ["Visites à domicile (médecins généralistes)","Patients → Visites à domicile : ajoutez les patients que vous voyez à domicile, avec un rythme (chaque mois…), la prochaine visite et une note de suivi. L'adresse vient de la page patient (📍 ouvre Google Maps). « Mettre dans la tournée d'aujourd'hui » prépare l'itinéraire de la journée. Après la visite : « ✓ Noter la visite ». Les autres médecins généralistes voient aussi votre liste, pour vous remplacer."],
    ["Rappels de suivi","Sur la page d'un patient, ou dans Tâches → 🔔 Rappels : « revoir dans 3 mois », « vaccin grippe en octobre »… Le jour venu, le rappel devient une tâche dans la liste de la personne choisie. Il peut se répéter (tous les 3 mois, tous les ans…)."],
    ["Transmissions","Équipe → Transmissions : avant une absence, laissez un message à un ou plusieurs collègues, avec les patients à suivre. Ils le voient sur leur tableau de bord pendant la période choisie et reçoivent une notification sans détail."],
@@ -4913,6 +4914,33 @@ function digestHTML(){
     <p class="hint">Seulement les tâches qui vous sont confiées (pas la liste de l'Accueil), classées par échéance et par priorité. Rien n'est envoyé s'il n'y a rien à faire. Pas de nom de patient dans l'e-mail : ces tâches y apparaissent comme « Tâche liée à un patient ».</p>
     <div class="btnrow"><button type="button" class="btn" id="dig-save">Enregistrer</button><button type="button" class="btn ghost" id="dig-x">Annuler</button></div></div>`;
 }
+// ----- mes tâches dans mon calendrier (070) -----
+async function loadCal(){ const {data,error}=await sb.rpc("my_calendar_status"); S.calOk=!error; const r=(data||[])[0]; S.cal={active:!!r,last:r?.last_access||null,token:S.cal?.token||null,open:S.cal?.open||false}; S.calLoaded=true; }
+const calUrl = t => `${CFG.url}/functions/v1/calendar?t=${t}`;
+function calHTML(){
+  if(!S.calLoaded||S.calOk===false) return "";
+  const C=S.cal;
+  if(!C.open) return `<div class="tdigest${C.active?" on":""}"><span aria-hidden="true">📅</span><span>Mes tâches dans mon calendrier : <b>${C.active?"activé":"non activé"}</b>${C.active&&C.last?` <small class="hint">· synchronisé ${fmt(C.last)}</small>`:""}</span><button type="button" class="linkbtn" id="cal-open">${C.active?"Voir le lien":"Activer"}</button></div>`;
+  const u=C.token?calUrl(C.token):"", w=u.replace(/^https:/,"webcal:");
+  return `<div class="tdigest tdedit calpanel"><h3>📅 Mes tâches dans mon calendrier</h3>
+    <p>Vos tâches avec une échéance, vos visites à domicile prévues et les réunions d'équipe apparaissent dans le calendrier de votre téléphone ou ordinateur, avec une alerte. Elles se mettent à jour toutes seules (environ toutes les heures) ; on les coche toujours dans l'app.</p>
+    ${C.token?`<div class="calbtns"><a class="btn" href="${esc(w)}">📱 iPhone / Mac (Calendrier)</a><a class="btn ghost" href="https://calendar.google.com/calendar/r?cid=${encodeURIComponent(w)}" target="_blank" rel="noopener">Google Agenda</a><button type="button" class="btn ghost" id="cal-copy">Copier le lien</button></div>
+      <p class="hint">Outlook : Calendrier → Ajouter un calendrier → « À partir d'Internet » / « S'abonner à partir du web », puis collez le lien. Android : ajoutez-le dans Google Agenda depuis un ordinateur, il apparaîtra sur le téléphone.</p>
+      <p class="hint">🔒 Ce lien est personnel : ne le partagez pas. Les tâches liées à un patient y apparaissent sans nom (« Tâche CMPL – patient »).</p>
+      <div class="btnrow"><button type="button" class="btn ghost" id="cal-x">Fermer</button><button type="button" class="linkbtn" id="cal-reset">Créer un nouveau lien (l'ancien ne marchera plus)</button><button type="button" class="linkbtn tdel" id="cal-stop">Arrêter</button></div>`
+     :`<p class="hint">🔒 Un lien personnel et secret est créé pour vous. Les tâches liées à un patient y apparaissent sans nom.</p><div class="btnrow"><button type="button" class="btn" id="cal-make">Créer mon lien de calendrier</button><button type="button" class="btn ghost" id="cal-x">Annuler</button></div>`}</div>`;
+}
+function bindCal(){
+  if(!S.calLoaded&&!S.calLoading){ S.calLoading=true; loadCal().catch(()=>{ S.calOk=false; S.calLoaded=true; }).finally(()=>{ S.calLoading=false; if(S.cscreen==="tasks"&&!isTyping()) render(); }); return; }
+  const C=S.cal; if(!C) return;
+  const getTok=async reset=>{ const {data,error}=await sb.rpc("my_calendar_token",{p_reset:!!reset,p_delete:false}); if(error){ toast(frError(error)); return false; } C.token=data; C.active=true; return true; };
+  const o=$("#cal-open"); if(o) o.onclick=async()=>{ C.open=true; if(C.active&&!C.token) await getTok(false); render(); };
+  const x=$("#cal-x"); if(x) x.onclick=()=>{ C.open=false; render(); };
+  const mk=$("#cal-make"); if(mk) mk.onclick=async()=>{ mk.disabled=true; if(await getTok(false)){ toast("Lien créé : ajoutez-le à votre calendrier"); render(); } else mk.disabled=false; };
+  const cp=$("#cal-copy"); if(cp) cp.onclick=()=>copyText(calUrl(C.token));
+  const rs=$("#cal-reset"); if(rs) rs.onclick=async()=>{ if(!confirmInline(rs,"Nouveau lien ? L'ancien abonnement cessera de marcher.")) return; if(await getTok(true)){ toast("Nouveau lien créé : ajoutez-le à nouveau à votre calendrier"); render(); } };
+  const st=$("#cal-stop"); if(st) st.onclick=async()=>{ if(!confirmInline(st,"Arrêter ?")) return; if(await run(()=>sb.rpc("my_calendar_token",{p_reset:false,p_delete:true}),"Calendrier arrêté : le lien ne marche plus")){ S.cal={active:false,last:null,token:null,open:false}; render(); } };
+}
 function bindDigest(){
   if(!S.tdigLoaded&&!S.tdigLoading){ S.tdigLoading=true; loadDigest().catch(()=>{ S.tdigOk=false; }).finally(()=>{ S.tdigLoading=false; if(S.cscreen==="tasks"&&!(document.activeElement&&/TEXTAREA|INPUT|SELECT/.test(document.activeElement.tagName))) render(); }); }
   const ed=$("#dig-edit"); if(ed) ed.onclick=()=>{ const d=S.tdig; S.tdigEdit={enabled:true,days:d?[...d.days]:[1,2,3,4,5],hours:d?[...d.hours]:[8]}; render(); };
@@ -4972,7 +5000,7 @@ function tasksHTML(){
    <div class="btnrow"><button class="btn" id="tk-add" ${D.title.trim()?"":"disabled"}>Ajouter la tâche</button></div>`}
   </section>`:`<div class="tknew"><button type="button" class="btn" data-tknew="task">＋ Nouvelle tâche</button>${canExam()?`<button type="button" class="btn ghost" data-tknew="exam">🧪 Examen demandé</button>`:""}</div>`}
   <section>
-   ${digestHTML()}
+   ${digestHTML()}${calHTML()}
    <div class="seg" role="group" aria-label="Afficher" style="margin-bottom:10px"><button data-tv="todo" aria-pressed="${V==="todo"}">À faire (${todo.length})</button><button data-tv="given" aria-pressed="${V==="given"}">Confiées (${given.length})</button><button data-tv="done" aria-pressed="${V==="done"}">Terminées</button><button data-tv="fu" aria-pressed="${V==="fu"}">🔔 Rappels</button></div>
    ${V==="fu"?fuPanelHTML():`   <div class="ichips tkinds" role="group" aria-label="Type de tâche"><button class="ichip all" data-tk="all" aria-pressed="${K==="all"}">Toutes <i>${listAll.length}</i></button><button class="ichip t-question" data-tk="pat" aria-pressed="${K==="pat"}">👤 Patients <i>${nP}</i></button><button class="ichip t-rapport" data-tk="org" aria-pressed="${K==="org"}">🏥 Organisation <i>${nO}</i></button>${nE||canExam()?`<button class="ichip t-prescription" data-tk="exam" aria-pressed="${K==="exam"}">🧪 Examens <i>${nE}</i></button>`:""}</div>
    ${list.length?taskTableHTML(list,V):`<div class="list tasks"><div class="empty">${V==="todo"?`<span class="yay" aria-hidden="true">✨</span>Rien à faire pour l'instant.`:V==="given"?"Aucune tâche confiée en cours.":"Aucune tâche terminée. Celles qui concernent un patient sont effacées 90 jours après."}</div></div>`}`}
@@ -4980,7 +5008,7 @@ function tasksHTML(){
 }
 function bindTasks(){
   const D=S.tdraft, add=$("#tk-add"), EX=D.mode==="exam";
-  bindDigest();
+  bindDigest(); bindCal();
   if(S.tview==="fu") bindFuPanel();
   $$("[data-tknew]").forEach(b=>b.onclick=()=>{ S.tformOpen=true; D.mode=b.dataset.tknew; if(D.mode==="exam"&&!D.due) D.due=addDays(todayISO(),7); render(); (D.mode==="exam"?$("#tk-q"):$("#tk-title"))?.focus(); });
   $$("[data-tsort]").forEach(b=>b.onclick=()=>{ S.tsort=b.dataset.tsort; render(); });
