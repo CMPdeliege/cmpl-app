@@ -146,7 +146,7 @@ const S = {
   session:null, me:null, providers:[], hours:{}, news:[], reqs:[], meds:[], notifs:[], profiles:{}, children:{}, tasks:[], pendingKids:[],
   screen:"home", flow:null, answers:{}, drug:null, openReq:null, openNews:null, lastSent:null,
   // équipe
-  tab:"secretariat", provFilter:"tous", archive:false, sel:null, cscreen:(matchMedia("(min-width:900px)").matches?"dash":"inbox"), drafts:{}, pending:[], team:[], allNews:[], settings:null,
+  tab:"secretariat", provFilter:"tous", archive:false, sel:null, cscreen:"dash", drafts:{}, pending:[], team:[], allNews:[], settings:null,
   authMode:"login", recovery:false, loading:true
 };
 
@@ -2088,7 +2088,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261107a";
+const APP_VERSION="20261108a";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -6141,7 +6141,7 @@ function staffNavHTML(sc){
     <div class="sfoot">${rosaBtn("sitem srosa2")}${availBtnHTML()}
      <button type="button" class="sme" data-dd="dd-me" aria-current="${ME_SCREENS.includes(sc)?"page":"false"}" aria-haspopup="true">${av}<span><b>${who}</b><small>${ROLE_LABEL[S.me.role]}</small></span></button></div>
    </aside>
-   <header class="top stop">${BRAND}<div class="sact">
+   <header class="top stop"><button type="button" class="brandbtn" data-cs="dash" aria-label="Tableau de bord" aria-current="${sc==="dash"?"page":"false"}">${BRAND}</button><div class="sact">
      <button type="button" class="iconbtn" data-search aria-label="Rechercher">${SI.search}</button>
      ${availBtnHTML()}
      <button class="savbtn" data-dd="dd-me" aria-label="Mon compte : ${who}" aria-current="${ME_SCREENS.includes(sc)?"page":"false"}">${av}</button></div>
