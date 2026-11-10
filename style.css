@@ -2169,3 +2169,21 @@ select.tprio,span.tprio{font:inherit;font-size:12.5px;font-weight:700;border:1.5
 .pztabs{max-width:100%;overflow-x:auto;scrollbar-width:none;flex-wrap:nowrap}
 .pztabs::-webkit-scrollbar{display:none}
 .pztabs button{white-space:nowrap;flex:none}
+
+/* annuaire : onglets Contacts / Classeur, coordonnées avec entité */
+.dirtabs{margin:0 0 14px}
+.dirtabs i{font-style:normal;font-weight:700;opacity:.7;margin-left:4px;font-size:12.5px}
+.dirsubh{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:0 0 10px}
+.dirsubh .hint{margin:0}
+.dirchs{display:flex;flex-direction:column;gap:8px;margin:6px 0 10px}
+.dirchr{display:grid;grid-template-columns:150px minmax(0,1.4fr) minmax(0,1fr) auto;gap:8px;align-items:center}
+.dirchr select,.dirchr input{width:100%;min-width:0}
+.dirchadd{flex-wrap:wrap;gap:6px;margin:0 0 12px}
+.dirchadd .btn{padding:6px 12px;font-size:14px}
+.dirl a,.dirl span{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.dirent{font-style:normal;font-size:12px;font-weight:700;color:var(--accent);background:color-mix(in srgb,var(--accent) 10%,var(--surface));padding:1px 8px;border-radius:999px;white-space:nowrap}
+.dirinb{margin:-4px 0 12px}
+@media (max-width:640px){
+  .dirchr{grid-template-columns:1fr auto;grid-template-areas:"k x" "v v" "l l";padding:8px;border:1px solid var(--line);border-radius:12px}
+  .dirchr select{grid-area:k}.dirchr [data-chv]{grid-area:v}.dirchr [data-chl]{grid-area:l}.dirchr [data-chx]{grid-area:x}
+}

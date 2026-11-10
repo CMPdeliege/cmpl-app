@@ -2088,7 +2088,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261109b";
+const APP_VERSION="20261110a";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -2127,7 +2127,7 @@ function centreItems(){
   it.push({cs:"desk",ic:SI.phone,t:"Accueil",d:"La liste commune du secrétariat",n:isDesk()?deskTodayCount():0});
   it.push({cs:"waitlist",ic:SI.hourglass,t:"Listes d'attente",d:"Patients à rappeler en cas de désistement",n:0});
   it.push({cs:"tasks",ic:SI.tasks,t:"Tâches",d:"Ce que l'équipe doit faire",n:myTasks().length,mob:true});
-  it.push({cs:"binder",ic:SI.book,t:"Classeur",d:"Numéros utiles, procédures, documents",n:0});
+  it.push({cs:"directory",ic:SI.contacts||SI.book,t:"Annuaire",d:"Correspondants, numéros utiles, procédures, documents",n:0});
   it.push({cs:"inventory",ic:SI.box,t:"Inventaire",d:"Matériel à commander",n:invOpen()});
   it.push({cs:"patients",ic:IC.user,t:"Fiches patients",d:"Patients sans compte dans l'app",n:0});
   it.push({cs:"leaves",ic:SI.cal,t:"Congés",d:"Absences et congés de l'équipe",n:0});
@@ -2847,7 +2847,7 @@ function bindTemplates(){
 
 /* ----- classeur du centre ----- */
 const BCAT={numero:["Numéros utiles","☎"],procedure:["Procédures","📄"],document:["Documents","📎"]};
-function binderHTML(){
+function binderHTML(embedded){
   const q=S.bq.toLowerCase(), f=S.bfilter, ed=S.bedit;
   const list=S.binder.filter(b=>(f==="tout"||b.category===f)&&(!q||(b.title+" "+b.body+" "+(b.phone||"")+" "+(b.url||"")).toLowerCase().includes(q)));
   const form=ed?`<section class="card binform"><h3>${ed.id?"Modifier la fiche":"Nouvelle fiche"}</h3>
@@ -2859,7 +2859,7 @@ function binderHTML(){
     <label class="fld">Fichier (photo ou PDF, 10 Mo maximum)<input type="file" id="bf-file" accept="image/*,application/pdf"></label>
     ${ed.file_name?`<label class="chk2"><input type="checkbox" id="bf-rmfile"> Retirer le fichier actuel (${esc(ed.file_name)})</label>`:""}
     <div class="btnrow"><button class="btn" id="bf-save">Enregistrer</button><button class="btn ghost" id="bf-cancel">Annuler</button>${ed.id?`<button class="btn ghost danger" id="bf-del">Supprimer</button>`:""}</div></section>`:"";
-  return `<div class="chead"><div><h1>Classeur du centre</h1><p>Numéros utiles, procédures et documents de l'équipe. Visible par toute l'équipe, jamais par les patients.</p></div>${ed?"":`<button class="btn" id="b-add">+ Ajouter</button>`}</div>
+  return `${embedded?`<div class="dirsubh"><p class="hint">Numéros utiles, procédures et documents de l'équipe.</p>${ed?"":`<button class="btn" id="b-add">＋ Ajouter une fiche</button>`}</div>`:`<div class="chead"><div><h1>Classeur du centre</h1><p>Numéros utiles, procédures et documents de l'équipe. Visible par toute l'équipe, jamais par les patients.</p></div>${ed?"":`<button class="btn" id="b-add">+ Ajouter</button>`}</div>`}
   <div class="settings">${form}
    <input class="pcq" id="b-q" value="${esc(S.bq)}" placeholder="Rechercher : labo, stérilisation, garde…" aria-label="Rechercher dans le classeur">
    <div class="tabs" role="group" aria-label="Catégorie">${[["tout","Tout"],...Object.entries(BCAT).map(([k,[l]])=>[k,l])].map(([k,l])=>`<button class="tab" data-bf="${k}" aria-pressed="${f===k}">${l}</button>`).join("")}</div>
@@ -2872,7 +2872,7 @@ function binderHTML(){
 }
 function bindBinder(){
   const add=$("#b-add"); if(add) add.onclick=()=>{ S.bedit={category:S.bfilter!=="tout"?S.bfilter:"numero"}; render(); scrollTo(0,0); };
-  const q=$("#b-q"); q.oninput=()=>{ S.bq=q.value; const pos=q.selectionStart; render(); const n=$("#b-q"); n.focus(); n.setSelectionRange(pos,pos); };
+  const q=$("#b-q"); if(q) q.oninput=()=>{ S.bq=q.value; const pos=q.selectionStart; render(); const n=$("#b-q"); n.focus(); n.setSelectionRange(pos,pos); };
   $$("[data-bf]").forEach(b=>b.onclick=()=>{ S.bfilter=b.dataset.bf; render(); });
   $$("[data-bedit]").forEach(b=>b.onclick=()=>{ S.bedit={...S.binder.find(x=>x.id===+b.dataset.bedit)}; render(); scrollTo(0,0); });
   $$("[data-bfile]").forEach(b=>b.onclick=async()=>{ b.disabled=true;
@@ -2904,7 +2904,7 @@ function staffHelpHTML(){
    ["Je suis absent(e)","Mon profil et notifications → « En cas d'absence » : vos alertes peuvent être renvoyées à un collègue, avec un message automatique pour les patients."],
    ["Écrire à un collègue","Onglet « Messages » : conversations à deux ou en groupe, et « Tout le centre ». Le bouton 📋 joint une demande de patient : votre collègue l'ouvre en un clic s'il y a accès. Les messages sont effacés après 90 jours."],
    ["Réponses types","Dans une demande, le bouton 💬 à côté de la zone de message insère un texte prêt (le prénom du patient est ajouté). Créez les vôtres dans Moi → Mes réponses types."],
-   ["Le classeur du centre","Le centre → Classeur : numéros utiles, procédures et documents. Toute l'équipe peut ajouter et modifier les fiches."],
+   ["Le classeur du centre","Secrétariat → Annuaire → onglet « Classeur » : numéros utiles, procédures et documents. Toute l'équipe peut ajouter et modifier les fiches."],
    ["Le menu","Sur ordinateur, le menu est à gauche, rangé en 4 rubriques : Patients (demandes, écrire, fiches, listes d'attente), Équipe (messages, tâches, congés), Secrétariat (accueil, horaires, caisse) et Le centre (actualités, classeur, inventaire). Sur téléphone : la barre du bas, et « Plus » pour tout le reste. Le chiffre rouge indique ce qui attend."],
    ["Rechercher","La loupe (ou Ctrl K sur ordinateur) cherche partout : patients, demandes et leurs messages, messages de l'équipe, tâches, fiches, listes d'attente, inventaire, classeur, actualités, réponses types, caisse. Touchez un résultat pour l'ouvrir."],
    ["Épingler et classer les conversations","Messages : touchez « Épingler » en haut d'une conversation pour la garder tout en haut de votre liste (vos épingles ne changent rien pour les collègues). Les filtres Non lues · Prioritaires · Groupes · À deux · Patients trient la liste."],
@@ -2948,7 +2948,7 @@ function staffHelpHTML(){
    ["Mercis, emoji et couleur","Sur le tableau de bord, « ＋ Dire merci » pour remercier un collègue : il reçoit une notification et le merci reste affiché deux semaines. Dans Réglages, choisissez votre emoji et votre couleur (affichés à côté de votre nom) et activez ou non les petites célébrations."],
    ["Tableau de bord","Sur ordinateur, l'app s'ouvre sur le tableau de bord : vos demandes à traiter (les urgentes en premier), vos tâches, les messages de l'équipe non lus, les examens à suivre et ce qui se passe aujourd'hui au centre (absences, anniversaires, annonces, inventaire). Touchez un compteur ou une ligne pour y aller. Sur téléphone, l'app s'ouvre toujours sur les demandes ; le tableau de bord est dans « Plus »."],
    ["Annonces importantes (administrateurs)","Le centre → Annonces importantes : choisissez pour qui (équipe, patients ou tout le monde), un titre, un message et jusqu'à quand. L'annonce s'affiche en grand à l'ouverture de l'app (chacun touche « J'ai compris »), puis reste épinglée en haut de l'écran jusqu'au dernier jour choisi. Vous voyez combien de personnes l'ont lue et pouvez l'arrêter à tout moment. Notification sur le téléphone en option ; les patients ne la reçoivent que s'ils ont accepté les annonces du centre."],
-   ["Annuaire des correspondants","Secrétariat → Annuaire : spécialistes, hôpitaux, labos, kinés, infirmiers… avec téléphones (touchez pour appeler), e-mail, adresse et remarques (« délai 3 semaines », « demander Nadia »). ⭐ pour les favoris, « Copier » pour coller les coordonnées dans un courrier. Sur la page d'un patient, « 📇 Ou depuis l'annuaire » ajoute un correspondant à ses contacts."],
+   ["Annuaire des correspondants","Secrétariat → Annuaire. Onglet « Contacts » : spécialistes, hôpitaux, labos, kinés, infirmiers… Chaque contact peut avoir plusieurs téléphones, e-mails et adresses, chacun avec son entité si vous le souhaitez (hôpital, clinique, cabinet privé, GSM privé…), et une note pour l'équipe. ⭐ pour les favoris, « Copier » pour coller les coordonnées dans un courrier. Onglet « Classeur » : numéros utiles, procédures et documents. Sur la page d'un patient, « 📇 Ou depuis l'annuaire » ajoute un correspondant à ses contacts."],
    ["Suivi des factures","Infos et documents → Documents : chaque facture affiche « À payer », « En retard » (échéance dépassée) ou « Payée le… ». Le filtre « Impayées » donne le total à encaisser. « ✓ Payée » enregistre la date du paiement ; « 📄 Rappel » prépare une lettre de rappel (PDF) à envoyer au destinataire."],
    ["Statistiques du mois (administrateurs)","Le centre → Statistiques : demandes reçues, délai de première réponse, part des demandes traitées dans le délai annoncé, répartition par type, par prestataire, par heure et par jour, comparées au mois précédent. Aucun nom de patient."],
    ["Journal et sauvegarde (administrateurs)","Le centre → Journal et sauvegarde : qui a ouvert quelle demande, écrit, classé, transféré, modifié un compte, affiché un mot de passe, créé ou annulé un reçu, sur les 3 derniers mois (export Excel possible). « Télécharger la sauvegarde » produit un fichier Excel des patients, pages patients, annuaire, tâches et factures : à garder sur un ordinateur protégé du centre. Un rappel arrive le 1er de chaque mois."],
@@ -3454,7 +3454,7 @@ function bindPfile(){
   $$(".pfform input,.pfform textarea").forEach(x=>x.oninput=sync);
   if(E&&!S.dirLoaded&&!S.dirLoading){ S.dirLoading=true; loadDirectory().finally(()=>{ S.dirLoading=false; if(S.cscreen==="pfile"&&S.pfEdit===E&&S.dir.length&&!isTyping()) render(); }); }
   const pd=$("#pf-dir"); if(pd) pd.onchange=()=>{ const d=S.dir.find(x=>x.id===+pd.value); if(!d) return; sync();
-    const c={role:(d.specialty||dirCat(d.category)[2]).slice(0,40),name:[d.name,d.org].filter(Boolean).join(", ").slice(0,100),phone:d.phone||d.phone2||"",email:d.email||"",note:""};
+    const c={role:(d.specialty||dirCat(d.category)[2]).slice(0,40),name:[d.name,d.org].filter(Boolean).join(", ").slice(0,100),phone:(dirCh(d).find(x=>x.k==="tel")||{}).v||"",email:(dirCh(d).find(x=>x.k==="mail")||{}).v||"",note:""};
     const last=E.contacts[E.contacts.length-1]; if(last&&!Object.values(last).some(v=>(v||"").trim())) E.contacts[E.contacts.length-1]=c; else E.contacts.push(c); render(); };
   const ca=$("#pf-cadd"); if(ca) ca.onclick=()=>{ sync(); E.contacts.push({}); render(); $$("[data-pfc]").slice(-1)[0]?.querySelector("input")?.focus(); };
   $$("[data-pfcdel]").forEach(b=>b.onclick=()=>{ sync(); E.contacts.splice(+b.dataset.pfcdel,1); render(); });
@@ -4077,6 +4077,7 @@ function dashHoHTML(){
 function orgRt(){ if(!S.me||S.me.role==="patient") return; clearTimeout(orgRt.t); orgRt.t=setTimeout(async()=>{ try{ await loadOrg(); }catch(e){ return; } if(["dash","checklists","meetings","polls"].includes(S.cscreen)&&!isTyping()&&!$(".modal")) render(); },800); }
 function renderStaff(a){
   a.className="wrap wide staff";
+  if(S.cscreen==="binder"){ S.cscreen="directory"; S.dirTab="binder"; }  // le classeur fait partie de l'annuaire
   const sc=S.cscreen;
   const nav=staffNavHTML(sc);
   let body="";
@@ -5887,64 +5888,105 @@ const DIR_CATS=[["specialiste","🩺","Spécialistes"],["hopital","🏥","Hôpit
 const dirCat=k=>DIR_CATS.find(c=>c[0]===k)||DIR_CATS[DIR_CATS.length-1];
 async function loadDirectory(){ const {data,error}=await sb.from("directory").select("*").order("name"); S.dirOk=!error; S.dir=error?[]:(data||[]); S.dirLoaded=true; }
 const webHref=u=>/^https?:\/\//i.test(u)?u:"https://"+u;
-const dirText=d=>[d.name,[d.specialty,d.org].filter(Boolean).join(" · "),d.phone&&("Tél. "+d.phone),d.phone2&&("Tél. "+d.phone2),d.fax&&("Fax "+d.fax),d.email,d.address,d.website].filter(Boolean).join("\n");
+// coordonnées d'un contact : liste [{k:"tel"|"mail"|"addr"|"fax"|"web", v:valeur, l:entité facultative}]
+const DIR_K={tel:["📞","Téléphone",40,"tel"],mail:["✉️","E-mail",160,"email"],addr:["📍","Adresse",300,"text"],fax:["📠","Fax",40,"tel"],web:["🌐","Site internet",300,"url"]};
+const DIR_ENT=["Hôpital","Clinique","Polyclinique","Cabinet privé","Secrétariat","Service","GSM","Privé","Domicile","Garde","Consultations"];
+function dirCh(d){ if(Array.isArray(d.channels)&&d.channels.length) return d.channels.filter(c=>c&&DIR_K[c.k]&&(c.v||"").trim());
+  return [["tel",d.phone],["tel",d.phone2],["fax",d.fax],["mail",d.email],["addr",d.address],["web",d.website]].filter(([,v])=>v&&String(v).trim()).map(([k,v])=>({k,v:String(v).trim(),l:""})); }
+const dirChText=c=>`${DIR_K[c.k][1]}${c.l?` (${c.l})`:""} : ${c.v}`;
+const dirText=d=>[d.name,[d.specialty,d.org].filter(Boolean).join(" · "),...dirCh(d).map(dirChText),d.note&&("Note : "+d.note)].filter(Boolean).join("\n");
+function dirChLink(c){ const v=esc(c.v), l=c.l?`<em class="dirent">${esc(c.l)}</em>`:"";
+  if(c.k==="tel") return `<a href="${telHref(c.v)}">📞 ${v}${l}</a>`;
+  if(c.k==="mail") return `<a href="mailto:${v}">✉️ ${v}${l}</a>`;
+  if(c.k==="addr") return `<a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(c.v)}" target="_blank" rel="noopener">📍 ${v}${l}</a>`;
+  if(c.k==="web") return `<a href="${esc(webHref(c.v))}" target="_blank" rel="noopener">🌐 ${esc(c.v.replace(/^https?:\/\//i,"").replace(/\/$/,""))}${l}</a>`;
+  return `<span>📠 ${v}${l}</span>`; }
 function directoryHTML(){
-  const head=`<div class="chead"><div><h1>📇 Annuaire</h1><p>Les correspondants du centre : spécialistes, hôpitaux, labos, kinés, infirmiers… Un seul carnet d'adresses pour toute l'équipe.</p></div></div>`;
+  const tab=S.dirTab||"contacts", nB=(S.binder||[]).length;
+  const head=`<div class="chead"><div><h1>📇 Annuaire</h1><p>Les correspondants du centre, les numéros utiles, les procédures et les documents de l'équipe. Visible par toute l'équipe, jamais par les patients.</p></div></div>
+   <div class="seg dirtabs" role="group" aria-label="Partie de l'annuaire"><button type="button" data-dirtab="contacts" aria-pressed="${tab==="contacts"}">📇 Contacts${S.dirLoaded&&S.dirOk?` <i>${S.dir.length}</i>`:""}</button><button type="button" data-dirtab="binder" aria-pressed="${tab==="binder"}">📁 Classeur${nB?` <i>${nB}</i>`:""}</button></div>`;
+  if(tab==="binder") return head+binderHTML(true);
   if(!S.dirLoaded) return head+`<p class="hint">Chargement…</p>`;
-  if(!S.dirOk) return head+`<div class="err">L'annuaire sera disponible après la mise à jour de la base de données (migration 073).</div>`;
+  if(!S.dirOk) return head+`<div class="err">Les contacts seront disponibles après la mise à jour de la base de données (migration 073).</div>`;
   const D=S.dirUi||(S.dirUi={cat:"",q:""}), F=S.dirForm;
   const q=norm(D.q||"").split(/\s+/).filter(Boolean);
   const L=S.dir.filter(d=>!D.cat||(D.cat==="fav"?d.favorite:d.category===D.cat))
-    .filter(d=>!q.length||q.every(w=>norm(`${d.name} ${d.specialty||""} ${d.org||""} ${d.address||""} ${d.note||""} ${d.phone||""} ${d.email||""} ${dirCat(d.category)[2]}`).includes(w)))
+    .filter(d=>!q.length||q.every(w=>norm(`${d.name} ${d.specialty||""} ${d.org||""} ${d.note||""} ${dirCh(d).map(c=>c.v+" "+(c.l||"")).join(" ")} ${dirCat(d.category)[2]}`).includes(w)))
     .sort((a,b)=>(b.favorite-a.favorite)||a.name.localeCompare(b.name,"fr"));
+  const inB=q.length?(S.binder||[]).filter(b=>q.every(w=>norm(`${b.title} ${b.body||""} ${b.phone||""}`).includes(w))).length:0;
   const cnt=k=>S.dir.filter(d=>d.category===k).length;
-  const inp=(id,l,v,ph,o="")=>`<label class="fld">${l}<input type="${o||"text"}" id="${id}" maxlength="${/note|addr/.test(id)?300:160}" value="${esc(v||"")}" placeholder="${esc(ph)}"></label>`;
+  const inp=(id,l,v,ph)=>`<label class="fld">${l}<input type="text" id="${id}" maxlength="160" value="${esc(v||"")}" placeholder="${esc(ph)}"></label>`;
+  const chRow=(c,i)=>`<div class="dirchr" data-chi="${i}">
+      <select data-chk="${i}" aria-label="Type">${Object.entries(DIR_K).map(([k,[ic,l]])=>`<option value="${k}" ${c.k===k?"selected":""}>${ic} ${l}</option>`).join("")}</select>
+      <input type="text" inputmode="${DIR_K[c.k][3]==="tel"?"tel":DIR_K[c.k][3]==="email"?"email":DIR_K[c.k][3]==="url"?"url":"text"}" data-chv="${i}" maxlength="${DIR_K[c.k][2]}" value="${esc(c.v||"")}" placeholder="${c.k==="addr"?"Rue, numéro, code postal, commune":c.k==="mail"?"nom@exemple.be":c.k==="web"?"www.exemple.be":"02 555 00 00"}" aria-label="${DIR_K[c.k][1]}">
+      <input type="text" data-chl="${i}" list="dir-ent" maxlength="60" value="${esc(c.l||"")}" placeholder="Entité (facultatif) : hôpital, GSM…" aria-label="Entité">
+      <button type="button" class="linkbtn tdel" data-chx="${i}" aria-label="Retirer">✕</button></div>`;
   const form=F?`<section class="card dirform"><h3>${F.id?"Modifier le contact":"Nouveau contact"}</h3>
     <div class="row2">${inp("dr-name","Nom",F.name,"Dr Claire Martin")}<label class="fld">Catégorie<select id="dr-cat">${DIR_CATS.map(([k,i,l])=>`<option value="${k}" ${F.category===k?"selected":""}>${i} ${l}</option>`).join("")}</select></label></div>
     <div class="row2">${inp("dr-spec","Spécialité ou fonction",F.specialty,"Cardiologue")}${inp("dr-org","Hôpital, cabinet, service",F.org,"CHU Saint-Pierre, cardiologie")}</div>
-    <div class="row2">${inp("dr-phone","Téléphone",F.phone,"02 535 31 11","tel")}${inp("dr-phone2","Autre téléphone (secrétariat, GSM…)",F.phone2,"","tel")}</div>
-    <div class="row2">${inp("dr-email","E-mail",F.email,"","email")}${inp("dr-fax","Fax",F.fax,"")}</div>
-    <div class="row2">${inp("dr-addr","Adresse",F.address,"Rue Haute 322, 1000 Bruxelles")}${inp("dr-web","Site internet",F.website,"www.exemple.be")}</div>
-    <label class="fld">Remarques pour l'équipe<textarea id="dr-note" rows="3" maxlength="1000" placeholder="Ex. délai de rendez-vous 3 semaines, demander Nadia au secrétariat, reçoit via eHealthBox, consultations le mardi…">${esc(F.note||"")}</textarea></label>
+    <p class="fldl">Coordonnées</p>
+    <p class="hint">Pour chaque numéro ou adresse, vous pouvez préciser l'entité (facultatif) : l'hôpital, la clinique, le cabinet privé, le GSM privé du prestataire…</p>
+    <div class="dirchs">${F.ch.map(chRow).join("")||`<p class="hint">Aucune coordonnée pour l'instant.</p>`}</div>
+    <datalist id="dir-ent">${DIR_ENT.map(e=>`<option value="${e}">`).join("")}</datalist>
+    ${F.ch.length<20?`<div class="btnrow dirchadd"><button type="button" class="btn ghost" data-chadd="tel">＋ Téléphone</button><button type="button" class="btn ghost" data-chadd="mail">＋ E-mail</button><button type="button" class="btn ghost" data-chadd="addr">＋ Adresse</button><button type="button" class="btn ghost" data-chadd="fax">＋ Fax</button><button type="button" class="btn ghost" data-chadd="web">＋ Site</button></div>`:""}
+    <label class="fld">Note (facultatif)<textarea id="dr-note" rows="3" maxlength="1000" placeholder="Ex. délai de rendez-vous 3 semaines, demander Nadia au secrétariat, reçoit via eHealthBox, consultations le mardi…">${esc(F.note||"")}</textarea></label>
     <label class="chk2"><input type="checkbox" id="dr-fav" ${F.favorite?"checked":""}> ⭐ Favori (affiché en premier)</label>
     <p class="hint">Visible par toute l'équipe, jamais par les patients.</p>
     <div class="btnrow"><button type="button" class="btn" id="dr-save">Enregistrer</button><button type="button" class="btn ghost" id="dr-x">Annuler</button></div></section>`:"";
   const card=d=>{ const c=dirCat(d.category); return `<article class="card dircard"><div class="dirh"><span class="dirico" aria-hidden="true">${c[1]}</span>
      <div class="dirt"><h3>${esc(d.name)}</h3><small>${esc([d.specialty,d.org].filter(Boolean).join(" · ")||c[2])}</small></div>
      <button type="button" class="dirstar" data-drfav="${d.id}" aria-pressed="${!!d.favorite}" title="${d.favorite?"Retirer des favoris":"Ajouter aux favoris"}" aria-label="Favori">${d.favorite?"★":"☆"}</button></div>
-    <div class="dirl">${d.phone?`<a href="${telHref(d.phone)}">📞 ${esc(d.phone)}</a>`:""}${d.phone2?`<a href="${telHref(d.phone2)}">📞 ${esc(d.phone2)}</a>`:""}${d.fax?`<span>📠 ${esc(d.fax)}</span>`:""}${d.email?`<a href="mailto:${esc(d.email)}">✉️ ${esc(d.email)}</a>`:""}${d.address?`<a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(d.address)}" target="_blank" rel="noopener">📍 ${esc(d.address)}</a>`:""}${d.website?`<a href="${esc(webHref(d.website))}" target="_blank" rel="noopener">🌐 ${esc(d.website.replace(/^https?:\/\//i,"").replace(/\/$/,""))}</a>`:""}</div>
-    ${d.note?`<p class="dirnote">${esc(d.note)}</p>`:""}
+    <div class="dirl">${dirCh(d).map(dirChLink).join("")}</div>
+    ${d.note?`<p class="dirnote">📝 ${esc(d.note)}</p>`:""}
     <div class="dirf"><small class="hint">${esc(c[2])} · modifié par ${esc(teamName(d.updated_by||d.created_by))} · ${fmt(d.updated_at)}</small><span><button type="button" class="linkbtn" data-drcopy="${d.id}">Copier</button><button type="button" class="linkbtn" data-dred="${d.id}">Modifier</button><button type="button" class="linkbtn tdel" data-drdel="${d.id}">Supprimer</button></span></div></article>`; };
   return head+`<div class="stktools"><input id="dr-q" type="search" class="pcq" placeholder="Rechercher : nom, spécialité, hôpital, commune…" value="${esc(D.q||"")}" aria-label="Rechercher dans l'annuaire">
      ${F?"":`<button type="button" class="btn" id="dr-new">＋ Ajouter</button>`}${S.dir.length?`<button type="button" class="btn ghost" id="dr-xlsx">⬇ Excel</button>`:""}</div>
    <div class="pchips dirchips"><button type="button" class="pchip" data-drcat="" aria-pressed="${!D.cat}">Tous <i>${S.dir.length}</i></button>${S.dir.some(d=>d.favorite)?`<button type="button" class="pchip" data-drcat="fav" aria-pressed="${D.cat==="fav"}">⭐ Favoris</button>`:""}${DIR_CATS.filter(([k])=>cnt(k)).map(([k,i,l])=>`<button type="button" class="pchip" data-drcat="${k}" aria-pressed="${D.cat===k}">${i} ${l} <i>${cnt(k)}</i></button>`).join("")}</div>
+   ${inB?`<p class="hint dirinb">📁 ${inB} fiche${inB>1?"s":""} du classeur correspond${inB>1?"ent":""} aussi à votre recherche : <button type="button" class="linkbtn" id="dr-tob">voir dans le classeur</button></p>`:""}
    ${form}
-   <div class="dirlist">${L.map(card).join("")||`<div class="empty">${q.length||D.cat?"Rien ne correspond.":"L'annuaire est vide. Ajoutez le premier correspondant !"}</div>`}</div>`;
+   <div class="dirlist">${L.map(card).join("")||`<div class="empty">${q.length||D.cat?"Rien ne correspond.":"Aucun contact pour l'instant. Ajoutez le premier correspondant !"}</div>`}</div>`;
 }
 function dirXlsx(list=S.dir){
-  const H=["Catégorie","Nom","Spécialité","Hôpital / cabinet","Téléphone","Autre téléphone","Fax","E-mail","Adresse","Site","Remarques"];
-  return xlsxTable("Annuaire",H,(list||[]).map(d=>[dirCat(d.category)[2],d.name,d.specialty,d.org,d.phone,d.phone2,d.fax,d.email,d.address,d.website,d.note]),[18,26,20,28,16,16,14,26,32,22,40]);
+  const H=["Catégorie","Nom","Spécialité","Hôpital / cabinet","Téléphones","E-mails","Adresses","Fax","Sites","Note"];
+  const col=(d,k)=>dirCh(d).filter(c=>c.k===k).map(c=>c.v+(c.l?` (${c.l})`:"")).join("\n");
+  return xlsxTable("Annuaire",H,(list||[]).map(d=>[dirCat(d.category)[2],d.name,d.specialty,d.org,col(d,"tel"),col(d,"mail"),col(d,"addr"),col(d,"fax"),col(d,"web"),d.note]),[18,26,20,28,30,30,36,18,24,40]);
 }
 function bindDirectory(){
+  $$("[data-dirtab]").forEach(b=>b.onclick=()=>{ S.dirTab=b.dataset.dirtab; if(S.dirTab==="binder"&&S.dirUi&&S.dirUi.q) S.bq=S.dirUi.q; render(); });
+  if((S.dirTab||"contacts")==="binder"){ bindBinder(); return; }
   if(!S.dirLoaded){ if(!S.dirLoading){ S.dirLoading=true; loadDirectory().finally(()=>{ S.dirLoading=false; softRender("directory"); }); } return; }
   const D=S.dirUi||(S.dirUi={cat:"",q:""}), reload=async()=>{ await loadDirectory(); render(); };
   const dq=$("#dr-q"); if(dq){ let t; dq.oninput=()=>{ clearTimeout(t); t=setTimeout(()=>{ D.q=dq.value; render(); const n=$("#dr-q"); n.focus(); n.setSelectionRange(n.value.length,n.value.length); },250); }; }
+  const tob=$("#dr-tob"); if(tob) tob.onclick=()=>{ S.dirTab="binder"; S.bq=D.q||""; S.bfilter="tout"; render(); };
   $$("[data-drcat]").forEach(b=>b.onclick=()=>{ D.cat=b.dataset.drcat; render(); });
-  const nw=$("#dr-new"); if(nw) nw.onclick=()=>{ S.dirForm={category:D.cat&&D.cat!=="fav"?D.cat:"specialiste"}; render(); $("#dr-name")?.focus(); };
+  const nw=$("#dr-new"); if(nw) nw.onclick=()=>{ S.dirForm={category:D.cat&&D.cat!=="fav"?D.cat:"specialiste",ch:[{k:"tel",v:"",l:""}]}; render(); $("#dr-name")?.focus(); };
   const xl=$("#dr-xlsx"); if(xl) xl.onclick=()=>saveFile(buildXlsxBook([dirXlsx()]),`Annuaire CMPL ${todayISO()}.xlsx`);
   $$("[data-drcopy]").forEach(b=>b.onclick=()=>{ const d=S.dir.find(x=>x.id===+b.dataset.drcopy); if(d) copyText(dirText(d)); });
-  $$("[data-dred]").forEach(b=>b.onclick=()=>{ const d=S.dir.find(x=>x.id===+b.dataset.dred); if(!d) return; S.dirForm={...d}; render(); scrollTo({top:0,behavior:"smooth"}); $("#dr-name")?.focus(); });
+  $$("[data-dred]").forEach(b=>b.onclick=()=>{ const d=S.dir.find(x=>x.id===+b.dataset.dred); if(!d) return; S.dirForm={...d,ch:dirCh(d).map(c=>({k:c.k,v:c.v,l:c.l||""}))}; render(); scrollTo({top:0,behavior:"smooth"}); $("#dr-name")?.focus(); });
   $$("[data-drdel]").forEach(b=>b.onclick=async()=>{ if(!confirmInline(b,"Supprimer ?")) return; if(await run(()=>sb.from("directory").delete().eq("id",+b.dataset.drdel),"Contact supprimé")) await reload(); });
   $$("[data-drfav]").forEach(b=>b.onclick=async()=>{ const d=S.dir.find(x=>x.id===+b.dataset.drfav); if(!d) return;
     const {error}=await sb.from("directory").update({favorite:!d.favorite}).eq("id",d.id); if(error) return toast(frError(error)); d.favorite=!d.favorite; render(); });
+  const F=S.dirForm; if(!F) return;
+  // garder ce qui est tapé quand la liste des coordonnées change
+  const keep=()=>{ const v=id=>$(id)?.value; F.name=v("#dr-name"); F.category=v("#dr-cat"); F.specialty=v("#dr-spec"); F.org=v("#dr-org"); F.note=v("#dr-note"); F.favorite=$("#dr-fav")?.checked;
+    F.ch=F.ch.map((c,i)=>({k:$(`[data-chk="${i}"]`)?.value||c.k,v:$(`[data-chv="${i}"]`)?.value??c.v,l:$(`[data-chl="${i}"]`)?.value??c.l})); };
+  $$("[data-chadd]").forEach(b=>b.onclick=()=>{ keep(); F.ch.push({k:b.dataset.chadd,v:"",l:""}); render(); const n=$$("[data-chv]"); n[n.length-1]?.focus(); });
+  $$("[data-chx]").forEach(b=>b.onclick=()=>{ keep(); F.ch.splice(+b.dataset.chx,1); render(); });
+  $$("[data-chk]").forEach(b=>b.onchange=()=>{ keep(); render(); });
   const x=$("#dr-x"); if(x) x.onclick=()=>{ S.dirForm=null; render(); };
-  const sv=$("#dr-save"); if(sv) sv.onclick=async()=>{ const F=S.dirForm, v=id=>($(id)?.value||"").trim()||null;
-    const row={name:v("#dr-name"),category:$("#dr-cat").value,specialty:v("#dr-spec"),org:v("#dr-org"),phone:v("#dr-phone"),phone2:v("#dr-phone2"),fax:v("#dr-fax"),email:v("#dr-email"),address:v("#dr-addr"),website:v("#dr-web"),note:v("#dr-note"),favorite:$("#dr-fav").checked,updated_by:S.me.id,updated_at:new Date().toISOString()};
+  const sv=$("#dr-save"); if(sv) sv.onclick=async()=>{ keep(); const t=v=>(v||"").trim()||null;
+    const ch=F.ch.map(c=>({k:c.k,v:(c.v||"").trim().slice(0,DIR_K[c.k][2]),l:(c.l||"").trim().slice(0,60)})).filter(c=>c.v);
+    const bad=ch.find(c=>c.k==="mail"&&!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(c.v)); if(bad) return toast(`Cet e-mail ne semble pas valide : ${bad.v}`);
+    const first=(k,n=0)=>(ch.filter(c=>c.k===k)[n]||{}).v||null;
+    // les anciennes colonnes restent remplies (premier numéro, premier e-mail…) pour l'export et la sauvegarde
+    const row={name:t(F.name),category:F.category||"autre",specialty:t(F.specialty),org:t(F.org),phone:first("tel"),phone2:first("tel",1),fax:first("fax"),email:first("mail"),address:first("addr"),website:first("web"),note:t(F.note),favorite:!!F.favorite,updated_by:S.me.id,updated_at:new Date().toISOString(),channels:ch};
     if(!row.name) return toast("Indiquez le nom.");
-    if(row.email&&!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(row.email)) return toast("Cet e-mail ne semble pas valide.");
     sv.disabled=true;
-    const ok=await run(()=>F.id?sb.from("directory").update(row).eq("id",F.id):sb.from("directory").insert(row),F.id?"Contact modifié":"Contact ajouté à l'annuaire");
-    if(ok){ S.dirForm=null; await reload(); } else sv.disabled=false; };
+    const doSave=r=>F.id?sb.from("directory").update(r).eq("id",F.id):sb.from("directory").insert(r);
+    let {error}=await doSave(row);
+    if(error&&/channels/i.test(error.message||"")){ const {channels,...legacy}=row; ({error}=await doSave(legacy)); if(!error) toast("Enregistré. Les entités seront gardées après la mise à jour de la base de données (migration 074)."); }
+    if(error){ toast(frError(error)); sv.disabled=false; return; }
+    toast(F.id?"Contact modifié":"Contact ajouté à l'annuaire"); S.dirForm=null; await reload(); };
 }
 // feuille Excel simple : une ligne de titres puis les données
 function xlsxTable(name, headers, rows, widths){
@@ -6178,7 +6220,6 @@ function navGroups(){
      ...(canOffice()?[{cs:"hours",ic:SI.clock,t:"Horaires"},{cs:"cash",ic:SI.euro,t:"Caisse"}]:[])]},
    {h:"Le centre",it:[
      ...(canPub()?[{cs:"news",ic:SI.news||IC.news,t:"Actualités"}]:[]),
-     {cs:"binder",ic:SI.book,t:"Classeur"},
      {cs:"fiches",ic:IC.doc,t:"Fiches conseils"},
      {cs:"inventory",ic:SI.box,t:"Inventaire",n:invOpen()},
      ...(isAdmin()?[{cs:"annonces",ic:SI.mega,t:"Annonces"},{cs:"feedback",ic:SI.idea,t:"Suggestions",n:fbNew()},{cs:"stats",ic:SI.stats,t:"Statistiques"},{cs:"journal",ic:SI.shield,t:"Journal et sauvegarde"}]:[])]}];
