@@ -455,6 +455,7 @@ small.qty{font-size:inherit;color:var(--muted)}
 .durtag{display:inline-block;margin:4px 6px 0 0;font-size:12px;font-weight:700;padding:2px 8px;border-radius:6px;background:var(--surface-2);color:var(--ink)}
 .durtag.short{background:color-mix(in srgb,var(--gold-bright) 22%,transparent);color:var(--gold)}
 .meta .durtag{margin-top:0}
+.durtag.team{background:color-mix(in srgb,#2e7d5b 16%,transparent);color:#2e7d5b}
 .shortbtn{vertical-align:top;margin-bottom:10px}
 /* enregistrer la conversation */
 .savepdf{margin-top:10px}

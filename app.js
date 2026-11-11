@@ -228,6 +228,7 @@ const FLOWS={
   {id:"pour",kind:"choice",q:()=>`Bonjour ${S.me?.first_name||""}. Le rendez-vous est pour qui ?`,options:()=>pourOptions(),when:()=>kids().length>0},
   {id:"specialite",kind:"choice",q:"Pour quel type de consultation ?",options:()=>P.specs()},
   {id:"medecin",kind:"choice",q:"Avec qui ?",options:a=>[...P.of(a.specialite).map(P.label),"Peu importe, le premier disponible"],when:a=>P.of(a.specialite).length>1},
+  {id:"equipe",kind:"choice",q:"Si ce médecin n'a pas de place rapidement, acceptez-vous de voir le premier disponible de l'équipe ? Il a accès à votre dossier.",options:["Oui, le premier disponible de l'équipe","Non, je préfère attendre ce médecin"],when:a=>isGP(a)&&P.of(a.specialite).length>1&&!!a.medecin&&a.medecin!=="Peu importe, le premier disponible"},
   // Médecine générale : motif, détails, lieu (le délai souhaité est demandé à la fin, comme pour toutes les demandes)
   {id:"motif",kind:"choice",q:"Quel est le motif principal ?",options:GP_MOTIFS,when:isGP},
   {id:"details",kind:"text",q:"Décrivez en quelques mots ce qui vous amène.",placeholder:"Ex. toux depuis 5 jours, un peu de fièvre le soir",optional:true,when:isGP},
@@ -283,7 +284,7 @@ Object.keys(FLOWS).forEach(k=>{ const f=FLOWS[k]; let i=f.length; while(i>0&&f[i
 ["rdv","question","prescription","rapport","document"].forEach(k=>FLOWS[k].push(ABS_NOTE,ABS_NOTE2));
 ["question","prescription","rapport","resultats","document"].forEach(k=>FLOWS[k].unshift(POUR_STEP));
 FLOWS.rdv.push(KID_NOTE); FLOWS.question.push(KID_NOTE);
-const LABELS={doc:"Document",fichiers:"Fichiers",note:"Message",de:"De",pour:"Pour",specialite:"Consultation",medecin:"Prestataire",motif:"Motif",delai:"Pour quand",urgence:"Délai souhaité",details:"Détails",moment:"Disponibilités",lieu:"Lieu",
+const LABELS={doc:"Document",fichiers:"Fichiers",note:"Message",de:"De",pour:"Pour",specialite:"Consultation",medecin:"Prestataire",equipe:"Autre médecin de l'équipe",motif:"Motif",delai:"Pour quand",urgence:"Délai souhaité",details:"Détails",moment:"Disponibilités",lieu:"Lieu",
  sujet:"Sujet",depuis:"Depuis",texte:"Question",medicament:"Médicaments",historique:"Déjà prescrit",nouveau:"Choix",remarque:"Remarque",
  examen:"Examen",quand:"Date",demandeur:"Demandé par",contact:"Contact souhaité",
  premiere:"Première consultation",deja_vu:"Déjà consulté",raison:"Raison",destinataire:"Rapport pour",echeance:"Pour quand"};
@@ -2088,7 +2089,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261110a";
+const APP_VERSION="20261111a";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -4109,6 +4110,9 @@ function rdvMinutes(r){ const a=r.answers||{};
 function durHTML(r){ const m=rdvMinutes(r); if(m===undefined) return "";
   const dep=(r.answers||{}).lieu==="Visite à domicile"?" + déplacement":"";
   return `<span class="durtag ${m!==null&&m<=10?"short":""}" title="Durée estimée de la consultation">⏱ ${m===null?"À évaluer":"~"+m+" min"}${dep}</span>`; }
+// accepte le premier disponible de l'équipe (visible par l'équipe seulement)
+const teamOK = r => { const a=r.answers||{}; return r.type==="rdv" && (a.medecin==="Peu importe, le premier disponible" || /^Oui/.test(a.equipe||"")); };
+function teamOkHTML(r){ return teamOK(r) ? `<span class="durtag team" title="Le patient accepte le premier médecin disponible de l'équipe">👥 Premier dispo OK</span>` : ""; }
 const isShort = r => { const m=rdvMinutes(r); return m!=null && m<=10; };
 
 /* ----- boîte de réception ----- */
@@ -4153,7 +4157,7 @@ function irowHTML(r){ const ms=msgsOf(r), last=ms[ms.length-1];
   const rx=r.type==="prescription"&&(r.request_items||[]).length?(r.request_items||[]).map(i=>i.label+(i.quantity>1?` ×${i.quantity}`:"")).join(", "):"";
   const prev=newPatientMsg(r)&&last?`« ${msgPreview(last)} »`:rx||summaryLine(r.answers);
   return `<button class="row irow${r.status!=="traite"&&awaitingStaff(r)&&(r.priority==="haute"||isLate(r))?" ihot":""}" data-sel="${r.id}" aria-current="${r.id===S.sel}"><div class="ic t-${r.type}" aria-hidden="true">${IEMO[r.type]||IC[r.type]}</div>
-   <div class="itx"><b>${esc(reqName(r))}</b>${r.child_id?` <span class="ipill no">enfant</span>`:""}<small>${TYPES[r.type].label}${prev?" · "+esc(prev):""}</small>${durHTML(r)}${S.scope==="all"?`<small class="iwho">${esc(reqWho(r))}</small>`:""}</div>
+   <div class="itx"><b>${esc(reqName(r))}</b>${r.child_id?` <span class="ipill no">enfant</span>`:""}<small>${TYPES[r.type].label}${prev?" · "+esc(prev):""}</small>${durHTML(r)}${teamOkHTML(r)}${S.scope==="all"?`<small class="iwho">${esc(reqWho(r))}</small>`:""}</div>
    <div class="iside">${dueTagI(r)}<small>${r.status==="traite"?fmt(r.closed_at):ms.length?fmt(last.created_at):"reçue "+fmt(r.created_at)}</small></div></button>`; }
 // regroupement par jour (liste longue) : on touche le jour pour voir ses demandes
 const dKey = d => { const x=new Date(d); return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,"0")}-${String(x.getDate()).padStart(2,"0")}`; };
@@ -4239,7 +4243,7 @@ function detailHTML(){
     :`<div class="pinfo"><span>Né(e) le <b>${fmtDate(p.birth_date)}</b></span><span>Tél. <b>${esc(p.phone||"—")}</b></span></div>`}
     ${extraContactsHTML(p)}
     <div class="pfline">${r.child_id?pfBtn("c",r.child_id,"Page patient"):pfBtn("p",r.patient_id,"Page patient")}</div>${r.child_id?pfPeekHTML("c",r.child_id):pfPeekHTML("p",r.patient_id)}
-    <div class="meta" style="margin-top:6px"><span class="tag">${TYPES[r.type].label}</span>${durHTML(r)}<span class="pill st-${stClass(r)}">${stLabel(r)}</span><span>Reçue ${fmt(r.created_at)} · ${esc(reqWho(r))}</span></div></div></div>
+    <div class="meta" style="margin-top:6px"><span class="tag">${TYPES[r.type].label}</span>${durHTML(r)}${teamOkHTML(r)}<span class="pill st-${stClass(r)}">${stLabel(r)}</span><span>Reçue ${fmt(r.created_at)} · ${esc(reqWho(r))}</span></div></div></div>
    ${open?`<div class="prioedit"><span class="hint">Priorité</span>${["haute","normale","basse"].map(k=>`<button class="dec p-${k}" aria-pressed="${r.priority===k}" data-prio="${k}">${PRIO_LABEL[k]}</button>`).join("")}</div><div>${dueHTML(r)}</div>`:""}
       ${open&&r.type!=="centre"?(canMarkSeen(r)?`<div class="seenrow"><button class="btn ghost seenbtn" id="seen">✓ Vu · prévenir le patient</button><span class="hint">Le patient voit que sa demande est en cours de traitement (notification, sans e-mail).</span></div>`
      :seenSinceLast(r)?`<div class="seenrow"><span class="seenok">✓ Patient prévenu ${fmt(seenSinceLast(r).created_at)}</span></div>`:""):""}
