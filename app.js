@@ -2089,7 +2089,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261114b";
+const APP_VERSION="20261114c";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -2914,7 +2914,7 @@ function staffHelpHTML(){
    ["Réponses types","Dans une demande, le bouton 💬 à côté de la zone de message insère un texte prêt (le prénom du patient est ajouté). Créez les vôtres dans Moi → Mes réponses types."],
    ["Le classeur du centre","Secrétariat → Annuaire → onglet « Classeur » : numéros utiles, procédures et documents. Toute l'équipe peut ajouter et modifier les fiches."],
    ["Le menu","Sur ordinateur, le menu est à gauche, rangé en 4 rubriques : Patients (demandes, écrire, fiches, listes d'attente), Équipe (messages, tâches, congés), Secrétariat (accueil, horaires, caisse) et Le centre (actualités, classeur, inventaire). Sur téléphone : la barre du bas, et « Plus » pour tout le reste. Le chiffre rouge indique ce qui attend."],
-   ["Commande vocale","Le micro 🎤 à côté de la loupe : dites par exemple « Tâche pour Fatima : rappeler le labo demain, urgent », « Message à Karim : … », « Transmission pour Sarah jusqu'à vendredi : … », « Congé du 22 au 26 décembre », « Pause des notifications 2 heures », « Ouvre les demandes » ou « Cherche Dupont ». L'app montre ce qu'elle a compris : vous corrigez si besoin et vous confirmez. Rien n'est fait sans votre accord. Si le grand micro n'apparaît pas (certains téléphones), touchez le micro du clavier."],
+   ["Commande vocale","Le micro 🎤 à côté de la loupe : dites par exemple « Tâche pour Fatima : rappeler le labo demain, urgent », « Message à Karim : … », « Transmission pour Sarah jusqu'à vendredi : … », « Commander 3 boîtes de gants taille M », « Congé du 22 au 26 décembre », « Pause des notifications 2 heures », « Ouvre les demandes » ou « Cherche Dupont ». L'app montre ce qu'elle a compris : vous corrigez si besoin et vous confirmez. Rien n'est fait sans votre accord. Si le grand micro n'apparaît pas (certains téléphones), touchez le micro du clavier."],
    ["Rechercher","La loupe (ou Ctrl K sur ordinateur) cherche partout : patients, demandes et leurs messages, messages de l'équipe, tâches, fiches, listes d'attente, inventaire, classeur, actualités, réponses types, caisse. Touchez un résultat pour l'ouvrir."],
    ["Épingler et classer les conversations","Messages : touchez « Épingler » en haut d'une conversation pour la garder tout en haut de votre liste (vos épingles ne changent rien pour les collègues). Les filtres Non lues · Prioritaires · Groupes · À deux · Patients trient la liste."],
    ["Suivi des examens demandés","Tâches → « 🧪 Examen demandé » (prestataires) : choisissez le patient, cochez les examens (prise de sang, échographie, IRM…), ajoutez une précision et la date où les résultats sont attendus (raccourcis 3 jours, 1 semaine…). L'examen reste dans vos tâches : « Résultats reçus » quand ils arrivent, puis cochez la case quand le patient a été contacté. Rappel le jour prévu ; en rouge si les résultats tardent. Filtre « 🧪 Examens » pour tout voir d'un coup. Effacé 90 jours après avoir été coché, comme les autres tâches liées à un patient."],
@@ -6453,6 +6453,22 @@ function vcParse(raw0){
   if(cherche) return {k:"search",q:vcCap(raw.slice(cherche.e))};
   if(nav||n.split(" ").length<=3){ const sc=VC_SCREENS.find(([re])=>re.test(n)); if(sc&&!/\b(?:ajoute|cree|nouvelle?|ecris)\b/.test(n)) return {k:"nav",cs:sc[1]}; }
 
+  // 4b. commander du matériel (liste « À commander » de l'inventaire)
+  if(!/\b(?:tache|rappel|rappelle)\b/.test(n)){
+    const ord=vcSpan(n,/^(?:(?:il faut|faut|on doit|il faudrait|faudrait|peux-tu|pouvez-vous|tu peux|merci de|pense a|penser a)\s+)?(?:commander|commande|commandez|recommander|recommande|racheter|rachete|acheter|achete|reapprovisionner)\b\s*|^(?:on n'a plus|on a plus|on n'a presque plus|il n'y a plus|il y a plus|y a plus|il ne reste plus|plus de stock de|plus de stock|il manque|il nous manque|rupture de stock de|rupture de)\b\s*/);
+    const lst=vcSpan(n,/\s*(?:a|dans|sur) la liste (?:de commandes?|des commandes|a commander|de courses|d'achats?|du materiel)\b|\s*(?:a|aux) commandes?\b(?=\s*(?:[,.]|$))/);
+    const add=vcSpan(n,/^(?:ajoute|ajouter|ajoutez|mets|mettre|mettez|note|noter|notez|rajoute|rajouter)\s+/);
+    if(ord||(add&&lst)){
+      const spans=[ord||add]; if(lst) spans.push(lst); if(prioSpan&&prio==="haute") spans.push(prioSpan);
+      const ds=vcDates(n); ds.forEach(d=>spans.push(d));
+      let item=vcCut(raw,spans).replace(/\s+/g," ").trim().replace(/[.,;:!]+$/,"");
+      let qty="";
+      const qm=norm(item).match(new RegExp(`^(${VC_NUM}|quelques|plusieurs)\\s+((?:boites?|paquets?|cartons?|rouleaux?|flacons?|bouteilles?|sachets?|packs?|lots?|caisses?|bidons?|tubes?|blocs?|ramettes?|pieces?|unites?|kilos?|kg|litres?|l)\\b)?\\s*(?:de |d'|des |du )?`));
+      if(qm){ const k=vcN(qm[1]), at=qm[2]?qm[0].indexOf(qm[2]):-1; qty=((k?String(k):qm[1])+(at>=0?" "+item.slice(at,at+qm[2].length):"")).trim(); item=item.slice(qm[0].length); }
+      item=item.replace(/^(?:(?:du|de la|des|de|le|la|les|un|une|encore|aussi)\s+|(?:de l|d|l)['’]\s*)/i,"").replace(/^(?:(?:du|de la|des|de)\s+|d['’]\s*)/i,"");
+      return {k:"order",item:vcCap(item),qty,urgent:prio==="haute",when:ds[0]?.iso||null};
+    }
+  }
   const ppl=vcPeople(n), dates=vcDates(n);
   // 5. message à un collègue (ou au secrétariat)
   const msgv=vcSpan(n,/^(?:(?:envoie|envoyer|envoyez|ecris|ecrire|ecrivez|ecrit|dis|dites|dire|previens|prevenir|previent|demande|demander|transmets) (?:un |le )?(?:message |mot |petit mot )?|(?:un |nouveau )?message )/);
@@ -6506,6 +6522,12 @@ function vcPreviewHTML(c,raw){
       ${!c.ids.length?`<p class="hint">${c.amb?"Plusieurs collègues portent ce prénom : dites aussi le nom de famille.":"Je n'ai pas reconnu le collègue. Dites par exemple « Message à Fatima : … »."}</p>`:""}
       <label class="fld">Texte<textarea id="vc-body" rows="3" maxlength="4000">${esc(c.body)}</textarea></label>
       ${c.ids.length?`<div class="btnrow"><button class="btn" id="vc-send">Envoyer</button><button class="btn ghost" id="vc-open">Ouvrir la conversation</button></div>`:""}</div>`;
+    case "order": return `<div class="vccard"><h3>🛒 À commander</h3>
+      <label class="fld">Article<input id="vc-item" value="${esc(c.item)}" maxlength="200"></label>
+      <label class="fld">Quantité <small>(facultatif)</small><input id="vc-qty" value="${esc(c.qty)}" maxlength="60"></label>
+      <label class="vcchk"><input type="checkbox" id="vc-urg" ${c.urgent?"checked":""}> Urgent</label>
+      ${c.when?`<p class="hint small">Pour le ${dd(c.when)} : la date sera notée dans la remarque.</p>`:""}
+      <div class="btnrow"><button class="btn" id="vc-order">Ajouter à « À commander »</button><button class="btn ghost" id="vc-inv">Ouvrir l'inventaire</button></div></div>`;
     case "ho": return `<div class="vccard"><h3>📋 Transmission</h3>${row("Pour",c.ids.length?esc(c.ids.map(vcWho).join(", ")):"à choisir")}${row("Jusqu'au",c.ends?dd(c.ends):"dans 7 jours")}
       ${c.body?row("Texte",esc(c.body)):""}<div class="btnrow"><button class="btn" id="vc-ho">Ouvrir et vérifier</button></div></div>`;
     case "leave": return `<div class="vccard"><h3>🌴 Congé</h3>${c.from?row("Du",dd(c.from))+row("Au (inclus)",dd(c.to)):`<p class="hint">Dites les dates, par exemple « congé du 22 au 26 décembre ».</p>`}
@@ -6525,6 +6547,7 @@ function vcPreviewHTML(c,raw){
 const VC_EX = [
   ["Tâches","« Tâche pour Fatima : rappeler le labo demain, urgent »","« Rappelle-moi d'appeler madame Dupont vendredi »","« Ajoute une tâche pour le secrétariat : commander des gants dans 3 jours »"],
   ["Messages","« Message à Karim : je serai en retard de 10 minutes »","« Dis au secrétariat que la salle 2 est libre »"],
+  ["Commander du matériel","« Commander 3 boîtes de gants taille M, urgent »","« On n'a plus de papier pour la table d'examen »","« Ajoute des seringues 5 ml à la liste de commande »"],
   ["Transmissions","« Transmission pour Sarah jusqu'à vendredi : surveiller les résultats de monsieur Martin »"],
   ["Congés et notifications","« Congé du 22 au 26 décembre »","« Je suis absent jusqu'à mercredi »","« Pause des notifications 2 heures »","« Reprends les notifications »"],
   ["Ouvrir et chercher","« Ouvre les demandes »","« Ouvre Rosa »","« Cherche Dupont »","« Numéro de la clinique Saint-Jean »"]];
@@ -6565,6 +6588,9 @@ function openVoice(){
       const id=await thread(); if(!id){ sd.disabled=false; return; }
       if(await run(()=>sb.rpc("team_send",{p_thread:id,p_body:body}),"Message envoyé")){ close(); await loadTeam(); render(); } else sd.disabled=false; };
     const op=$v("#vc-open"); if(op) op.onclick=async()=>{ const body=$v("#vc-body").value; const id=await thread(); if(!id) return; close(); S.tthread=id; S.drafts["t"+id]=body; S.cscreen="messages"; render(); scrollTo(0,0); };
+    const od=$v("#vc-order"); if(od) od.onclick=async()=>{ const t=$v("#vc-item").value.trim(); if(!t) return toast("Dites ou tapez l'article à commander."); od.disabled=true;
+      if(await run(()=>sb.rpc("add_inventory_item",{p_title:t.slice(0,200),p_quantity:$v("#vc-qty").value.trim()||null,p_notes:cmd.when?"Pour le "+fmtDate(cmd.when+"T12:00"):null,p_urgent:$v("#vc-urg").checked}),"Ajouté à « À commander »")){ close(); await loadInventory(); render(); } else od.disabled=false; };
+    const iv=$v("#vc-inv"); if(iv) iv.onclick=()=>{ close(); S.invMode="order"; S.cscreen="inventory"; render(); scrollTo(0,0); };
     const ho=$v("#vc-ho"); if(ho) ho.onclick=()=>{ close(); const E=newHo(); E.rec=[...cmd.ids]; if(cmd.ends&&cmd.ends>=E.starts) E.ends=cmd.ends; E.body=cmd.body||""; S.hoEdit=E; S.cscreen="handovers"; render(); scrollTo(0,0); };
     const lv=$v("#vc-leave"); if(lv) lv.onclick=async()=>{ lv.disabled=true; if(await run(()=>sb.rpc("add_my_leave",{p_starts:cmd.from,p_ends:cmd.to}),"Congé ajouté")){ close(); await loadLeaves(); render(); } else lv.disabled=false; };
     const aw=$v("#vc-away"); if(aw) aw.onclick=()=>{ const u=cmd.until; close(); openAvail(); setTimeout(()=>{ const d=$(".avaway"); if(d) d.open=true; const i=$("#av-until"); if(i&&u){ i.value=u; i.dispatchEvent(new Event("change")); } },50); };
