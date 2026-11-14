@@ -2188,3 +2188,24 @@ select.tprio,span.tprio{font:inherit;font-size:12.5px;font-weight:700;border:1.5
   .dirchr{grid-template-columns:1fr auto;grid-template-areas:"k x" "v v" "l l";padding:8px;border:1px solid var(--line);border-radius:12px}
   .dirchr select{grid-area:k}.dirchr [data-chv]{grid-area:v}.dirchr [data-chl]{grid-area:l}.dirchr [data-chx]{grid-area:x}
 }
+
+.toff{margin:8px 12px 0;padding:8px 12px;border-radius:10px;background:color-mix(in srgb,var(--gold-bright) 16%,transparent);color:var(--ink);font-size:13px;line-height:1.4}
+/* commande vocale */
+.ssrow{display:flex;gap:6px;align-items:stretch}.ssrow .ssearch{flex:1;min-width:0}
+.svoice{flex:none;width:42px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink);display:flex;align-items:center;justify-content:center;cursor:pointer}
+.svoice:hover{border-color:var(--accent);color:var(--accent)}.svoice svg{width:18px;height:18px}
+.vcbox{max-width:560px;width:calc(100% - 24px);max-height:calc(100vh - 40px);overflow:auto;display:flex;flex-direction:column;gap:12px}
+.vchead{display:flex;align-items:center;justify-content:space-between}.vchead h2{margin:0;font-size:20px}
+.vcmic{display:flex;flex-direction:column;align-items:center;gap:8px;border:0;background:none;cursor:pointer;color:var(--ink);font:inherit;padding:6px}
+.vcmic svg{width:34px;height:34px;padding:22px;border-radius:50%;background:var(--accent);color:#fff;box-sizing:content-box;transition:transform .2s}
+.vcmic.on svg{animation:vcpulse 1.2s ease-in-out infinite}.vcmic span{font-size:14px;color:var(--muted)}
+@keyframes vcpulse{0%,100%{box-shadow:0 0 0 0 rgba(122,31,43,.45)}50%{box-shadow:0 0 0 16px rgba(122,31,43,0)}}
+#vc-text{width:100%;font:inherit;font-size:16px;padding:10px 12px;border-radius:10px;border:1px solid var(--line);resize:vertical;box-sizing:border-box;background:var(--surface);color:var(--ink)}
+.vccard{border:1px solid var(--line);border-radius:14px;padding:12px 14px;background:var(--surface)}.vccard h3{margin:0 0 8px;font-size:16px}
+.vcrow{display:flex;gap:10px;padding:4px 0;font-size:14px;border-bottom:1px dashed var(--line)}.vcrow span{min-width:90px;color:var(--muted)}.vcrow b{font-weight:600}
+.vccard .btnrow{margin-top:10px;flex-wrap:wrap}
+.vcex summary{cursor:pointer;font-weight:600;font-size:14px}.vcexi{display:block;width:100%;text-align:left;border:0;background:none;padding:6px 4px;font:inherit;font-size:14px;color:var(--ink);cursor:pointer;border-radius:8px}.vcexi:hover{background:color-mix(in srgb,var(--ink) 6%,transparent)}
+.ssrow .ssearch kbd{display:none}
+.vccard input{width:100%;box-sizing:border-box;font:inherit;font-size:15px;padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink);margin-top:4px}
+.vccard label.fld{display:block;margin-bottom:6px;font-size:13px;color:var(--muted)}
+@media (max-width:480px){ .stop .brand div{display:none} .stop .sact{gap:6px} }

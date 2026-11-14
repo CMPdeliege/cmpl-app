@@ -2089,7 +2089,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261111a";
+const APP_VERSION="20261114b";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -2234,6 +2234,12 @@ async function loadTeam(){
 const staffName = id => { const t=(S.team||[]).find(x=>x.id===id); if(!t) return "Ancien membre"; return (t.provider_id?provName(t.provider_id):"")||`${t.first_name||""} ${t.last_name||""}`.trim()||ROLE_LABEL[t.role]; };
 const staffInitials = id => { const n=staffName(id).replace(/^Dr\.?\s+/,""); return n.split(/\s+/).filter(Boolean).slice(0,2).map(w=>w[0]).join("").toUpperCase()||"?"; };
 const tMembers = tid => S.team2.members.filter(m=>m.thread_id===tid);
+// membres de la conversation en congé ou absents aujourd'hui : ils ne reçoivent pas de notification
+function tOffHTML(t){ const td=todayISO(), ids=new Set(tMembers(t.id).map(m=>m.user_id).filter(u=>u!==S.me.id));
+  const off={}; (S.teamAbs||[]).forEach(x=>{ if(ids.has(x.user_id)&&x.starts<=td&&(!x.ends||x.ends>=td)){ const o=off[x.user_id]; if(!o||(o.ends&&(!x.ends||x.ends>o.ends))) off[x.user_id]=x; } });
+  const l=Object.values(off); if(!l.length) return "";
+  const one=x=>`<b>${esc(x.name||staffName(x.user_id))}</b> ${x.kind==="absence"?"est absent(e)":"est en congé"}${x.ends?` jusqu'au ${fmtDate(x.ends+"T12:00")} inclus`:""}`;
+  return `<div class="toff" role="note">🌴 ${l.map(one).join(" · ")}. ${l.length>1?"Ces collègues ne reçoivent":"Cette personne ne reçoit"} pas de notification : ${l.length>1?"ils liront":"elle lira"} votre message au retour.${t.kind==="direct"?" Si c'est urgent, écrivez plutôt à un autre collègue.":""}</div>`; }
 const tMsgs = tid => S.team2.msgs.filter(m=>m.thread_id===tid);
 function tTitle(t){ if(t.kind!=="direct") return t.title||"Groupe"; const o=tMembers(t.id).find(m=>m.user_id!==S.me.id); return o?staffName(o.user_id):"Conversation"; }
 function tUnread(t){ const me=tMembers(t.id).find(m=>m.user_id===S.me.id); if(!me) return 0; const n=tMsgs(t.id).filter(m=>m.author_id!==S.me.id&&m.created_at>me.last_read_at).length; return n||(me.marked_unread?1:0); }
@@ -2281,6 +2287,7 @@ function teamHTML2(){
       <button type="button" class="tpinbtn" id="t-pin" aria-pressed="${tPinned(cur)}" title="${tPinned(cur)?"Désépingler":"Épingler en haut de la liste"}">${SI.pin}<span>${tPinned(cur)?"Épinglée":"Épingler"}</span></button>
       ${cur.kind==="group"?`<button type="button" class="linkbtn" id="t-addm">Ajouter</button><button type="button" class="linkbtn" id="t-leave">Quitter</button>`:""}</div>
       <label class="tpatsw"><input type="checkbox" id="t-pat" ${cur.patient_related?"checked":""}> <span><b>Concerne des patients</b> ${cur.patient_related?"– messages effacés après 90 jours":"– sinon, les messages sont gardés (organisation du centre)"}</span></label>
+      ${tOffHTML(cur)}
       <div class="tmsgs" id="tmsgs">${S.team2.older?.[cur.id]!=="fin"&&!cur.patient_related?`<button type="button" class="linkbtn tolder" id="t-older">Afficher les messages plus anciens</button>`:""}${tMsgsHTML(cur)||`<p class="hint center">Écrivez le premier message.</p>`}</div>
       ${S.tattach&&S.tattach.thread===cur.id?`<div class="tattach">${reqCardHTML(S.tattach.id)}<button type="button" class="linkbtn" id="t-unreq">Retirer</button></div>`:""}
       <div class="tcomp"><button type="button" class="cbtn" id="t-req" title="Joindre une demande de patient" aria-label="Joindre une demande de patient">📋</button>${composerHTML("t"+cur.id)}</div>
@@ -2907,6 +2914,7 @@ function staffHelpHTML(){
    ["Réponses types","Dans une demande, le bouton 💬 à côté de la zone de message insère un texte prêt (le prénom du patient est ajouté). Créez les vôtres dans Moi → Mes réponses types."],
    ["Le classeur du centre","Secrétariat → Annuaire → onglet « Classeur » : numéros utiles, procédures et documents. Toute l'équipe peut ajouter et modifier les fiches."],
    ["Le menu","Sur ordinateur, le menu est à gauche, rangé en 4 rubriques : Patients (demandes, écrire, fiches, listes d'attente), Équipe (messages, tâches, congés), Secrétariat (accueil, horaires, caisse) et Le centre (actualités, classeur, inventaire). Sur téléphone : la barre du bas, et « Plus » pour tout le reste. Le chiffre rouge indique ce qui attend."],
+   ["Commande vocale","Le micro 🎤 à côté de la loupe : dites par exemple « Tâche pour Fatima : rappeler le labo demain, urgent », « Message à Karim : … », « Transmission pour Sarah jusqu'à vendredi : … », « Congé du 22 au 26 décembre », « Pause des notifications 2 heures », « Ouvre les demandes » ou « Cherche Dupont ». L'app montre ce qu'elle a compris : vous corrigez si besoin et vous confirmez. Rien n'est fait sans votre accord. Si le grand micro n'apparaît pas (certains téléphones), touchez le micro du clavier."],
    ["Rechercher","La loupe (ou Ctrl K sur ordinateur) cherche partout : patients, demandes et leurs messages, messages de l'équipe, tâches, fiches, listes d'attente, inventaire, classeur, actualités, réponses types, caisse. Touchez un résultat pour l'ouvrir."],
    ["Épingler et classer les conversations","Messages : touchez « Épingler » en haut d'une conversation pour la garder tout en haut de votre liste (vos épingles ne changent rien pour les collègues). Les filtres Non lues · Prioritaires · Groupes · À deux · Patients trient la liste."],
    ["Suivi des examens demandés","Tâches → « 🧪 Examen demandé » (prestataires) : choisissez le patient, cochez les examens (prise de sang, échographie, IRM…), ajoutez une précision et la date où les résultats sont attendus (raccourcis 3 jours, 1 semaine…). L'examen reste dans vos tâches : « Résultats reçus » quand ils arrivent, puis cochez la case quand le patient a été contacté. Rappel le jour prévu ; en rouge si les résultats tardent. Filtre « 🧪 Examens » pour tout voir d'un coup. Effacé 90 jours après avoir été coché, comme les autres tâches liées à un patient."],
@@ -2930,7 +2938,7 @@ function staffHelpHTML(){
    ["Les listes d'attente","Patients → Listes d'attente : un patient à rappeler en cas de désistement, pour un prestataire. Ajoutez-le (patient de l'app, fiche ou simplement nom + téléphone), avec un motif court et ses disponibilités. Quand une place se libère : « Pas de réponse » note l'appel, « RDV fixé » le retire de la liste. Jamais de détail médical."],
    ["Rassurer le patient : « Vu »","Dans une demande, le bouton « ✓ Vu · prévenir le patient » lui affiche « Votre demande a été vue… Elle est en cours de traitement » et lui envoie une notification (sans e-mail). Au transfert, la case « Prévenir le patient » (cochée) lui indique à qui sa demande a été transmise."],
    ["Transférer avec un mot","Dans une demande, choisissez le collègue dans « Transférer à », écrivez un mot dans le champ en dessous, puis Transférer. Le collègue voit le mot en haut de la demande ; le patient ne le voit jamais."],
-   ["Ne pas être dérangé(e)","Touchez la cloche en haut de l'écran (à côté de « Écrire à un patient »). « Pause des notifications » : 1 heure, jusqu'à demain 8 h ou jusqu'à ce que vous la retiriez ; les demandes arrivent toujours dans l'app et vous recevez un résumé à la fin de la pause. « Je suis absent(e) » : vos alertes vont au collègue choisi et les patients reçoivent un message automatique. Cloche barrée orange = en pause ; rouge = absent(e)."],
+   ["Ne pas être dérangé(e)","Touchez la cloche en haut de l'écran (à côté de « Écrire à un patient »). « Pause des notifications » : 1 heure, jusqu'à demain 8 h ou jusqu'à ce que vous la retiriez ; les demandes arrivent toujours dans l'app et vous recevez un résumé à la fin de la pause. « Je suis absent(e) » (ou un congé encodé dans Mes congés) : plus aucune notification, les demandes de patients vont au collègue choisi (ou au secrétariat) et les patients reçoivent un message automatique ; vos collègues voient dans la conversation que vous êtes absent(e). Cloche barrée orange = en pause ; rouge = absent(e)."],
    ["Rappel avant l'échéance d'une tâche","Équipe → Tâches : mettez une échéance, cochez « Recevoir un rappel par e-mail » et choisissez quand (le jour même, la veille, 48 h, 72 h ou 1 semaine avant). L'e-mail part à 8 h vers la personne qui doit faire la tâche. Vous pouvez changer le rappel d'une tâche existante avec la petite cloche 🔔. Les tâches sont classées de la plus urgente à la moins urgente."],
    ["Ordinateur de confiance (accueil)","Au moment du code de sécurité, cochez « Faire confiance à cet ordinateur » : pendant 90 jours, l'e-mail et le mot de passe suffisent sur cet ordinateur, avec déconnexion après 2 heures d'inactivité. Uniquement sur un ordinateur du centre. Pour le retirer : Mon profil et notifications → Ordinateurs de confiance."],
    ["Valider les comptes des patients","Seul un administrateur valide les nouveaux comptes et les enfants ajoutés par un parent (Patients → Comptes à valider). Un administrateur peut donner ces droits à n'importe quel membre de l'équipe (secrétariat compris) : Équipe → Comptes de l'équipe → case « Administrateur ». La personne garde son rôle."],
@@ -5812,7 +5820,7 @@ function settingsHTML(){
     <label class="fld">Demandes de rendez-vous qui me sont adressées<select id="s-rdv">${RDV_MODES.map(([v,t])=>`<option value="${v}" ${(P.byId(S.me.provider_id)?.rdv_mode||"secretariat")===v?"selected":""}>${t}</option>`).join("")}</select></label>
     <p class="hint">Seulement quand le patient dit vous avoir déjà consulté (sinon : toujours au secrétariat). « Directement chez moi » : vous fixez le créneau vous-même, ou vous transférez la demande au secrétariat.</p></section>`:""}
    <section class="card"><h3>Mes congés</h3>
-    <p class="hint">Pendant chaque période, vous êtes automatiquement considéré(e) comme absent(e) : vos notifications vont au collègue choisi ci-dessous${S.me.provider_id?" et les patients qui vous écrivent reçoivent une réponse automatique avec votre date de retour":""}. Les patients voient vos dates d'absence, jamais le motif.</p>
+    <p class="hint">Pendant chaque période, vous êtes automatiquement considéré(e) comme absent(e) : vous ne recevez plus aucune notification ni e-mail (sauf alertes de sécurité), les messages de vos collègues vous attendent dans l'app, et les demandes de patients vont au collègue choisi ci-dessous (ou au secrétariat si vous n'en choisissez pas)${S.me.provider_id?" et les patients qui vous écrivent reçoivent une réponse automatique avec votre date de retour":""}. Les patients voient vos dates d'absence, jamais le motif.</p>
     ${(S.leaves||[]).length?`<ul class="leavelist">${S.leaves.map(l=>`<li><span>Du <b>${fmtDate(l.starts+"T12:00")}</b> au <b>${fmtDate(l.ends+"T12:00")}</b> inclus</span><button type="button" class="linkbtn" data-lvdel="${l.id}">Supprimer</button></li>`).join("")}</ul>`:`<p class="hint">Aucun congé programmé.</p>`}
     <div class="pgrid"><label class="fld">Du<input type="date" id="lv-from" min="${todayISO()}"></label><label class="fld">Au (inclus)<input type="date" id="lv-to" min="${todayISO()}"></label></div>
     <div class="btnrow"><button type="button" class="btn ghost" id="lv-add">Ajouter cette période</button></div>
@@ -6250,12 +6258,13 @@ function staffNavHTML(sc){
   const nMore=G.reduce((t,g)=>t+g.it.filter(x=>!["inbox","messages","compose","tasks"].includes(x.cs)).reduce((u,x)=>u+(x.n||0),0),0);
   return `<aside class="sside" aria-label="Navigation de l'équipe">
     <div class="sshead">${BRAND}</div>
-    <button type="button" class="ssearch" data-search>${SI.search}<span>Rechercher</span><kbd>${/Mac/.test(navigator.platform)?"⌘":"Ctrl"} K</kbd></button>
+    <div class="ssrow"><button type="button" class="ssearch" data-search>${SI.search}<span>Rechercher</span><kbd>${/Mac/.test(navigator.platform)?"⌘":"Ctrl"} K</kbd></button><button type="button" class="svoice" data-voice aria-label="Commande vocale" title="Commande vocale">${IC.mic}</button></div>
     <nav class="sgroups">${G.map(g=>`<p class="sgh">${g.h}</p>${g.it.map(item).join("")}`).join("")}</nav>
     <div class="sfoot">${rosaBtn("sitem srosa2")}${availBtnHTML()}
      <button type="button" class="sme" data-dd="dd-me" aria-current="${ME_SCREENS.includes(sc)?"page":"false"}" aria-haspopup="true">${av}<span><b>${who}</b><small>${ROLE_LABEL[S.me.role]}</small></span></button></div>
    </aside>
    <header class="top stop"><button type="button" class="brandbtn" data-cs="dash" aria-label="Tableau de bord" aria-current="${sc==="dash"?"page":"false"}">${BRAND}</button><div class="sact">
+     <button type="button" class="iconbtn" data-voice aria-label="Commande vocale">${IC.mic}</button>
      <button type="button" class="iconbtn" data-search aria-label="Rechercher">${SI.search}</button>
      ${availBtnHTML()}
      <button class="savbtn" data-dd="dd-me" aria-label="Mon compte : ${who}" aria-current="${ME_SCREENS.includes(sc)?"page":"false"}">${av}</button></div>
@@ -6339,6 +6348,255 @@ function patientSearch(q){
     add("Prestataires du centre","🩺",esc(p.display_name),esc(p.job||p.specialty),()=>{ S.screen="absences"; });
   return out;
 }
+/* ---------- commande vocale (équipe) ----------
+   La voix devient du texte grâce au téléphone ou au navigateur (comme la dictée du clavier).
+   Le texte est compris ici, dans l'app : rien n'est envoyé à un autre service.
+   Rien ne part sans confirmation : chaque commande montre ce qui va être fait. */
+const VC_SR = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+const VC_NUMW = {un:1,une:1,deux:2,trois:3,quatre:4,cinq:5,six:6,sept:7,huit:8,neuf:9,dix:10,onze:11,douze:12,quinze:15,vingt:20,trente:30,quarante:40,cinquante:50,soixante:60};
+const VC_NUM = "\\d{1,3}|" + Object.keys(VC_NUMW).join("|");
+const vcN = s => /^\d/.test(s) ? +s : (VC_NUMW[s] || 0);
+const VC_DAYS = ["dimanche","lundi","mardi","mercredi","jeudi","vendredi","samedi"];
+const VC_MONTHS = ["janvier","fevrier","mars","avril","mai","juin","juillet","aout","septembre","octobre","novembre","decembre"];
+const VC_SCREENS = [
+  [/tableau de bord|dashboard|page d'?accueil/,"dash"],[/fiches? conseils?/,"fiches"],[/fiches? patients?|dossiers? patients?/,"patients"],
+  [/demandes?/,"inbox"],[/visites?( a domicile)?/,"visits"],[/listes? d'?attente/,"waitlist"],[/comptes? a valider/,"accounts"],
+  [/messages?|messagerie|conversations?/,"messages"],[/taches?/,"tasks"],[/transmissions?/,"handovers"],[/reunions?/,"meetings"],
+  [/sondages?/,"polls"],[/pause cafe|jeux|sudoku|mots? meles|citation/,"pause"],[/conges?|absences?/,"leaves"],
+  [/annuaire|contacts?|classeur|carnet d'adresses/,"directory"],[/locaux|salles?/,"rooms"],[/checklists?|check-?lists?/,"checklists"],
+  [/horaires?/,"hours"],[/caisse/,"cash"],[/actualites?|news/,"news"],[/inventaire|stock|materiel/,"inventory"],[/annonces?/,"annonces"],
+  [/suggestions?/,"feedback"],[/statistiques?|stats/,"stats"],[/reponses? types?|modeles?( de reponse)?/,"templates"],
+  [/reglages|parametres|mon profil|mes notifications/,"settings"],[/infos? et documents|documents/,"infos"],[/accueil|guichet/,"desk"],
+  [/ecrire a un patient|nouveau message patient/,"compose"],[/equipe|comptes? de l'equipe/,"team"]];
+const VC_SCREEN_NAME = {dash:"Tableau de bord",fiches:"Fiches conseils",patients:"Fiches patients",inbox:"Demandes",visits:"Visites à domicile",waitlist:"Listes d'attente",accounts:"Comptes à valider",messages:"Messages",tasks:"Tâches",handovers:"Transmissions",meetings:"Réunions",polls:"Sondages",pause:"Pause café",leaves:"Congés",directory:"Annuaire",rooms:"Locaux",checklists:"Checklists",hours:"Horaires",cash:"Caisse",news:"Actualités",inventory:"Inventaire",annonces:"Annonces",feedback:"Suggestions",stats:"Statistiques",templates:"Réponses types",settings:"Mon profil et notifications",infos:"Infos et documents",desk:"Accueil",compose:"Écrire à un patient",team:"Comptes de l'équipe"};
+
+// dates dites à voix haute → liste de {iso, s, e} (positions dans le texte normalisé)
+function vcDates(n){
+  const out=[], today=todayISO(), d0=new Date(today+"T12:00"), iso=d=>d.toISOString().slice(0,10);
+  const plus=k=>addDays(today,k);
+  const add=(m,v)=>{ if(v&&!out.some(o=>m.index<o.e&&m.index+m[0].length>o.s)) out.push({iso:v.v||v,day:v.day||null,s:m.index,e:m.index+m[0].length}); };
+  const each=(re,f)=>{ for(const m of n.matchAll(re)) add(m,f(m)); };
+  each(/\bapres[- ]?demain\b/g,()=>plus(2));
+  each(/\b(?:aujourd'?hui|ce matin|ce midi|ce soir|cet apres[- ]?midi|tout de suite)\b/g,()=>today);
+  each(/\bdemain(?: matin| midi| soir| apres[- ]?midi)?\b/g,()=>plus(1));
+  each(new RegExp(`\\b(?:d'?ici|dans) (${VC_NUM}) (jours?|semaines?|mois)\\b`,"g"),m=>{ const k=vcN(m[1]); if(!k) return null;
+    if(/^mois/.test(m[2])){ const d=new Date(d0); d.setMonth(d.getMonth()+k); return iso(d); } return plus(/^sem/.test(m[2])?k*7:k); });
+  each(/\b(?:la )?semaine prochaine\b/g,()=>plus(7));
+  each(/\b(?:en |a la |d'ici la )?fin (?:de (?:la )?)?semaine\b/g,()=>{ const w=d0.getDay(); return plus(w<=5?5-w:6); });
+  each(/\b(?:a la |d'ici la )?fin du mois\b/g,()=>{ const d=new Date(d0); d.setMonth(d.getMonth()+1,0); return iso(d); });
+  // « le 20 décembre », « du 3/1 », « au 24 »
+  each(new RegExp(`\\b(?:(?:le|du|au|jusqu'au|jusqu'a|a partir du|des le|avant le|pour le) )?(1er|premier|\\d{1,2})(?:er)?(?: (${VC_MONTHS.join("|")})|\\/(\\d{1,2}))(?:[ /](\\d{4}))?\\b`,"g"),m=>{
+    const day=/^(1er|premier)$/.test(m[1])?1:+m[1], mon=m[2]?VC_MONTHS.indexOf(m[2]):(+m[3]-1);
+    if(day<1||day>31||mon<0||mon>11) return null;
+    let y=m[4]?+m[4]:d0.getFullYear(); let d=new Date(y,mon,day,12); if(!m[4]&&iso(d)<today) d=new Date(y+1,mon,day,12); return iso(d); });
+  each(/\b(?:le|du|au|jusqu'au|jusqu'a|avant le|pour le) (1er|premier|\d{1,2})(?:er)?\b(?! ?(?:h\b|heures?|minutes?|min\b|jours?|semaines?|mois|ans?|fois|%))/g,m=>{
+    const day=/^(1er|premier)$/.test(m[1])?1:+m[1]; if(day<1||day>31) return null;
+    let d=new Date(d0.getFullYear(),d0.getMonth(),day,12); if(iso(d)<today) d=new Date(d0.getFullYear(),d0.getMonth()+1,day,12); return {v:iso(d),day}; });
+  each(new RegExp(`\\b(?:(?:ce|du|au|jusqu'a|jusqu'au|pour|avant|des) )?(${VC_DAYS.join("|")})(?: (prochain))?\\b`,"g"),m=>{
+    const w=VC_DAYS.indexOf(m[1]), now=d0.getDay(); let k=(w-now+7)%7; if(k===0) k=7; return plus(k); });
+  return out.sort((a,b)=>a.s-b.s);
+}
+// collègues cités (prénom, nom ou les deux) → [{id, s, e}]
+function vcPeople(n){
+  const out=[], team=(S.team||[]).filter(t=>t.status!=="disabled"&&t.id!==S.me.id);
+  const keys=[];
+  for(const t of team){ const f=norm(t.first_name||"").trim(), l=norm(t.last_name||"").trim();
+    if(f&&l) keys.push([f+" "+l,t.id,3],[l+" "+f,t.id,3]); if(f.length>=3) keys.push([f,t.id,1]); if(l.length>=3) keys.push([l,t.id,2]); }
+  keys.sort((a,b)=>b[0].length-a[0].length);
+  for(const [k,id] of keys){
+    const ambiguous=keys.some(x=>x[0]===k&&x[1]!==id);
+    const re=new RegExp(`(?:\\b(?:a|au|aux|pour|avec|de|et|docteur|dr|doc)\\s+)*\\b${k.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")}\\b`,"g");
+    for(const m of n.matchAll(re)){ const s=m.index, e=s+m[0].length;
+      if(out.some(o=>s<o.e&&e>o.s)) continue;
+      out.push({id:ambiguous?null:id,s,e,name:k}); }
+  }
+  return out.sort((a,b)=>a.s-b.s);
+}
+const vcCap = s => { s=s.replace(/\s+/g," ").replace(/^[\s,.:;–-]+|[\s,;:–-]+$/g,""); return s?s[0].toUpperCase()+s.slice(1):""; };
+// enlève des morceaux (positions du texte normalisé) du texte d'origine
+const vcCut = (raw,spans) => { let r=raw; [...spans].sort((a,b)=>b.s-a.s).forEach(o=>{ r=r.slice(0,o.s)+" "+r.slice(o.e); }); return r; };
+const vcSpan = (n,re) => { const m=n.match(re); return m?{s:m.index,e:m.index+m[0].length,m}:null; };
+
+function vcParse(raw0){
+  const raw=(raw0||"").normalize("NFC").replace(/\s+/g," ").trim(), n=norm(raw).replace(/’/g,"'");
+  if(raw.length<2) return null;
+  const secr=vcSpan(n,/(?:\b(?:a|au|pour|avec)\s+)?\b(?:le |la )?secr[ée]tariat\b|\bsecr[ée]taires?\b/);
+  const prio=/\bpas (?:urgent|presse)|quand (?:tu peux|vous pouvez)|sans urgence\b/.test(n)?"basse":/\b(?:urgent|urgente|urgents|urgentes|urgence|prioritaire|en priorite|tres important|tres importante)\b/.test(n)?"haute":"normale";
+  const prioSpan=vcSpan(n,/,?\s*\b(?:c'est |c est )?(?:pas urgent|pas presse|quand (?:tu peux|vous pouvez)|sans urgence|urgent|urgente|urgents|urgentes|en urgence|prioritaire|en priorite|tres importante?)\b/);
+  const nav=/^(?:ouvre|ouvrir|ouvrez|va |aller|allez|affiche|afficher|montre|montrer|voir|passe|retour)/.test(n);
+
+  // 1. pause / reprise des notifications
+  if(/\b(?:reprend\w*|reactiv\w*|remet\w*|rallum\w*) (?:les |mes )?notifications\b|\bfin de (?:la )?pause\b|\barrete(?:r)? la pause\b/.test(n)) return {k:"resume"};
+  if(/\b(?:pause|ne pas deranger|mode silencieux|silence)\b/.test(n)&&!/\bpause cafe\b/.test(n)&&!nav||/\b(?:coupe|couper|desactive|desactiver|arrete|arreter) (?:les |mes )?notifications\b/.test(n)){
+    const d=n.match(new RegExp(`\\b(${VC_NUM}|une demi) ?(heures?|h|minutes?|min)\\b`)); let until, label;
+    if(/jusqu'(?:a|au) demain|demain matin/.test(n)){ until=tomorrow8(); label="jusqu'à demain 8 h"; }
+    else if(/jusqu'a (?:nouvel ordre|ce que)|indefini|sans limite/.test(n)){ until="infinity"; label="jusqu'à ce que vous la retiriez"; }
+    else if(d){ const k=d[1]==="une demi"?30:vcN(d[1])*(/^m/.test(d[2])?1:60); const mins=Math.min(Math.max(k,5),24*60); until=new Date(Date.now()+mins*60e3).toISOString(); label=mins<60?`${mins} minutes`:mins%60?`${Math.floor(mins/60)} h ${mins%60}`:`${mins/60} heure${mins>60?"s":""}`; }
+    else { until=new Date(Date.now()+3600e3).toISOString(); label="1 heure"; }
+    return {k:"pause",until,label};
+  }
+  // 2. congé
+  if(/\b(?:conges?|vacances)\b/.test(n)&&!nav){ const ds=vcDates(n);
+    if(ds.length){ let f=ds[0].iso; const t=(ds[1]||ds[0]).iso;
+      if(ds[1]&&ds[0].day&&!ds[1].day){ const e=new Date(t+"T12:00"); let d=new Date(e.getFullYear(),e.getMonth(),ds[0].day,12); if(d>e) d=new Date(e.getFullYear(),e.getMonth()-1,ds[0].day,12); f=d.toISOString().slice(0,10); }
+      return {k:"leave",from:f<t?f:t,to:f<t?t:f}; }
+    if(/\b(?:ajoute|encode|pose|prends|mets|note)\b/.test(n)) return {k:"leave",from:null,to:null}; }
+  // 3. absence imprévue
+  if(/\bje (?:suis|serai|vais etre) (?:absente?|malade|indisponible|pas la)\b|\bme declarer absente?\b/.test(n)){ const ds=vcDates(n); return {k:"away",until:ds.length?ds[ds.length-1].iso:null}; }
+  // 4. navigation et recherche
+  if(/\brosa\b/.test(n)&&(nav||n.split(" ").length<=3)) return {k:"rosa"};
+  const ann=vcSpan(n,/\b(?:numero|telephone|tel|coordonnees|adresse|mail|e-mail|fax) (?:de |du |des |d'|de la )(.+)$/);
+  if(ann&&!/\b(?:tache|message|ecris|transmission)\b/.test(n)) return {k:"dir",q:vcCap(raw.slice(ann.s+ann.m[0].length-ann.m[1].length).replace(/^\s*(?:le|la|les|l'|l’)\s*/i,""))};
+  const fic=vcSpan(n,/\b(?:fiche|dossier|page) (?:patient |du patient |de la patiente )?(?:de |du |d')(?:madame |monsieur |mme |m\.? )?(.+)$/);
+  if(nav&&fic) return {k:"search",q:vcCap(raw.slice(fic.e-fic.m[1].length))};
+  const cherche=vcSpan(n,/^(?:cherche|chercher|recherche|rechercher|trouve|trouver|ou est|ou sont)\b\s*(?:le |la |les |l'|un |une )?/);
+  if(cherche) return {k:"search",q:vcCap(raw.slice(cherche.e))};
+  if(nav||n.split(" ").length<=3){ const sc=VC_SCREENS.find(([re])=>re.test(n)); if(sc&&!/\b(?:ajoute|cree|nouvelle?|ecris)\b/.test(n)) return {k:"nav",cs:sc[1]}; }
+
+  const ppl=vcPeople(n), dates=vcDates(n);
+  // 5. message à un collègue (ou au secrétariat)
+  const msgv=vcSpan(n,/^(?:(?:envoie|envoyer|envoyez|ecris|ecrire|ecrivez|ecrit|dis|dites|dire|previens|prevenir|previent|demande|demander|transmets) (?:un |le )?(?:message |mot |petit mot )?|(?:un |nouveau )?message )/);
+  if(msgv){ const who=ppl.filter(p=>p.s<=msgv.e+30), first=who[0];
+    const toSecr=secr&&(!first||secr.s<first.s);
+    if(first||toSecr){ const end=toSecr?secr.e:Math.max(...who.filter(p=>p.s-((who[0]||{}).e||0)<12).map(p=>p.e));
+      let body=raw.slice(end).replace(/^\s*(?:[:,.-]\s*|(?:pour )?(?:lui |leur )?(?:dire |demander )?(?:que |qu'|si |de |d')?)/i,"");
+      const ids=toSecr?(S.team||[]).filter(t=>t.role==="secretariat"&&t.status==="active"&&t.id!==S.me.id).map(t=>t.id):[...new Set(who.map(p=>p.id).filter(Boolean))];
+      return {k:"msg",ids,secr:!!toSecr,amb:!toSecr&&who.some(p=>!p.id),body:vcCap(body)}; }
+    return {k:"msg",ids:[],secr:false,amb:false,body:vcCap(raw.slice(msgv.e))};
+  }
+  // 6. transmission
+  if(/\btransmission\b/.test(n)){ const start=vcSpan(n,/^(?:(?:fais|faire|ecris|ecrire|cree|creer|nouvelle|ajoute|envoie) )?(?:une |la )?transmission\b/);
+    const ids=[...new Set(ppl.map(p=>p.id).filter(Boolean))]; if(secr) (S.team||[]).filter(t=>t.role==="secretariat"&&t.status==="active").forEach(t=>{ if(!ids.includes(t.id)) ids.push(t.id); });
+    const spans=[...ppl,...dates,...(secr?[secr]:[])]; if(start) spans.push(start);
+    const body=vcCap(vcCut(raw,spans).replace(/^\s*(?:pour|a|au)\b/i,"").replace(/\b(?:pour|a|au|jusqu'au|jusqu'a|du|le)\s*(?=[,.:]|$)/gi," "));
+    return {k:"ho",ids,ends:dates.length?dates[dates.length-1].iso:null,body}; }
+  // 7. tâche (par défaut quand on parle de tâche, de rappel ou qu'une date est donnée)
+  const tv=vcSpan(n,/^(?:(?:ajoute|ajouter|ajoutez|cree|creer|creez|nouvelle|mets|mettre|note|noter|notez|fais|faire)\s+(?:moi\s+)?(?:une |un |la )?)?(?:tache|taches|rappel|todo|chose a faire)\b\s*:?\s*|^(?:rappelle|rappeler|rappelez)(?= (?:a|au) )|^(?:rappelle[- ]moi|rappelez[- ]moi|n'oublie pas|ne pas oublier|penser a|pense a|il faut|a faire)\b\s*(?:de |d'|que |qu')?/);
+  if(tv||dates.length||/\b(?:pour (?:moi|le secretariat))\b/.test(n)){
+    const spans=[]; if(tv) spans.push(tv);
+    let to="me", who=null;
+    if(secr){ to="secretariat"; spans.push(secr); }
+    else { const p=ppl.find(x=>x.id&&/\b(?:pour|a|au)\s/.test(n.slice(Math.max(0,x.s-6),x.s+6)))||ppl.find(x=>x.id); if(p){ to=p.id; who=p; spans.push(p); } }
+    const me=vcSpan(n,/\bpour moi\b/); if(me) spans.push(me);
+    if(dates[0]) spans.push(dates[0]);
+    if(prioSpan&&prio!=="normale") spans.push(prioSpan);
+    // patient cité : « pour madame Dupont », « patient Martin »
+    let q=""; const pt=vcSpan(n,/\b(?:(?:pour|de|chez|concernant|a propos de|au sujet de|avec)\s+)?(?:madame|mme|monsieur|mr|m\.|mademoiselle|mlle|le patient|la patiente|patient|patiente|le petit|la petite|l'enfant|bebe|famille)\s+([a-z][a-z'-]+(?:\s+(?!(?:demain|aujourd|apres|ce|cet|dans|le|la|les|du|au|pour|avant|urgent|urgente|et|qui|que|a|de|lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\b)[a-z][a-z'-]+){0,2})/);
+    if(pt) q=raw.slice(pt.e-pt.m[1].length,pt.e);
+    let title=vcCap(vcCut(raw,spans).replace(/\s+(?:pour|a|au|de|et|le|la|d'ici)\s*(?=[,.;]|$)/gi," ").replace(/^\s*(?:de|d'|que|qu')\s*/i,""));
+    if(q&&!title) title="Concernant "+q;
+    return {k:"task",title,to,due:dates[0]?.iso||"",prio,q,amb:ppl.some(p=>!p.id)};
+  }
+  return {k:"?"};
+}
+
+function vcWho(id){ const t=(S.team||[]).find(x=>x.id===id); return t?`${t.first_name||""} ${t.last_name||""}`.trim():"?"; }
+function vcPreviewHTML(c,raw){
+  if(!c) return `<p class="hint">Parlez ou tapez une commande, puis vérifiez ce que l'app a compris.</p>`;
+  const row=(l,v)=>`<div class="vcrow"><span>${l}</span><b>${v}</b></div>`;
+  const dd=x=>x?fmtDate(x+"T12:00"):"—";
+  switch(c.k){
+    case "task": return `<div class="vccard"><h3>☑️ Nouvelle tâche</h3>
+      <label class="fld">Titre<input id="vc-title" value="${esc(c.title)}" maxlength="200"></label>
+      ${row("Pour",c.to==="me"?"moi":c.to==="secretariat"?"le secrétariat":esc(vcWho(c.to)))}${row("Échéance",c.due?dd(c.due):"aucune")}${row("Priorité",PRIO_LABEL[c.prio])}
+      ${c.q?row("Patient",`« ${esc(c.q)} » <small>(à choisir dans la liste)</small>`):""}
+      ${c.amb?`<p class="hint small">Plusieurs collègues portent ce prénom : choisissez la bonne personne dans le formulaire.</p>`:""}
+      <div class="btnrow">${c.q||c.amb?"":`<button class="btn" id="vc-go">Créer la tâche</button>`}<button class="btn ${c.q||c.amb?"":"ghost"}" id="vc-form">${c.q?"Choisir le patient et vérifier":"Vérifier dans le formulaire"}</button></div></div>`;
+    case "msg": return `<div class="vccard"><h3>💬 Message ${c.secr?"au secrétariat":c.ids.length?"à "+esc(c.ids.map(vcWho).join(", ")):""}</h3>
+      ${!c.ids.length?`<p class="hint">${c.amb?"Plusieurs collègues portent ce prénom : dites aussi le nom de famille.":"Je n'ai pas reconnu le collègue. Dites par exemple « Message à Fatima : … »."}</p>`:""}
+      <label class="fld">Texte<textarea id="vc-body" rows="3" maxlength="4000">${esc(c.body)}</textarea></label>
+      ${c.ids.length?`<div class="btnrow"><button class="btn" id="vc-send">Envoyer</button><button class="btn ghost" id="vc-open">Ouvrir la conversation</button></div>`:""}</div>`;
+    case "ho": return `<div class="vccard"><h3>📋 Transmission</h3>${row("Pour",c.ids.length?esc(c.ids.map(vcWho).join(", ")):"à choisir")}${row("Jusqu'au",c.ends?dd(c.ends):"dans 7 jours")}
+      ${c.body?row("Texte",esc(c.body)):""}<div class="btnrow"><button class="btn" id="vc-ho">Ouvrir et vérifier</button></div></div>`;
+    case "leave": return `<div class="vccard"><h3>🌴 Congé</h3>${c.from?row("Du",dd(c.from))+row("Au (inclus)",dd(c.to)):`<p class="hint">Dites les dates, par exemple « congé du 22 au 26 décembre ».</p>`}
+      <p class="hint small">Pendant le congé : plus de notification, les demandes des patients vont au collègue choisi dans vos réglages.</p>
+      <div class="btnrow">${c.from?`<button class="btn" id="vc-leave">Ajouter ce congé</button>`:""}<button class="btn ghost" data-vcnav="settings">Mes congés</button></div></div>`;
+    case "away": return `<div class="vccard"><h3>🤒 Je suis absent(e)</h3>${row("Jusqu'au",c.until?dd(c.until):"non précisé")}<div class="btnrow"><button class="btn" id="vc-away">Ouvrir « Je suis absent(e) »</button></div></div>`;
+    case "pause": return `<div class="vccard"><h3>🔕 Pause des notifications</h3>${row("Durée",esc(c.label))}<div class="btnrow"><button class="btn" id="vc-pause">Mettre en pause</button></div></div>`;
+    case "resume": return `<div class="vccard"><h3>🔔 Reprendre les notifications</h3><div class="btnrow"><button class="btn" id="vc-resume">Reprendre</button></div></div>`;
+    case "nav": return `<div class="vccard"><h3>➡️ Ouvrir « ${esc(VC_SCREEN_NAME[c.cs]||c.cs)} »</h3><div class="btnrow"><button class="btn" data-vcnav="${c.cs}">Ouvrir</button></div></div>`;
+    case "rosa": return `<div class="vccard"><h3>📅 Ouvrir Rosa</h3><div class="btnrow"><button class="btn" id="vc-rosa">Ouvrir</button></div></div>`;
+    case "search": return `<div class="vccard"><h3>🔎 Rechercher « ${esc(c.q)} »</h3><div class="btnrow"><button class="btn" id="vc-search">Rechercher</button></div></div>`;
+    case "dir": return `<div class="vccard"><h3>📇 Annuaire : « ${esc(c.q)} »</h3><div class="btnrow"><button class="btn" id="vc-dir">Ouvrir l'annuaire</button></div></div>`;
+    default: return `<div class="vccard"><h3>🤔 Je n'ai pas compris</h3><p class="hint">Reformulez avec un des exemples, ou :</p>
+      <div class="btnrow"><button class="btn ghost" id="vc-astask">En faire une tâche</button><button class="btn ghost" id="vc-assearch">Rechercher ce texte</button></div></div>`;
+  }
+}
+const VC_EX = [
+  ["Tâches","« Tâche pour Fatima : rappeler le labo demain, urgent »","« Rappelle-moi d'appeler madame Dupont vendredi »","« Ajoute une tâche pour le secrétariat : commander des gants dans 3 jours »"],
+  ["Messages","« Message à Karim : je serai en retard de 10 minutes »","« Dis au secrétariat que la salle 2 est libre »"],
+  ["Transmissions","« Transmission pour Sarah jusqu'à vendredi : surveiller les résultats de monsieur Martin »"],
+  ["Congés et notifications","« Congé du 22 au 26 décembre »","« Je suis absent jusqu'à mercredi »","« Pause des notifications 2 heures »","« Reprends les notifications »"],
+  ["Ouvrir et chercher","« Ouvre les demandes »","« Ouvre Rosa »","« Cherche Dupont »","« Numéro de la clinique Saint-Jean »"]];
+
+function openVoice(){
+  closeDD(); if($(".vcmodal")) return;
+  const v=document.createElement("div"); v.className="modal vcmodal"; v.setAttribute("role","dialog"); v.setAttribute("aria-modal","true"); v.setAttribute("aria-label","Commande vocale");
+  v.innerHTML=`<div class="mbox vcbox"><div class="vchead"><h2>🎤 Commande vocale</h2><button type="button" class="iconbtn" id="vc-x" aria-label="Fermer">✕</button></div>
+    ${VC_SR?`<button type="button" class="vcmic" id="vc-mic" aria-label="Parler">${IC.mic}<span id="vc-state">Touchez et parlez</span></button>`:""}
+    <textarea id="vc-text" rows="2" placeholder="${VC_SR?"Ce que vous dites s'écrit ici (vous pouvez corriger)":"Touchez le micro 🎙 de votre clavier et parlez, ou tapez"}" aria-label="Commande"></textarea>
+    <div id="vc-prev" aria-live="polite"></div>
+    <details class="vcex"><summary>Exemples de commandes</summary>${VC_EX.map(([h,...l])=>`<p class="srg">${h}</p>${l.map(x=>`<button type="button" class="vcexi">${esc(x)}</button>`).join("")}`).join("")}</details>
+    <p class="hint small">La voix est transcrite par votre téléphone ou votre navigateur, comme la dictée du clavier. Le texte est compris dans l'app et rien n'est fait sans votre confirmation.</p></div>`;
+  document.body.appendChild(v);
+  const ta=v.querySelector("#vc-text"), prev=v.querySelector("#vc-prev"), micB=v.querySelector("#vc-mic"), st=v.querySelector("#vc-state");
+  let rec=null, cmd=null, listening=false;
+  const close=()=>{ try{ rec&&rec.abort(); }catch(e){} v.remove(); removeEventListener("keydown",key); };
+  const key=e=>{ if(e.key==="Escape") close(); }; addEventListener("keydown",key);
+  v.querySelector("#vc-x").onclick=close; v.onclick=e=>{ if(e.target===v) close(); };
+  const go=cs=>{ close(); S.cscreen=cs; if(cs==="inbox"){ S.archive=false; S.itype="all"; S.iq=""; } render(); scrollTo(0,0); };
+  const draw=(auto)=>{ cmd=vcParse(ta.value); prev.innerHTML=vcPreviewHTML(cmd,ta.value); bind(); if(auto&&cmd&&cmd.k==="nav") setTimeout(()=>{ if(document.body.contains(v)) go(cmd.cs); },700); };
+  const taskDraft=()=>({title:(v.querySelector("#vc-title")?.value||cmd.title||"").trim(),notes:"",due:cmd.due||"",to:cmd.to||"me",patient:null,q:cmd.q||"",remind:null,prio:cmd.prio||"normale"});
+  async function bind(){
+    const $v=s=>v.querySelector(s);
+    v.querySelectorAll("[data-vcnav]").forEach(b=>b.onclick=()=>go(b.dataset.vcnav));
+    const f=$v("#vc-form"); if(f) f.onclick=()=>{ const D=taskDraft(); close(); S.tdraft=D; S.tformOpen=true; S.tview="todo"; S.tkind="all"; S.cscreen="tasks"; render(); scrollTo(0,0); };
+    const g=$v("#vc-go"); if(g) g.onclick=async()=>{ const D=taskDraft(); if(!D.title) return toast("Dites ou tapez le titre de la tâche."); g.disabled=true;
+      const r=await run(()=>sb.rpc("create_task",{p_title:D.title.slice(0,200),p_notes:null,p_due:D.due||null,p_assignee:D.to==="me"?S.me.id:D.to==="secretariat"?null:D.to,p_group:D.to==="secretariat"?"secretariat":null,p_patient:null,p_child:null,p_record:null}),"Tâche ajoutée");
+      if(!r){ g.disabled=false; return; }
+      if(D.prio!=="normale"){ const {error}=await sb.rpc("set_task_priority",{p_id:r.data,p_priority:D.prio}); if(error) console.error(error); }
+      close(); await refresh(); };
+    const thread=async()=>{ const ids=cmd.ids; let t=null;
+      if(cmd.secr) t=(S.team2.threads||[]).find(x=>x.kind==="group"&&/secr/i.test(norm(x.title||"")));
+      else if(ids.length===1) t=(S.team2.threads||[]).find(x=>x.kind==="direct"&&tMembers(x.id).some(m=>m.user_id===ids[0]));
+      if(t) return t.id;
+      const {data,error}=await sb.rpc("team_start",{p_members:ids,p_title:cmd.secr?"Secrétariat":null}); if(error){ toast(frError(error)); return null; } await loadTeam(); return data; };
+    const sd=$v("#vc-send"); if(sd) sd.onclick=async()=>{ const body=$v("#vc-body").value.trim(); if(!body) return toast("Le message est vide."); sd.disabled=true;
+      const id=await thread(); if(!id){ sd.disabled=false; return; }
+      if(await run(()=>sb.rpc("team_send",{p_thread:id,p_body:body}),"Message envoyé")){ close(); await loadTeam(); render(); } else sd.disabled=false; };
+    const op=$v("#vc-open"); if(op) op.onclick=async()=>{ const body=$v("#vc-body").value; const id=await thread(); if(!id) return; close(); S.tthread=id; S.drafts["t"+id]=body; S.cscreen="messages"; render(); scrollTo(0,0); };
+    const ho=$v("#vc-ho"); if(ho) ho.onclick=()=>{ close(); const E=newHo(); E.rec=[...cmd.ids]; if(cmd.ends&&cmd.ends>=E.starts) E.ends=cmd.ends; E.body=cmd.body||""; S.hoEdit=E; S.cscreen="handovers"; render(); scrollTo(0,0); };
+    const lv=$v("#vc-leave"); if(lv) lv.onclick=async()=>{ lv.disabled=true; if(await run(()=>sb.rpc("add_my_leave",{p_starts:cmd.from,p_ends:cmd.to}),"Congé ajouté")){ close(); await loadLeaves(); render(); } else lv.disabled=false; };
+    const aw=$v("#vc-away"); if(aw) aw.onclick=()=>{ const u=cmd.until; close(); openAvail(); setTimeout(()=>{ const d=$(".avaway"); if(d) d.open=true; const i=$("#av-until"); if(i&&u){ i.value=u; i.dispatchEvent(new Event("change")); } },50); };
+    const setP=async u=>{ const r=await run(()=>sb.rpc("set_my_pause",{p_until:u}),u?"Notifications en pause "+pauseText(u):"Notifications reprises"); if(r){ S.settings={...(S.settings||{user_id:S.me.id}),pause_until:u}; close(); render(); } };
+    const pz=$v("#vc-pause"); if(pz) pz.onclick=()=>setP(cmd.until);
+    const rs=$v("#vc-resume"); if(rs) rs.onclick=()=>setP(null);
+    const ro=$v("#vc-rosa"); if(ro) ro.onclick=()=>{ close(); openRosa(); };
+    const se=$v("#vc-search"); if(se) se.onclick=()=>{ close(); SRCH.q=cmd.q; openSearch(); };
+    const di=$v("#vc-dir"); if(di) di.onclick=()=>{ close(); S.dirTab="contacts"; S.dirUi={cat:"",q:cmd.q}; S.cscreen="directory"; render(); scrollTo(0,0); };
+    const at=$v("#vc-astask"); if(at) at.onclick=()=>{ ta.value="Tâche : "+ta.value; draw(); };
+    const as=$v("#vc-assearch"); if(as) as.onclick=()=>{ const q=ta.value.trim(); close(); SRCH.q=q; openSearch(); };
+  }
+  let tm; ta.oninput=()=>{ clearTimeout(tm); tm=setTimeout(()=>draw(false),250); };
+  v.querySelectorAll(".vcexi").forEach(b=>b.onclick=()=>{ ta.value=b.textContent.replace(/^«\s*|\s*»$/g,""); draw(false); });
+  const fallback=msg=>{ if(micB) micB.remove(); ta.placeholder="Touchez le micro 🎙 de votre clavier et parlez, ou tapez"; if(msg) toast(msg); ta.focus(); };
+  const start=()=>{
+    if(listening){ try{ rec.stop(); }catch(e){} return; }
+    try{ rec=new VC_SR(); }catch(e){ return fallback(); }
+    rec.lang="fr-FR"; rec.interimResults=true; rec.continuous=false; rec.maxAlternatives=1;
+    let base=""; rec.onstart=()=>{ listening=true; micB.classList.add("on"); st.textContent="J'écoute… touchez pour arrêter"; base=""; ta.value=""; };
+    rec.onresult=e=>{ let s=""; for(const r of e.results) s+=r[0].transcript; ta.value=(base+s).trim(); };
+    rec.onerror=e=>{ listening=false; micB.classList.remove("on"); st.textContent="Touchez et parlez";
+      if(e.error==="not-allowed"||e.error==="service-not-allowed") fallback(e.error==="not-allowed"?"Autorisez le micro pour l'app, ou utilisez le micro du clavier.":"La reconnaissance vocale n'est pas disponible ici : utilisez le micro du clavier.");
+      else if(e.error==="no-speech") st.textContent="Je n'ai rien entendu. Touchez et parlez";
+      else if(e.error!=="aborted") st.textContent="Réessayez"; };
+    rec.onend=()=>{ const was=listening; listening=false; if(micB){ micB.classList.remove("on"); st.textContent="Touchez et parlez"; } if(was&&ta.value.trim()) draw(true); };
+    try{ rec.start(); }catch(e){ fallback(); }
+  };
+  if(micB){ micB.onclick=start; start(); } else ta.focus();
+  draw(false);
+}
+
 function openSearch(){
   closeDD(); if($(".srch")) return;
   const staff=S.me&&S.me.role!=="patient";
@@ -6368,7 +6626,7 @@ function openSearch(){
   draw_(); inp.focus(); inp.select();
 }
 document.addEventListener("keydown",e=>{ if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="k"&&S.me&&S.me.status==="active"){ e.preventDefault(); openSearch(); } });
-document.addEventListener("click",e=>{ if(e.target.closest("[data-cs-help]")){ S.screen="help"; render(); scrollTo(0,0); return; } const b=e.target.closest("[data-search]"); if(b){ e.preventDefault(); openSearch(); return; }
+document.addEventListener("click",e=>{ if(e.target.closest("[data-cs-help]")){ S.screen="help"; render(); scrollTo(0,0); return; } const b=e.target.closest("[data-search]"); if(b){ e.preventDefault(); openSearch(); return; } const vb=e.target.closest("[data-voice]"); if(vb&&S.me&&S.me.role!=="patient"){ e.preventDefault(); openVoice(); return; }
   const r=e.target.closest("[data-rosa]"); if(r){ e.preventDefault(); openRosa(); } });
 
 /* ---------- dessins de profil ---------- */
