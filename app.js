@@ -2089,7 +2089,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261114c";
+const APP_VERSION="20261115a";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -2222,7 +2222,8 @@ async function loadTeam(){
       sb.from("team_threads").select("*").order("last_at",{ascending:false}),
       Promise.resolve(sb.from("team_members").select("thread_id,user_id,last_read_at,pinned_at,marked_unread,flagged_at"))
         .then(r=>r.error?Promise.resolve(sb.from("team_members").select("thread_id,user_id,last_read_at,pinned_at")).then(r2=>r2.error?sb.from("team_members").select("thread_id,user_id,last_read_at"):r2):(S.tflagOk=true,r)),
-      Promise.resolve(sb.from("team_messages").select("id,thread_id,author_id,body,request_id,file_mime,file_name,file_size,created_at,reply_to").gte("created_at",since).order("created_at").limit(3000))
+      Promise.resolve(sb.from("team_messages").select("id,thread_id,author_id,body,request_id,file_mime,file_name,file_size,created_at,reply_to,edited_at,deleted_at").gte("created_at",since).order("created_at").limit(3000))
+        .then(r=>r.error?(S.tEditOk=false,Promise.resolve(sb.from("team_messages").select("id,thread_id,author_id,body,request_id,file_mime,file_name,file_size,created_at,reply_to").gte("created_at",since).order("created_at").limit(3000))):(S.tEditOk=true,r))
         .then(r=>r.error?sb.from("team_messages").select("id,thread_id,author_id,body,request_id,file_mime,file_name,file_size,created_at").gte("created_at",since).order("created_at").limit(3000):r),
       sb.from("reply_templates").select("*").order("title"),
       sb.from("binder_items").select("id,category,title,body,phone,url,file_mime,file_name,file_size,updated_by,updated_at,created_at").order("title")]);
@@ -2252,7 +2253,7 @@ function staffFirst(id){ const t=(S.team||[]).find(x=>x.id===id); if(!t) return 
   const same=(S.team||[]).filter(x=>x.id!==id&&x.status==="active"&&(x.first_name||"").trim().toLowerCase()===f.toLowerCase());
   return same.length&&t.last_name?`${f} ${t.last_name.trim()[0].toUpperCase()}.`:f; }
 function tPreview(m){ if(!m) return "Aucun message"; const who=m.author_id===S.me.id?"Vous":staffFirst(m.author_id);
-  const what=m.body||(m.file_mime?(m.file_mime.startsWith("audio")?"🎤 Message vocal":m.file_mime==="application/pdf"?"📄 "+(m.file_name||"PDF"):"📷 Photo"):m.request_id?"📋 Demande jointe":""); return `${who} : ${what}`; }
+  const what=m.deleted_at?"🚫 Message supprimé":m.body||(m.file_mime?(m.file_mime.startsWith("audio")?"🎤 Message vocal":m.file_mime==="application/pdf"?"📄 "+(m.file_name||"PDF"):"📷 Photo"):m.request_id?"📋 Demande jointe":""); return `${who} : ${what}`; }
 const avColor = s => ["#702629","#8a6d33","#1d5a8a","#2e6b2f","#6b3d7a","#9a5b00"][[...String(s)].reduce((a,c)=>a+c.charCodeAt(0),0)%6];
 function tAvatar(t){ if(t.kind==="direct"){ const o=tMembers(t.id).find(m=>m.user_id!==S.me.id); if(o&&AV.get(o.user_id)) return avatarHTML(AV.get(o.user_id),"",40); return `<span class="tav" style="background:${avColor(o?.user_id||t.id)}">${esc(o?staffInitials(o.user_id):"?")}</span>`; }
   const ini=(t.title||"G").split(/\s+/).slice(0,2).map(w=>w[0]).join("").toUpperCase(); return `<span class="tav grp" style="background:${avColor(t.title||t.id)}">${esc(ini)}</span>`; }
@@ -2261,11 +2262,12 @@ function reqCardHTML(id){ const r=S.reqs.find(x=>x.id===id);
   if(!r) return `<div class="treq off">📋 Demande non accessible ou effacée</div>`;
   return `<button type="button" class="treq" data-openreq="${r.id}">📋<span><b>${esc(reqName(r))} · ${TYPES[r.type].label}</b><small>« ${esc(summaryLine(r.answers))} » · ouvrir ›</small></span></button>`; }
 function tMsgHTML(m){ const mine=m.author_id===S.me.id;
+  if(m.deleted_at) return `<div class="tmw ${mine?"me":""}" data-mk="t:${m.id}"><div class="bubw"><div class="tm ${mine?"me":""} tdel">${mine?"":`<span class="who">${esc(staffName(m.author_id))}</span>`}<p>🚫 ${mine?"Vous avez supprimé ce message":"Message supprimé"}</p><small>${fmt(m.created_at)}</small></div></div></div>`;
   const file=m.file_mime?(m.file_mime.startsWith("image")?`<button type="button" class="tfile img" data-tfile="${m.id}" data-kind="image"><span class="loading">Photo…</span></button>`
     :m.file_mime.startsWith("audio")?`<div class="tfile" data-tfile="${m.id}" data-kind="audio"><audio controls preload="none"></audio></div>`
     :`<a class="tfile pdf" href="#" data-tfile="${m.id}" data-kind="pdf">📄 ${esc(m.file_name||"document.pdf")}</a>`):"";
   const q=m.reply_to?S.team2.msgs.find(x=>x.id===m.reply_to):null;
-  return `<div class="tmw ${mine?"me":""}" data-mk="t:${m.id}"><div class="bubw"><div class="tm ${mine?"me":""}">${mine?"":`<span class="who">${esc(staffName(m.author_id))}</span>`}${m.reply_to?quoteHTML("t",q,q?(q.author_id===S.me.id?"Vous":staffName(q.author_id)):""):""}${m.body?`<p>${esc(m.body)}</p>`:""}${m.request_id?reqCardHTML(m.request_id):""}${file}<small>${fmt(m.created_at)}</small></div>${S.team2.rxOk?`<button type="button" class="mact" data-mact="t:${m.id}" aria-label="Répondre ou réagir" title="Répondre ou réagir">${SI.react}</button>`:""}</div>${reactsHTML("t",m.id,(S.team2.reacts||[]).filter(x=>x.message_id===m.id))}</div>`; }
+  return `<div class="tmw ${mine?"me":""}" data-mk="t:${m.id}"><div class="bubw"><div class="tm ${mine?"me":""}">${mine?"":`<span class="who">${esc(staffName(m.author_id))}</span>`}${m.reply_to?quoteHTML("t",q,q?(q.author_id===S.me.id?"Vous":staffName(q.author_id)):""):""}${m.body?`<p>${esc(m.body)}</p>`:""}${m.request_id?reqCardHTML(m.request_id):""}${file}<small>${m.edited_at?`<span class="tedit" title="Modifié ${esc(fmt(m.edited_at))}">modifié · </span>`:""}${fmt(m.created_at)}</small></div>${S.team2.rxOk||(mine&&S.tEditOk)?`<button type="button" class="mact" data-mact="t:${m.id}" aria-label="Répondre ou réagir" title="Répondre ou réagir">${SI.react}</button>`:""}</div>${reactsHTML("t",m.id,(S.team2.reacts||[]).filter(x=>x.message_id===m.id))}</div>`; }
 function tMsgsHTML(t){
   const k="t"+t.id, ms=tMsgs(t.id);
   if(!(k in UNREAD)){ const me=tMembers(t.id).find(m=>m.user_id===S.me.id); UNREAD[k]=me?me.last_read_at:"9999"; }
@@ -2387,7 +2389,7 @@ function rxFind(kind,id){
   for(const r of S.reqs||[]){ const m=(r.messages||[]).find(x=>x.id===id); if(m) return {m,r}; } return null; }
 function rxSnippet(kind,m){
   if(!m) return "";
-  if(kind==="t"){ const t=m.body||(m.file_mime?(m.file_mime.startsWith("audio")?"🎤 Message vocal":m.file_mime==="application/pdf"?"📄 "+(m.file_name||"PDF"):"📷 Photo"):m.request_id?"📋 Demande jointe":""); return t.length>140?t.slice(0,140)+"…":t; }
+  if(kind==="t"){ const t=m.deleted_at?"🚫 Message supprimé":m.body||(m.file_mime?(m.file_mime.startsWith("audio")?"🎤 Message vocal":m.file_mime==="application/pdf"?"📄 "+(m.file_name||"PDF"):"📷 Photo"):m.request_id?"📋 Demande jointe":""); return t.length>140?t.slice(0,140)+"…":t; }
   const a=m.attachments||[];
   let t=(a.length&&AUTO_BODY.test(m.body))||!m.body ? (a[0]?(a[0].kind==="image"?"📷 Photo":a[0].kind==="audio"?"🎤 Message vocal":"📄 "+(a[0].name||"Document")):"") : m.body;
   return t.length>140?t.slice(0,140)+"…":t; }
@@ -2442,11 +2444,12 @@ async function sendWithReply(key, call){
 function closeMsgActions(){ $("#mactpop")?.remove(); }
 function openMsgActions(mk, anchor){
   closeMsgActions(); const [kind,sid]=mk.split(":"), id=+sid, f=rxFind(kind,id); if(!f) return;
-  const canReply=!!$("#c-text"), cur=myReact(kind,id), txt=kind==="t"?f.m.body:(f.m.attachments?.length&&AUTO_BODY.test(f.m.body)?"":f.m.body);
-  const canReact=kind==="t"?S.team2.rxOk:RX_OK;
+  const canReply=!!$("#c-text")&&!(rxFind(kind,id)?.m.deleted_at), cur=myReact(kind,id), txt=kind==="t"?f.m.body:(f.m.attachments?.length&&AUTO_BODY.test(f.m.body)?"":f.m.body);
+  const canReact=(kind==="t"?S.team2.rxOk:RX_OK)&&!f.m.deleted_at;
+  const own=kind==="t"&&S.tEditOk&&f.m.author_id===S.me.id&&!f.m.deleted_at, canEdit=own&&!!f.m.body;
   const pop=document.createElement("div"); pop.id="mactpop"; pop.className="mactpop"; pop.setAttribute("role","menu"); pop.setAttribute("aria-label","Actions sur le message");
   pop.innerHTML=`${canReact?`<div class="rrow">${REACTS.map(e=>`<button type="button" role="menuitem" data-pe="${e}" class="${cur===e?"on":""}" aria-label="Réagir ${e}">${e}</button>`).join("")}</div>`:""}
-    <div class="racts">${canReply?`<button type="button" role="menuitem" data-pa="reply">${SI.reply}<span>Répondre</span></button>`:""}${txt?`<button type="button" role="menuitem" data-pa="copy">${IC.doc}<span>Copier le texte</span></button>`:""}</div>`;
+    <div class="racts">${canReply?`<button type="button" role="menuitem" data-pa="reply">${SI.reply}<span>Répondre</span></button>`:""}${txt&&!f.m.deleted_at?`<button type="button" role="menuitem" data-pa="copy">${IC.doc}<span>Copier le texte</span></button>`:""}${canEdit?`<button type="button" role="menuitem" data-pa="edit">✏️<span>Modifier</span></button>`:""}${own?`<button type="button" role="menuitem" data-pa="del" class="danger">🗑️<span>Supprimer</span></button>`:""}</div>`;
   if(!pop.querySelector("button")) return;
   document.body.appendChild(pop);
   const b=(anchor.querySelector(".bub,.tm")||anchor).getBoundingClientRect(), pw=pop.offsetWidth, ph=pop.offsetHeight;
@@ -2460,9 +2463,32 @@ function openMsgActions(mk, anchor){
   pop.querySelectorAll("[data-pe]").forEach(x=>x.onclick=()=>{ done(); doReact(kind,id,x.dataset.pe); });
   pop.querySelectorAll("[data-pa]").forEach(x=>x.onclick=async()=>{ done();
     if(x.dataset.pa==="reply") startReply(kind,id);
+    else if(x.dataset.pa==="edit") tEditMsg(f.m);
+    else if(x.dataset.pa==="del") tDeleteMsg(f.m);
     else { try{ await navigator.clipboard.writeText(txt); toast("Texte copié"); }catch(e){ toast("La copie n'a pas pu être faite."); } } });
   (pop.querySelector("[data-pe],[data-pa]"))?.focus({preventScroll:true});
 }
+// modifier / supprimer un de ses messages (messagerie de l'équipe)
+function tMsgDialog(title,inner,okLabel,okClass,onOk){
+  const v=document.createElement("div"); v.className="modal tmdlg"; v.setAttribute("role","dialog"); v.setAttribute("aria-modal","true"); v.setAttribute("aria-label",title);
+  v.innerHTML=`<div class="mbox"><h2>${title}</h2>${inner}<div class="btnrow"><button type="button" class="btn ${okClass}" data-ok>${okLabel}</button><button type="button" class="btn ghost" data-no>Annuler</button></div></div>`;
+  document.body.appendChild(v);
+  const close=()=>{ v.remove(); removeEventListener("keydown",k); }, k=e=>{ if(e.key==="Escape") close(); };
+  addEventListener("keydown",k); v.onclick=e=>{ if(e.target===v) close(); }; v.querySelector("[data-no]").onclick=close;
+  const ok=v.querySelector("[data-ok]"); ok.onclick=async()=>{ ok.disabled=true; if(await onOk(v)) close(); else ok.disabled=false; };
+  return v; }
+function tEditMsg(m){
+  const v=tMsgDialog("Modifier le message",`<textarea id="tm-edit" rows="4" maxlength="4000" dir="auto">${esc(m.body||"")}</textarea><p class="hint small">Les autres verront la mention « modifié ». Aucune nouvelle notification n'est envoyée.</p>`,"Enregistrer","",async()=>{
+    const body=v.querySelector("#tm-edit").value.trim(); if(body===(m.body||"").trim()) return true;
+    if(!body&&!m.file_mime&&!m.request_id){ toast("Le message ne peut pas être vide : supprimez-le plutôt."); return false; }
+    const r=await run(()=>sb.rpc("team_edit",{p_id:m.id,p_body:body}),"Message modifié"); if(!r) return false;
+    m.body=body; m.edited_at=new Date().toISOString(); render(); return true; });
+  const ta=v.querySelector("#tm-edit"); ta.focus(); ta.setSelectionRange(ta.value.length,ta.value.length); }
+function tDeleteMsg(m){
+  tMsgDialog("Supprimer ce message ?",`<p>Il sera remplacé par « Message supprimé » pour tous les membres de la conversation, avec sa pièce jointe et ses réactions. Cette action est définitive.</p>`,"Supprimer","danger",async()=>{
+    const r=await run(()=>sb.rpc("team_delete",{p_id:m.id}),"Message supprimé"); if(!r) return false;
+    Object.assign(m,{body:"",file_mime:null,file_name:null,file_size:null,request_id:null,edited_at:null,deleted_at:new Date().toISOString()});
+    S.team2.reacts=(S.team2.reacts||[]).filter(x=>x.message_id!==m.id); render(); return true; }); }
 // gestes communs à toutes les conversations (une seule fois)
 (function(){
   let lp=null, suppress=false;
@@ -2925,6 +2951,7 @@ function staffHelpHTML(){
    ["Ne pas oublier de répondre","Messages : en haut d'une conversation, « Prioritaire » met un drapeau rouge ; la conversation reste tout en haut de votre liste jusqu'à ce que vous retiriez le drapeau. « Non lu » la remet en gras avec une pastille, comme si vous ne l'aviez pas ouverte, jusqu'à ce que vous la rouvriez. Ces repères sont personnels : les collègues ne voient rien changer."],
    ["Ce qui est gardé, ce qui est effacé","Gardé : messages de l'équipe sur l'organisation, inventaire, congés, tâches sans patient, classeur, horaires (5 ans), caisse (10 ans). Effacé : conversations avec les patients (15 jours après la clôture), conversations d'équipe marquées « Concerne des patients » et messages qui joignent une demande (90 jours), tâches liées à un patient (90 jours après)."],
    ["Joindre un document à une tâche","Tâches et Accueil : en créant la tâche, « Joindre un document » (photo, PDF) ou « Scanner » ; ou plus tard, « Joindre » sous la tâche. 10 documents maximum, 5 Mo chacun. Seules les personnes de la tâche les voient ; ils sont effacés 90 jours après que la tâche est faite. Touchez un document pour l'ouvrir."],
+   ["Modifier ou supprimer un message","Dans les messages de l'équipe, sur un de vos messages : survolez la bulle et cliquez sur 🙂 (ou clic droit) sur ordinateur, appui long sur téléphone, puis « Modifier » ou « Supprimer ». Un message modifié porte la mention « modifié » ; un message supprimé est remplacé par « Message supprimé » pour tout le monde, avec sa pièce jointe. Aucune notification n'est envoyée."],
    ["Répondre à un message et réagir","Comme sur WhatsApp, dans les demandes et dans les messages de l'équipe. Sur ordinateur : passez la souris sur une bulle et cliquez sur 🙂 (ou clic droit). Sur téléphone : appui long sur la bulle. Choisissez un emoji (il s'affiche sous la bulle ; touchez-le à nouveau pour le retirer) ou « Répondre » : le message est cité au-dessus de votre réponse. Touchez une citation pour retrouver le message d'origine."],
    ["Une idée ou un problème ?","Moi → « Une idée ou un problème ? » envoie une suggestion ou signale un souci de l'app à l'administrateur (la version et le type d'appareil sont ajoutés automatiquement). Les patients ont le même bouton dans Mon compte et dans l'Aide. L'administrateur les lit dans Le centre → Suggestions."],
    ["Envoyer une fiche conseil","Le centre → Fiches conseils : cherchez la fiche (titre, sujet), puis « Envoyer à un patient » : l'écran Écrire à un patient s'ouvre avec le PDF déjà joint ; choisissez le patient, ajoutez un mot, envoyez. Dans une conversation déjà ouverte, le bouton 📋 à côté du message fait la même chose."],
@@ -6765,7 +6792,7 @@ const TFILTERS=[["all","Toutes"],["unread","Non lues"],["flag","Prioritaires"],[
 function tFilterOk(t,f){ return f==="all"||(f==="unread"&&tUnread(t)>0)||(f==="flag"&&tFlagged(t))||(f==="group"&&t.kind!=="direct")||(f==="direct"&&t.kind==="direct")||(f==="pat"&&t.patient_related); }
 async function loadOlder(t){
   const first=tMsgs(t.id)[0], before=first?first.created_at:new Date().toISOString();
-  const {data,error}=await sb.from("team_messages").select("id,thread_id,author_id,body,request_id,file_mime,file_name,file_size,created_at"+(S.team2.rxOk?",reply_to":"")).eq("thread_id",t.id).lt("created_at",before).order("created_at",{ascending:false}).limit(100);
+  const {data,error}=await sb.from("team_messages").select("id,thread_id,author_id,body,request_id,file_mime,file_name,file_size,created_at"+(S.team2.rxOk?",reply_to":"")+(S.tEditOk?",edited_at,deleted_at":"")).eq("thread_id",t.id).lt("created_at",before).order("created_at",{ascending:false}).limit(100);
   if(error){ toast(frError(error)); return; }
   const have=new Set(S.team2.msgs.map(m=>m.id)), add=(data||[]).filter(m=>!have.has(m.id));
   S.team2.msgs=[...add,...S.team2.msgs].sort((a,b)=>a.created_at.localeCompare(b.created_at));
@@ -7116,7 +7143,7 @@ function startRealtime(){
       .on("postgres_changes",{event:"*",schema:"public",table:"requests"},p=>rtQueue(p.new&&p.new.id))
       .on("postgres_changes",{event:"INSERT",schema:"public",table:"request_updates"},p=>rtQueue(p.new&&p.new.request_id))
       .on("postgres_changes",{event:"INSERT",schema:"public",table:"notifications"},()=>rtQueue(null))
-      .on("postgres_changes",{event:"INSERT",schema:"public",table:"team_messages"},()=>teamRt())
+      .on("postgres_changes",{event:"*",schema:"public",table:"team_messages"},()=>teamRt())
       .on("postgres_changes",{event:"*",schema:"public",table:"message_reactions"},p=>rtQueue((p.new&&p.new.request_id)||(p.old&&p.old.request_id)))
       .on("postgres_changes",{event:"*",schema:"public",table:"team_message_reactions"},()=>teamRt())
       .on("postgres_changes",{event:"*",schema:"public",table:"broadcasts"},()=>annRt())
