@@ -400,7 +400,7 @@ function chatHTML(r, viewer){
     const col = viewer!=="patient" && !me && !m.from_patient;
     const showBody = !(atts.length && AUTO_BODY.test(m.body));
     const q = m.reply_to ? allM.find(x=>x.id===m.reply_to) : null;
-    h+=`<div class="msg ${me?"me":"them"}" data-mk="r:${m.id}">${showName?`<small class="who${col?" colwho":""}">${viewer==="patient"&&!m.from_patient&&AV.get(m.author_id)?avatarHTML(AV.get(m.author_id),name,22):""}${esc(name)}</small>`:""}<div class="bubw"><div class="bub ${me?"me":"bot"}${col?" col":""}${atts.length?" hasatt":""}">${m.reply_to?quoteHTML("r",q,q?(mine(q)?"Vous":chatName(q,r,viewer)||"Le centre"):""):""}${atts.map(attHTML).join("")}${showBody?`<div class="txt" dir="auto" translate="${AUTO_BODY.test(m.body)?"yes":"no"}">${esc(m.body)}</div>`:""}<span class="t">${hm(m.created_at)}</span></div>${RX_OK?`<button type="button" class="mact" data-mact="r:${m.id}" aria-label="Répondre ou réagir" title="Répondre ou réagir">${SI.react}</button>`:""}</div>${reactsHTML("r",m.id,m.message_reactions,r)}</div>`;
+    h+=`<div class="msg ${me?"me":"them"}" data-mk="r:${m.id}">${showName?`<small class="who${col?" colwho":""}">${viewer==="patient"&&!m.from_patient&&AV.get(m.author_id)?avatarHTML(AV.get(m.author_id),name,22):""}${esc(name)}</small>`:""}<div class="bubw"><div class="bub ${me?"me":"bot"}${col?" col":""}${atts.length?" hasatt":""}">${m.reply_to?quoteHTML("r",q,q?(mine(q)?"Vous":chatName(q,r,viewer)||"Le centre"):""):""}${atts.map(attHTML).join("")}${showBody?`<div class="txt" dir="auto" translate="${AUTO_BODY.test(m.body)?"yes":"no"}">${esc(m.body)}</div>`:""}<span class="t">${m.edited_at?(viewer==="patient"?`<span class="medit" title="Corrigé ${esc(fmt(m.edited_at))}">modifié · </span>`:`<button type="button" class="medit" data-mhist="patient:${m.id}" title="Voir l'historique des modifications">modifié</button> · `):""}${hm(m.created_at)}</span></div>${RX_OK?`<button type="button" class="mact" data-mact="r:${m.id}" aria-label="Répondre ou réagir" title="Répondre ou réagir">${SI.react}</button>`:""}</div>${reactsHTML("r",m.id,m.message_reactions,r)}</div>`;
   }
   while(ui<upds.length) putUpd(upds[ui++]);
   if(r.purged_at) h+=`<div class="sys">Le contenu de cette conversation a été effacé le ${fmtDate(r.purged_at)} pour protéger les données${viewer==="patient"?" de santé":" du patient"}.</div>`;
@@ -872,11 +872,12 @@ async function loadMe(){
 const REQ_ATT = "attachments(id,kind,mime,name,size,duration_s)";
 const REQ_BASE = "*, messages(id,from_patient,author_id,author_label,body,created_at,"+REQ_ATT+"), request_items(id,label,decision,quantity)";
 // réponses citées et réactions emoji (migration 055)
-const REQ_RX = "*, messages(id,from_patient,author_id,author_label,body,created_at,reply_to,"+REQ_ATT+",message_reactions(user_id,emoji)), request_items(id,label,decision,quantity)";
+const REQ_RX = "*, messages(id,from_patient,author_id,author_label,body,created_at,edited_at,reply_to,"+REQ_ATT+",message_reactions(user_id,emoji)), request_items(id,label,decision,quantity)";
 const REQ_UPD = ", request_updates(id,kind,label,created_at)";
-let REQ_SELECT = REQ_RX+REQ_UPD, RX_OK = true;
+let REQ_SELECT = REQ_RX+REQ_UPD, RX_OK = true, ED_OK = true;
 // (si une migration n'est pas encore passée, on charge sans la partie manquante)
 async function reqQuery(build){ let r=await build(REQ_SELECT);
+  if(r.error&&ED_OK&&/edited_at/i.test(JSON.stringify(r.error))){ ED_OK=false; REQ_SELECT=REQ_SELECT.replace(",edited_at,",","); r=await build(REQ_SELECT); }
   if(r.error&&RX_OK&&/reply_to|message_reactions/i.test(JSON.stringify(r.error))){ RX_OK=false; REQ_SELECT=REQ_SELECT.replace(REQ_RX,REQ_BASE); r=await build(REQ_SELECT); }
   if(r.error&&REQ_SELECT.includes(REQ_UPD)&&/request_updates/i.test(JSON.stringify(r.error))){ REQ_SELECT=REQ_SELECT.replace(REQ_UPD,""); r=await build(REQ_SELECT); } return r; }
 async function loadPatient(){
@@ -2089,7 +2090,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261115a";
+const APP_VERSION="20261115b";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -2267,7 +2268,7 @@ function tMsgHTML(m){ const mine=m.author_id===S.me.id;
     :m.file_mime.startsWith("audio")?`<div class="tfile" data-tfile="${m.id}" data-kind="audio"><audio controls preload="none"></audio></div>`
     :`<a class="tfile pdf" href="#" data-tfile="${m.id}" data-kind="pdf">📄 ${esc(m.file_name||"document.pdf")}</a>`):"";
   const q=m.reply_to?S.team2.msgs.find(x=>x.id===m.reply_to):null;
-  return `<div class="tmw ${mine?"me":""}" data-mk="t:${m.id}"><div class="bubw"><div class="tm ${mine?"me":""}">${mine?"":`<span class="who">${esc(staffName(m.author_id))}</span>`}${m.reply_to?quoteHTML("t",q,q?(q.author_id===S.me.id?"Vous":staffName(q.author_id)):""):""}${m.body?`<p>${esc(m.body)}</p>`:""}${m.request_id?reqCardHTML(m.request_id):""}${file}<small>${m.edited_at?`<span class="tedit" title="Modifié ${esc(fmt(m.edited_at))}">modifié · </span>`:""}${fmt(m.created_at)}</small></div>${S.team2.rxOk||(mine&&S.tEditOk)?`<button type="button" class="mact" data-mact="t:${m.id}" aria-label="Répondre ou réagir" title="Répondre ou réagir">${SI.react}</button>`:""}</div>${reactsHTML("t",m.id,(S.team2.reacts||[]).filter(x=>x.message_id===m.id))}</div>`; }
+  return `<div class="tmw ${mine?"me":""}" data-mk="t:${m.id}"><div class="bubw"><div class="tm ${mine?"me":""}">${mine?"":`<span class="who">${esc(staffName(m.author_id))}</span>`}${m.reply_to?quoteHTML("t",q,q?(q.author_id===S.me.id?"Vous":staffName(q.author_id)):""):""}${m.body?`<p>${esc(m.body)}</p>`:""}${m.request_id?reqCardHTML(m.request_id):""}${file}<small>${m.edited_at?`<button type="button" class="tedit medit" data-mhist="equipe:${m.id}" title="Voir l'historique des modifications">modifié</button> · `:""}${fmt(m.created_at)}</small></div>${S.team2.rxOk||(mine&&S.tEditOk)?`<button type="button" class="mact" data-mact="t:${m.id}" aria-label="Répondre ou réagir" title="Répondre ou réagir">${SI.react}</button>`:""}</div>${reactsHTML("t",m.id,(S.team2.reacts||[]).filter(x=>x.message_id===m.id))}</div>`; }
 function tMsgsHTML(t){
   const k="t"+t.id, ms=tMsgs(t.id);
   if(!(k in UNREAD)){ const me=tMembers(t.id).find(m=>m.user_id===S.me.id); UNREAD[k]=me?me.last_read_at:"9999"; }
@@ -2446,7 +2447,8 @@ function openMsgActions(mk, anchor){
   closeMsgActions(); const [kind,sid]=mk.split(":"), id=+sid, f=rxFind(kind,id); if(!f) return;
   const canReply=!!$("#c-text")&&!(rxFind(kind,id)?.m.deleted_at), cur=myReact(kind,id), txt=kind==="t"?f.m.body:(f.m.attachments?.length&&AUTO_BODY.test(f.m.body)?"":f.m.body);
   const canReact=(kind==="t"?S.team2.rxOk:RX_OK)&&!f.m.deleted_at;
-  const own=kind==="t"&&S.tEditOk&&f.m.author_id===S.me.id&&!f.m.deleted_at, canEdit=own&&!!f.m.body;
+  const own=kind==="t"&&S.tEditOk&&f.m.author_id===S.me.id&&!f.m.deleted_at;
+  const canEdit=(own&&!!f.m.body)||(kind==="r"&&ED_OK&&S.me.role!=="patient"&&!f.m.from_patient&&f.m.author_id===S.me.id&&!!f.m.body&&!AUTO_BODY.test(f.m.body)&&f.r&&f.r.status!=="traite"&&!f.r.purged_at);
   const pop=document.createElement("div"); pop.id="mactpop"; pop.className="mactpop"; pop.setAttribute("role","menu"); pop.setAttribute("aria-label","Actions sur le message");
   pop.innerHTML=`${canReact?`<div class="rrow">${REACTS.map(e=>`<button type="button" role="menuitem" data-pe="${e}" class="${cur===e?"on":""}" aria-label="Réagir ${e}">${e}</button>`).join("")}</div>`:""}
     <div class="racts">${canReply?`<button type="button" role="menuitem" data-pa="reply">${SI.reply}<span>Répondre</span></button>`:""}${txt&&!f.m.deleted_at?`<button type="button" role="menuitem" data-pa="copy">${IC.doc}<span>Copier le texte</span></button>`:""}${canEdit?`<button type="button" role="menuitem" data-pa="edit">✏️<span>Modifier</span></button>`:""}${own?`<button type="button" role="menuitem" data-pa="del" class="danger">🗑️<span>Supprimer</span></button>`:""}</div>`;
@@ -2463,7 +2465,7 @@ function openMsgActions(mk, anchor){
   pop.querySelectorAll("[data-pe]").forEach(x=>x.onclick=()=>{ done(); doReact(kind,id,x.dataset.pe); });
   pop.querySelectorAll("[data-pa]").forEach(x=>x.onclick=async()=>{ done();
     if(x.dataset.pa==="reply") startReply(kind,id);
-    else if(x.dataset.pa==="edit") tEditMsg(f.m);
+    else if(x.dataset.pa==="edit") (kind==="t"?tEditMsg(f.m):rEditMsg(f.m));
     else if(x.dataset.pa==="del") tDeleteMsg(f.m);
     else { try{ await navigator.clipboard.writeText(txt); toast("Texte copié"); }catch(e){ toast("La copie n'a pas pu être faite."); } } });
   (pop.querySelector("[data-pe],[data-pa]"))?.focus({preventScroll:true});
@@ -2484,6 +2486,22 @@ function tEditMsg(m){
     const r=await run(()=>sb.rpc("team_edit",{p_id:m.id,p_body:body}),"Message modifié"); if(!r) return false;
     m.body=body; m.edited_at=new Date().toISOString(); render(); return true; });
   const ta=v.querySelector("#tm-edit"); ta.focus(); ta.setSelectionRange(ta.value.length,ta.value.length); }
+function rEditMsg(m){
+  const v=tMsgDialog("Corriger le message",`<textarea id="tm-edit" rows="5" maxlength="4000" dir="auto">${esc(m.body||"")}</textarea><p class="hint small">Le patient verra la mention « modifié » et recevra une notification neutre (« Un message du centre a été corrigé »). L'ancienne version est conservée dans l'historique, visible par l'équipe, et la correction est inscrite dans le journal.</p>`,"Enregistrer la correction","",async()=>{
+    const body=v.querySelector("#tm-edit").value.trim(); if(body===(m.body||"").trim()) return true;
+    if(!body){ toast("Le message ne peut pas être vide."); return false; }
+    const r=await run(()=>sb.rpc("staff_edit_message",{p_id:m.id,p_body:body}),"Message corrigé"); if(!r) return false;
+    m.body=body; m.edited_at=new Date().toISOString(); render(); return true; });
+  const ta=v.querySelector("#tm-edit"); ta.focus(); ta.setSelectionRange(ta.value.length,ta.value.length); }
+async function showMsgHistory(kind,id){
+  const {data,error}=await sb.rpc("get_message_history",{p_kind:kind,p_id:id});
+  if(error) return toast(frError(error));
+  const h=data||[];
+  const list=h.length?[`<li><b>Version d'origine</b><p dir="auto">${esc(h[0].old_body||"(vide)")}</p></li>`,
+    ...h.map((x,i)=>`<li><b>${i===h.length-1?"Version actuelle":"Version "+(i+2)}</b> <small>modifiée par ${esc(x.edited_by)}, ${esc(fmtDate(x.edited_at))} à ${esc(hm(x.edited_at))}</small><p dir="auto">${esc(x.new_body||"(vide)")}</p></li>`)].join("")
+    :`<li>Aucun historique enregistré pour ce message (modifié avant la mise en place de l'historique).</li>`;
+  const v=tMsgDialog("Historique des modifications",`<ol class="mhist">${list}</ol>`,"Fermer","",async()=>true);
+  v.querySelector("[data-no]").remove(); }
 function tDeleteMsg(m){
   tMsgDialog("Supprimer ce message ?",`<p>Il sera remplacé par « Message supprimé » pour tous les membres de la conversation, avec sa pièce jointe et ses réactions. Cette action est définitive.</p>`,"Supprimer","danger",async()=>{
     const r=await run(()=>sb.rpc("team_delete",{p_id:m.id}),"Message supprimé"); if(!r) return false;
@@ -2496,6 +2514,7 @@ function tDeleteMsg(m){
   document.addEventListener("click",e=>{
     if(suppress&&!e.target.closest("#mactpop")){ suppress=false; e.preventDefault(); e.stopPropagation(); return; }
     const rc=e.target.closest("[data-react]"); if(rc){ const [k,i,em]=rc.dataset.react.split(":"); doReact(k,+i,em); return; }
+    const mh=e.target.closest("[data-mhist]"); if(mh){ e.stopPropagation(); const [k,i]=mh.dataset.mhist.split(":"); showMsgHistory(k,+i); return; }
     const ma=e.target.closest("[data-mact]"); if(ma){ e.stopPropagation(); openMsgActions(ma.dataset.mact, ma.closest("[data-mk]")); return; }
     const j=e.target.closest("[data-jump]"); if(j){ const el=document.querySelector(`[data-mk="${j.dataset.jump}"]`);
       if(!el){ toast("Ce message n'est plus affiché ici."); return; } el.scrollIntoView({block:"center",behavior:"smooth"}); el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); }
@@ -2951,7 +2970,8 @@ function staffHelpHTML(){
    ["Ne pas oublier de répondre","Messages : en haut d'une conversation, « Prioritaire » met un drapeau rouge ; la conversation reste tout en haut de votre liste jusqu'à ce que vous retiriez le drapeau. « Non lu » la remet en gras avec une pastille, comme si vous ne l'aviez pas ouverte, jusqu'à ce que vous la rouvriez. Ces repères sont personnels : les collègues ne voient rien changer."],
    ["Ce qui est gardé, ce qui est effacé","Gardé : messages de l'équipe sur l'organisation, inventaire, congés, tâches sans patient, classeur, horaires (5 ans), caisse (10 ans). Effacé : conversations avec les patients (15 jours après la clôture), conversations d'équipe marquées « Concerne des patients » et messages qui joignent une demande (90 jours), tâches liées à un patient (90 jours après)."],
    ["Joindre un document à une tâche","Tâches et Accueil : en créant la tâche, « Joindre un document » (photo, PDF) ou « Scanner » ; ou plus tard, « Joindre » sous la tâche. 10 documents maximum, 5 Mo chacun. Seules les personnes de la tâche les voient ; ils sont effacés 90 jours après que la tâche est faite. Touchez un document pour l'ouvrir."],
-   ["Modifier ou supprimer un message","Dans les messages de l'équipe, sur un de vos messages : survolez la bulle et cliquez sur 🙂 (ou clic droit) sur ordinateur, appui long sur téléphone, puis « Modifier » ou « Supprimer ». Un message modifié porte la mention « modifié » ; un message supprimé est remplacé par « Message supprimé » pour tout le monde, avec sa pièce jointe. Aucune notification n'est envoyée."],
+   ["Corriger un message envoyé à un patient","Dans une demande, sur un de vos messages : 🙂 (ou clic droit) sur ordinateur, appui long sur téléphone, puis « Modifier ». Le patient voit la mention « modifié » et reçoit une notification neutre. L'ancienne version est gardée : touchez « modifié » pour voir tout l'historique (qui, quand, quoi). La correction est aussi inscrite dans le journal. Les messages des patients ne sont jamais modifiables, et une conversation classée doit être rouverte avant correction."],
+   ["Modifier ou supprimer un message","Dans les messages de l'équipe, sur un de vos messages : survolez la bulle et cliquez sur 🙂 (ou clic droit) sur ordinateur, appui long sur téléphone, puis « Modifier » ou « Supprimer ». Un message modifié porte la mention « modifié » (touchez-la pour voir l'historique) ; un message supprimé est remplacé par « Message supprimé » pour tout le monde, avec sa pièce jointe. Aucune notification n'est envoyée."],
    ["Répondre à un message et réagir","Comme sur WhatsApp, dans les demandes et dans les messages de l'équipe. Sur ordinateur : passez la souris sur une bulle et cliquez sur 🙂 (ou clic droit). Sur téléphone : appui long sur la bulle. Choisissez un emoji (il s'affiche sous la bulle ; touchez-le à nouveau pour le retirer) ou « Répondre » : le message est cité au-dessus de votre réponse. Touchez une citation pour retrouver le message d'origine."],
    ["Une idée ou un problème ?","Moi → « Une idée ou un problème ? » envoie une suggestion ou signale un souci de l'app à l'administrateur (la version et le type d'appareil sont ajoutés automatiquement). Les patients ont le même bouton dans Mon compte et dans l'Aide. L'administrateur les lit dans Le centre → Suggestions."],
    ["Envoyer une fiche conseil","Le centre → Fiches conseils : cherchez la fiche (titre, sujet), puis « Envoyer à un patient » : l'écran Écrire à un patient s'ouvre avec le PDF déjà joint ; choisissez le patient, ajoutez un mot, envoyez. Dans une conversation déjà ouverte, le bouton 📋 à côté du message fait la même chose."],
@@ -7139,7 +7159,7 @@ function startRealtime(){
   if(RT||!sb.channel||!S.session||!S.me||S.me.status!=="active") return;
   try{
     RT=sb.channel("cmpl-"+S.me.id)
-      .on("postgres_changes",{event:"INSERT",schema:"public",table:"messages"},p=>rtQueue(p.new&&p.new.request_id))
+      .on("postgres_changes",{event:"*",schema:"public",table:"messages"},p=>rtQueue((p.new&&p.new.request_id)||(p.old&&p.old.request_id)))
       .on("postgres_changes",{event:"*",schema:"public",table:"requests"},p=>rtQueue(p.new&&p.new.id))
       .on("postgres_changes",{event:"INSERT",schema:"public",table:"request_updates"},p=>rtQueue(p.new&&p.new.request_id))
       .on("postgres_changes",{event:"INSERT",schema:"public",table:"notifications"},()=>rtQueue(null))
