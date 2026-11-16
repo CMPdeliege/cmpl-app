@@ -2284,3 +2284,8 @@ span.medit{font-style:italic}
 .mtnew .mtih input{flex:1;min-width:0;font:inherit;padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink)}
 .casemsgs .day{text-align:center;margin:10px 0 4px}
 .casemsgs .day span{display:inline-block;font-size:12px;font-weight:700;color:var(--muted);background:var(--surface);padding:3px 11px;border-radius:999px}
+/* réunions restreintes */
+.mtgroups{margin:0 0 12px;flex-wrap:wrap}
+.mtgbar{margin:0 0 14px;padding:8px 12px;border-radius:10px;background:color-mix(in srgb,var(--accent) 7%,var(--surface));font-size:14px}
+.mglist{max-height:46vh;overflow:auto}
+.mgdanger{justify-content:space-between;margin-top:6px}

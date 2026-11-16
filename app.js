@@ -2090,7 +2090,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261116c";
+const APP_VERSION="20261116d";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -3219,7 +3219,7 @@ function staffHelpHTML(){
    ["Transmissions","Équipe → Transmissions : avant une absence, laissez un message à un ou plusieurs collègues, avec les patients à suivre. Ils le voient sur leur tableau de bord pendant la période choisie et reçoivent une notification sans détail."],
    ["Locaux","Secrétariat → Locaux : la vue « Par jour » montre qui occupe chaque local, heure par heure. « Habituel » : l'occupation de chaque semaine (ex. Dr X au local 1 le lundi de 9 h à 13 h). « Réserver » ou « Libérer un créneau » : un changement pour un jour seulement. Le secrétariat et l'administrateur gèrent la liste des locaux."],
    ["Checklists","Secrétariat → Checklists : ouverture, fermeture, contrôle de la semaine. Chacun coche ce qu'il a fait (nom et heure notés) et note la température du frigo à vaccins : une valeur en dehors de 2 à 8 °C est signalée en rouge, aussi sur le tableau de bord. L'historique garde 3 ans de relevés."],
-   ["Réunions d'équipe","Équipe → Réunions : chacun ajoute ses points à l'ordre du jour. Pendant la réunion, « Rédiger le procès-verbal » : présents, décisions point par point (« En faire une tâche »), compte rendu. « Clôturer » archive le PV, téléchargeable en PDF. Une réunion qui a déjà eu lieu ? « Ajouter une réunion passée » sous « Réunions précédentes », puis rédigez son PV. Un PV archivé se modifie avec « Modifier le PV ». Dans le PV, rien n'est enregistré avant « Enregistrer » : « Annuler » abandonne les changements."],
+   ["Réunions d'équipe","Équipe → Réunions : chacun ajoute ses points à l'ordre du jour. Pendant la réunion, « Rédiger le procès-verbal » : présents, décisions point par point (« En faire une tâche »), compte rendu. « Clôturer » archive le PV, téléchargeable en PDF. Une réunion qui a déjà eu lieu ? « Ajouter une réunion passée » sous « Réunions précédentes », puis rédigez son PV. Un PV archivé se modifie avec « Modifier le PV ». Dans le PV, rien n'est enregistré avant « Enregistrer » : « Annuler » abandonne les changements. Réunions restreintes : « ＋ Réunion restreinte » crée un groupe (ex. « Médecins généralistes ») avec ses membres ; seuls eux voient ses réunions, ses points et ses PV. L'onglet du groupe fonctionne comme celui de toute l'équipe ; « Gérer le groupe » pour changer le nom ou les membres."],
    ["Réponses types du centre","Dans une conversation, le bouton 💬 propose d'abord les réponses du type de la demande (rendez-vous, prescription…). Tout le monde peut proposer une réponse du centre, avec un ton courtois et respectueux."],
    ["Page patient (adresse, infos pratiques, contacts)","Chaque patient a sa page, visible uniquement par l'équipe : ouvrez-la avec « 👤 Page patient » dans une demande ou une tâche, avec la recherche (Ctrl K) ou depuis Fiches patients. Notez l'adresse, les infos pratiques (étage, sonnette, code de la porte, maison de repos…) et les contacts utiles (infirmière, famille, aidant…). L'adresse et les infos pratiques s'affichent aussi en résumé dans ses demandes. Jamais d'informations médicales : le dossier reste dans CareConnect."],
    ["Pause café","Équipe → Pause café : le mot du jour (de 5 à 8 lettres selon le jour, 8 le vendredi, 6 essais), le sudoku du jour (simple ou moyen), la devinette, la citation du jour et une minute de respiration guidée. Le même contenu pour toute l'équipe. Masquable dans Réglages → Ambiance."],
@@ -3860,12 +3860,15 @@ async function loadOrg(){
     sb.from("room_bookings").select("*").gte("on_date",from).order("on_date").limit(3000),
     sb.from("checklist_templates").select("*").order("sort_order").order("id"),
     sb.from("checklist_runs").select("*").gte("period",addDays(todayISO(),-40)),
-    sb.from("meetings").select("*").order("starts_at",{ascending:false}).limit(40),
+    sb.from("meetings").select("*").order("starts_at",{ascending:false}).limit(300),
     sb.from("meeting_items").select("*").order("sort_order").order("created_at")]);
   S.orgOk=!h.error;
   S.hos=h.data||[]; S.hoRead=new Set((hr.data||[]).map(x=>x.handover_id));
   S.rooms=rm.data||[]; S.rslots=sl.data||[]; S.rbook=bk.data||[]; S.rbookFrom=from;
   S.cltpl=ct.data||[]; S.clruns=cr.data||[]; S.meetings=mt.data||[]; S.mitems=mi.data||[];
+  { const [g,gm]=await Promise.all([Promise.resolve(sb.from("meeting_groups").select("*").order("name")).catch(e=>({error:e})),Promise.resolve(sb.from("meeting_group_members").select("group_id,user_id")).catch(e=>({error:e}))]);
+    S.mgOk=!g.error&&!gm.error; S.mgroups=S.mgOk?(g.data||[]):[]; S.mgmembers=S.mgOk?(gm.data||[]):[];
+    if(S.mtGroup&&!S.mgroups.some(x=>x.id===S.mtGroup)) S.mtGroup=null; }
   const [fl,ku]=await Promise.all([sb.from("staff_flair").select("*"), sb.from("kudos").select("*").order("created_at",{ascending:false}).limit(30)]);
   if(!fl.error) S.flair=Object.fromEntries((fl.data||[]).map(f=>[f.user_id,f])); if(!ku.error) S.kudos=ku.data||[];
   await loadPolls().catch(()=>{ S.pollOk=false; });
@@ -4267,9 +4270,11 @@ function bindChecklists(){
 /* =====================================================================
    RÉUNIONS D'ÉQUIPE : ordre du jour et procès-verbal
    ===================================================================== */
-const mtNext = () => (S.meetings||[]).filter(m=>!m.closed_at).sort((a,b)=>new Date(a.starts_at)-new Date(b.starts_at))[0]||null;
+const mtNext = (g=null) => (S.meetings||[]).filter(m=>!m.closed_at&&(m.group_id??null)===g).sort((a,b)=>new Date(a.starts_at)-new Date(b.starts_at))[0]||null;
+const mgName = g => g?((S.mgroups||[]).find(x=>x.id===g)?.name||"Groupe"):"Toute l'équipe";
+const mgMembers = g => (S.mgmembers||[]).filter(m=>m.group_id===g).map(m=>m.user_id);
 const mtWhen = m => new Date(m.starts_at).toLocaleString(LOC,{weekday:"long",day:"numeric",month:"long",hour:"2-digit",minute:"2-digit"}).replace(/^./,c=>c.toUpperCase());
-const mtItems = id => (S.mitems||[]).filter(i=>i.meeting_id===id);
+const mtItems = (id,g=null) => (S.mitems||[]).filter(i=>i.meeting_id===id&&(id!==null||(i.group_id??null)===g));
 async function mtPdf(m){
   const items=mtItems(m.id), blocks=[];
   if((m.attendees||[]).length) blocks.push({h:"Présents"},{p:(m.attendees||[]).map(staffName).join(", ")});
@@ -4297,23 +4302,42 @@ function mtPvHTML(m,itemRow){ const D=S.mt.draft, past=!!m.closed_at, its=mtItem
     <label class="fld">Compte rendu<textarea id="mt-min" rows="6" maxlength="20000" placeholder="Résumé des échanges, informations données, prochaines étapes…">${esc(D.minutes)}</textarea></label>
     <div class="btnrow"><button type="button" class="btn ghost" id="mt-pvsave">Enregistrer</button>${past?"":`<button type="button" class="btn" id="mt-close">✓ Clôturer la réunion</button>`}<button type="button" class="btn ghost" id="mt-pdf">📄 PV en PDF</button><button type="button" class="btn ghost" id="mt-pvcancel">Annuler</button></div>
     <p class="hint small">Rien n'est enregistré tant que vous ne touchez pas « Enregistrer »${past?"":", « Clôturer »"} ou « PV en PDF ». « Annuler » abandonne les changements.</p></div>`; }
+function mgroupDialog(gid){
+  const g=gid&&(S.mgroups||[]).find(x=>x.id===gid), mem=new Set(gid?mgMembers(gid):[S.me.id]);
+  const all=activeStaff().sort((a,b)=>staffName(a.id).localeCompare(staffName(b.id)));
+  const canDel=g&&(g.created_by===S.me.id||!g.created_by||isAdmin());
+  const v=tMsgDialog(g?"Gérer le groupe de réunion":"Nouvelle réunion restreinte",`<label class="fld">Nom du groupe<input id="mg-name" maxlength="80" value="${esc(g?g.name:"")}" placeholder="Ex. Médecins généralistes"></label>
+    <div class="fld"><span>Membres <small>(seuls eux verront les réunions, les points et les PV du groupe)</small></span>
+     <div class="pclist mglist">${all.map(t=>`<label class="chk2 pcrow"><input type="checkbox" value="${t.id}" ${mem.has(t.id)?"checked":""} ${t.id===S.me.id?"disabled":""}> ${esc(staffName(t.id))}${t.id===S.me.id?" (vous)":""} <small>· ${ROLE_LABEL[t.role]||""}</small></label>`).join("")}</div></div>
+    ${g?`<div class="btnrow mgdanger"><button type="button" class="linkbtn" id="mg-leave">Quitter le groupe</button>${canDel?`<button type="button" class="linkbtn tdel" id="mg-del">Supprimer le groupe et ses réunions</button>`:""}</div>`:""}`,g?"Enregistrer":"Créer le groupe","",async()=>{
+    const name=v.querySelector("#mg-name").value.trim(); if(name.length<2){ toast("Donnez un nom au groupe."); return false; }
+    const ids=[...v.querySelectorAll(".mglist input:checked")].map(i=>i.value).filter(x=>x!==S.me.id);
+    const {data,error}=await sb.rpc("mgroup_save",{p_id:gid||null,p_name:name,p_members:ids}); if(error){ toast(frError(error)); return false; }
+    toast(g?"Groupe modifié":"Groupe créé"); S.mtGroup=data; await loadOrg(); render(); return true; });
+  v.classList.add("casedlg"); v.querySelector("#mg-name").focus();
+  const lv=v.querySelector("#mg-leave"); if(lv) lv.onclick=async()=>{ if(!confirmInline(lv,"Quitter ?")) return;
+    if(await run(()=>sb.rpc("mgroup_leave",{p_id:gid}),"Vous avez quitté le groupe")){ v.remove(); S.mtGroup=null; await loadOrg(); render(); } };
+  const dl=v.querySelector("#mg-del"); if(dl) dl.onclick=async()=>{ if(!confirmInline(dl,"Supprimer définitivement le groupe, ses réunions et ses PV ?")) return;
+    if(await run(()=>sb.rpc("mgroup_delete",{p_id:gid}),"Groupe supprimé")){ v.remove(); S.mtGroup=null; await loadOrg(); render(); } }; }
 function meetingsHTML(){
   const head=`<div class="chead"><div><h1>Réunions d'équipe</h1><p>Chacun ajoute ses points à l'ordre du jour pendant la semaine. Pendant la réunion, on note les décisions et le procès-verbal, puis on le garde ici (et en PDF).</p></div></div>`;
   if(!S.orgLoaded) return head+`<p class="hint">Chargement…</p>`;
   if(S.orgOk===false) return head+orgMissing();
-  const M=S.mt||(S.mt={plan:null,pvFor:null,draft:null,open:null,past:null}), nx=mtNext(), pool=mtItems(null), items=nx?mtItems(nx.id):pool, past=(S.meetings||[]).filter(m=>m.closed_at);
+  const M=S.mt||(S.mt={plan:null,pvFor:null,draft:null,open:null,past:null}), cur=S.mtGroup||null, nx=mtNext(cur), pool=mtItems(null,cur), items=nx?mtItems(nx.id):pool, past=(S.meetings||[]).filter(m=>m.closed_at&&(m.group_id??null)===cur);
+  const gtabs=S.mgOk?`<div class="seg mtgroups" role="group" aria-label="Réunions"><button type="button" data-mtg="" aria-pressed="${!cur}">Toute l'équipe</button>${(S.mgroups||[]).map(g=>`<button type="button" data-mtg="${g.id}" aria-pressed="${cur===g.id}">🔒 ${esc(g.name)}</button>`).join("")}<button type="button" id="mtg-new">＋ Réunion restreinte</button></div>
+    ${cur?`<p class="mtgbar">🔒 Réservé à : <b>${esc(mgMembers(cur).map(staffName).join(", "))}</b>. Les autres membres de l'équipe ne voient ni les réunions, ni les points, ni les PV de ce groupe. <button type="button" class="linkbtn" id="mtg-edit">Gérer le groupe</button></p>`:""}`:"";
   const P=M.plan;
   const planForm=P?`<section class="card mtform"><h3>${P.id?"Modifier la réunion":"Planifier une réunion"}</h3>
     <label class="fld">Titre<input type="text" id="mt-t" maxlength="120" value="${esc(P.title)}"></label>
     <div class="row2"><label class="fld">Date<input type="date" id="mt-d" value="${esc(P.date)}"></label><label class="fld">Heure<input type="time" id="mt-h" step="900" value="${esc(P.time)}"></label></div>
     <label class="fld">Lieu<input type="text" id="mt-l" maxlength="120" value="${esc(P.loc)}" placeholder="Ex. Salle d'attente après la fermeture"></label>
-    ${P.id?"":`<p class="hint">Les points déjà proposés y seront ajoutés. L'équipe reçoit une notification.</p>`}
+    ${P.id?"":`<p class="hint">Les points déjà proposés y seront ajoutés. ${cur?`Les membres du groupe « ${esc(mgName(cur))} » reçoivent`:"L'équipe reçoit"} une notification.</p>`}
     <div class="btnrow"><button type="button" class="btn" id="mt-save">${P.id?"Enregistrer":"🗓️ Planifier"}</button><button type="button" class="btn ghost" id="mt-x">Annuler</button>${P.id?`<button type="button" class="linkbtn tdel" id="mt-del">Supprimer la réunion</button>`:""}</div></section>`:"";
   const itemRow=(i,n,pv)=>`<li class="mti${i.discussed?" ok":""}"><div class="mtih"><b>${n+1}. ${esc(i.text)}</b><small>proposé par ${esc(whoS(i.author_id))}</small>${!pv&&(i.author_id===S.me.id||isAdmin())?`<button type="button" class="linkbtn tdel" data-mtidel="${i.id}">Retirer</button>`:""}</div>
     ${i.details?`<p>${esc(i.details)}</p>`:""}
     ${pv?`<label class="chk2"><input type="checkbox" data-mtok="${i.id}" ${(M.draft?.items[i.id]?.discussed??i.discussed)?"checked":""}> Traité</label><label class="fld">Décision / suite<textarea data-mtdec="${i.id}" rows="2" maxlength="2000" placeholder="Ce qui a été décidé, qui s'en occupe">${esc(M.draft?.items[i.id]?.decision??i.decision??"")}</textarea></label>
       <button type="button" class="linkbtn" data-mttask="${i.id}">＋ En faire une tâche</button>`:i.decision?`<p class="mtdec">➜ ${esc(i.decision)}</p>`:""}</li>`;
-  return head+planForm+`
+  return head+gtabs+planForm+`
   <section class="card mtnext">${nx?`<header><div><h3>🗓️ ${esc(nx.title)}</h3><p><b>${esc(mtWhen(nx))}</b>${nx.location?` · ${esc(nx.location)}`:""}</p></div><span>${P?"":`<button type="button" class="linkbtn" id="mt-edit">Modifier</button>`}</span></header>`
     :`<header><div><h3>📝 Points pour la prochaine réunion</h3><p class="hint">Aucune réunion planifiée.</p></div>${P?"":`<button type="button" class="btn" id="mt-new">🗓️ Planifier une réunion</button>`}</header>`}
     <ol class="mtlist">${items.map((i,n)=>itemRow(i,n,!!(nx&&M.pvFor===nx.id&&M.draft))).join("")||`<p class="hint">Aucun point pour l'instant.</p>`}</ol>
@@ -4325,7 +4349,7 @@ function meetingsHTML(){
     <label class="fld">Titre<input type="text" id="mp-t" maxlength="120" value="${esc(M.past.title)}"></label>
     <div class="row2"><label class="fld">Date<input type="date" id="mp-d" max="${todayISO()}" value="${esc(M.past.date)}"></label><label class="fld">Heure<input type="time" id="mp-h" step="900" value="${esc(M.past.time)}"></label></div>
     <label class="fld">Lieu <small>(facultatif)</small><input type="text" id="mp-l" maxlength="120" value="${esc(M.past.loc)}"></label>
-    <p class="hint">Elle est rangée directement dans les réunions précédentes, sans notification à l'équipe. Vous pourrez ensuite rédiger son procès-verbal.</p>
+    <p class="hint">Elle est rangée directement dans les réunions précédentes${cur?` du groupe « ${esc(mgName(cur))} »`:""}, sans notification. Vous pourrez ensuite rédiger son procès-verbal.</p>
     <div class="btnrow"><button type="button" class="btn" id="mp-save">Ajouter et rédiger le PV</button><button type="button" class="btn ghost" id="mp-x">Annuler</button></div></section>`:""}
   ${past.length?past.sort((a,b)=>new Date(b.starts_at)-new Date(a.starts_at)).map(m=>{ const ed=M.pvFor===m.id&&M.draft, o=M.open===m.id||ed, its=mtItems(m.id);
     return `<section class="card mtpast" id="mtp-${m.id}"><header><button type="button" class="linkbtn mtph" data-mtopen="${m.id}" aria-expanded="${o}"><b>${esc(m.title)}</b> · ${esc(mtWhen(m))} ${o?"▴":"▾"}</button><span>${ed?"":`<button type="button" class="linkbtn" data-mtedit="${m.id}">✏️ ${m.minutes||its.length?"Modifier le PV":"Rédiger le PV"}</button>`}<button type="button" class="linkbtn" data-mtpdf="${m.id}">📄 PDF</button></span></header>
@@ -4333,19 +4357,22 @@ function meetingsHTML(){
 }
 function bindMeetings(){
   if(!S.orgLoaded&&!S.orgLoading){ S.orgLoading=true; loadOrg().catch(e=>{ console.error(e); S.orgOk=false; S.orgLoaded=true; }).finally(()=>{ S.orgLoading=false; softRender("meetings"); }); return; }
-  const M=S.mt; if(!M) return; const nx=mtNext();
+  const M=S.mt; if(!M) return; const cur=S.mtGroup||null, nx=mtNext(cur);
+  $$("[data-mtg]").forEach(b=>b.onclick=()=>{ S.mtGroup=b.dataset.mtg?+b.dataset.mtg:null; M.plan=null; M.past=null; M.pvFor=null; M.draft=null; M.open=null; render(); });
+  const gn=$("#mtg-new"); if(gn) gn.onclick=()=>mgroupDialog(null);
+  const ge=$("#mtg-edit"); if(ge) ge.onclick=()=>mgroupDialog(cur);
   const reload=async()=>{ await loadOrg(); render(); };
-  const nw=$("#mt-new"); if(nw) nw.onclick=()=>{ const d=addDays(todayISO(),7); M.plan={title:"Réunion d'équipe",date:d,time:"13:00",loc:""}; render(); };
+  const nw=$("#mt-new"); if(nw) nw.onclick=()=>{ const d=addDays(todayISO(),7); M.plan={title:cur?`Réunion ${mgName(cur)}`:"Réunion d'équipe",date:d,time:"13:00",loc:""}; render(); };
   const ed=$("#mt-edit"); if(ed) ed.onclick=()=>{ const dt=new Date(nx.starts_at); M.plan={id:nx.id,title:nx.title,date:`${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`,time:dt.toTimeString().slice(0,5),loc:nx.location||""}; render(); };
   const P=M.plan;
   if(P){ $("#mt-x").onclick=()=>{ M.plan=null; render(); };
     const del=$("#mt-del"); if(del) del.onclick=async()=>{ if(!confirmInline(del,"Supprimer la réunion et ses points ?")) return; if(await run(()=>sb.from("meetings").delete().eq("id",P.id),"Réunion supprimée")){ M.plan=null; await reload(); } };
     $("#mt-save").onclick=async e=>{ const t=$("#mt-t").value.trim()||"Réunion d'équipe", d=$("#mt-d").value, h=$("#mt-h").value; if(!d||!h) return toast("Choisissez la date et l'heure.");
       const row={title:t,starts_at:new Date(`${d}T${h}:00`).toISOString(),location:$("#mt-l").value.trim()||null,updated_at:new Date().toISOString()}; e.target.disabled=true;
-      const ok=P.id?await run(()=>sb.from("meetings").update(row).eq("id",P.id),"Réunion modifiée"):await run(()=>sb.from("meetings").insert({...row,created_by:S.me.id}),"Réunion planifiée");
+      const ok=P.id?await run(()=>sb.from("meetings").update(row).eq("id",P.id),"Réunion modifiée"):await run(()=>sb.from("meetings").insert({...row,created_by:S.me.id,...(cur?{group_id:cur}:{})}),"Réunion planifiée");
       if(ok){ M.plan=null; await reload(); } else e.target.disabled=false; }; }
   $("#mt-iadd").onclick=async e=>{ const t=$("#mt-it").value.trim(); if(!t) return toast("Écrivez le point à ajouter."); e.target.disabled=true;
-    if(await run(()=>sb.from("meeting_items").insert({meeting_id:nx?nx.id:null,author_id:S.me.id,text:t,details:$("#mt-id").value.trim()||null,sort_order:Date.now()%2147483647}),"Point ajouté")){ await reload(); $("#mt-it")?.focus(); } else e.target.disabled=false; };
+    if(await run(()=>sb.from("meeting_items").insert({meeting_id:nx?nx.id:null,author_id:S.me.id,text:t,details:$("#mt-id").value.trim()||null,sort_order:Date.now()%2147483647,...(cur?{group_id:cur}:{})}),"Point ajouté")){ await reload(); $("#mt-it")?.focus(); } else e.target.disabled=false; };
   $("#mt-it").onkeydown=e=>{ if(e.key==="Enter") $("#mt-iadd").click(); };
   $$("[data-mtidel]").forEach(b=>b.onclick=async()=>{ if(!confirmInline(b,"Retirer ?")) return; if(await run(()=>sb.from("meeting_items").delete().eq("id",+b.dataset.mtidel),"Point retiré")) await reload(); });
   const pv=$("#mt-pv"); if(pv) pv.onclick=()=>{ mtDraftOpen(nx); render(); };
@@ -4359,12 +4386,12 @@ function bindMeetings(){
   const mn=$("#mt-min"); if(mn&&D) mn.oninput=()=>{ D.minutes=mn.value; };
   const pc=$("#mt-pvcancel"); if(pc) pc.onclick=()=>{ M.pvFor=null; M.draft=null; render(); };
   $$("[data-mtedit]").forEach(b=>b.onclick=()=>{ const m=S.meetings.find(x=>x.id===+b.dataset.mtedit); mtDraftOpen(m); M.open=m.id; render(); $("#mtp-"+m.id)?.scrollIntoView({block:"start",behavior:"smooth"}); });
-  const pn=$("#mt-pastnew"); if(pn) pn.onclick=()=>{ M.past={title:"Réunion d'équipe",date:addDays(todayISO(),-7),time:"13:00",loc:""}; render(); $("#mp-t")?.focus(); };
+  const pn=$("#mt-pastnew"); if(pn) pn.onclick=()=>{ M.past={title:cur?`Réunion ${mgName(cur)}`:"Réunion d'équipe",date:addDays(todayISO(),-7),time:"13:00",loc:""}; render(); $("#mp-t")?.focus(); };
   const px=$("#mp-x"); if(px) px.onclick=()=>{ M.past=null; render(); };
   const ps2=$("#mp-save"); if(ps2) ps2.onclick=async()=>{ const t=$("#mp-t").value.trim()||"Réunion d'équipe", d=$("#mp-d").value, h=$("#mp-h").value||"12:00";
     if(!d) return toast("Choisissez la date de la réunion."); if(d>todayISO()) return toast("Pour une réunion à venir, utilisez « Planifier une réunion ».");
     const at=new Date(`${d}T${h}:00`).toISOString(); ps2.disabled=true;
-    const {data,error}=await sb.from("meetings").insert({title:t,starts_at:at,location:$("#mp-l").value.trim()||null,created_by:S.me.id,closed_at:at,updated_at:new Date().toISOString()}).select("id").single();
+    const {data,error}=await sb.from("meetings").insert({title:t,starts_at:at,location:$("#mp-l").value.trim()||null,created_by:S.me.id,closed_at:at,updated_at:new Date().toISOString(),...(cur?{group_id:cur}:{})}).select("id").single();
     if(error){ ps2.disabled=false; return toast(frError(error)); }
     toast("Réunion ajoutée"); M.past=null; await loadOrg(); const m=S.meetings.find(x=>x.id===data.id); if(m){ mtDraftOpen(m); M.open=m.id; } render(); $("#mtp-"+data.id)?.scrollIntoView({block:"start",behavior:"smooth"}); };
   $$("[data-mttask]").forEach(b=>b.onclick=()=>{ const i=S.mitems.find(x=>x.id===+b.dataset.mttask); S.tdraft={title:(i.decision||i.text).slice(0,200),notes:`Réunion d'équipe : ${i.text}`,due:"",to:"me",patient:null,q:"",remind:null}; S.tformOpen=true; S.tview="todo"; S.cscreen="tasks"; render(); scrollTo(0,0); });
@@ -4386,7 +4413,7 @@ function dashOrgHTML(){
   for(const t of (S.cltpl||[]).filter(x=>x.active&&x.schedule==="daily")){ const r=clRun(t,td), n=clDone(t,r), m=t.items.length;
     out.push(`<button type="button" class="dline dlink" data-cs="checklists">${n>=m?"✅":"☑️"} ${esc(t.title)} : <b>${n}/${m}</b> ›</button>`); }
   for(const a of clAlerts()) out.push(`<button type="button" class="dline dlink dalert" data-cs="checklists">⚠️ ${esc(a)} ›</button>`);
-  const nx=mtNext(); if(nx&&new Date(nx.starts_at)-Date.now()<8*864e5) out.push(`<button type="button" class="dline dlink" data-cs="meetings">🗓️ ${esc(nx.title)} : ${esc(mtWhen(nx))} · ${mtItems(nx.id).length} point${mtItems(nx.id).length>1?"s":""} ›</button>`);
+  for(const g of [null,...(S.mgroups||[]).map(x=>x.id)]){ const nx=mtNext(g); if(nx&&new Date(nx.starts_at)-Date.now()<8*864e5) out.push(`<button type="button" class="dline dlink" data-cs="meetings" data-mtgo="${g||""}">🗓️ ${g?"🔒 ":""}${esc(nx.title)} : ${esc(mtWhen(nx))} · ${mtItems(nx.id).length} point${mtItems(nx.id).length>1?"s":""} ›</button>`); }
   return out.join("");
 }
 function dashHoHTML(){
@@ -4418,7 +4445,7 @@ function renderStaff(a){
   $$("[data-avail]").forEach(ab=>ab.onclick=e=>{ e.stopPropagation(); closeDD(); openAvail(); });
   $$("[data-dd]").forEach(b=>b.onclick=e=>{ e.stopPropagation(); openDD(b.dataset.dd); });
   const bk=$(".ddback"); if(bk) bk.onclick=closeDD;
-  $$("[data-cs]").forEach(b=>b.onclick=()=>{ closeDD(); if(CREC&&b.dataset.cs!=="compose") composeRecStop(false); S.cscreen=b.dataset.cs; render(); window.scrollTo(0,0); });
+  $$("[data-cs]").forEach(b=>b.onclick=()=>{ closeDD(); if(CREC&&b.dataset.cs!=="compose") composeRecStop(false); if("mtgo" in b.dataset) S.mtGroup=b.dataset.mtgo?+b.dataset.mtgo:null; S.cscreen=b.dataset.cs; render(); window.scrollTo(0,0); });
   if(sc==="dash") bindDash(); else if(sc==="pfile") bindPfile(); else if(sc==="visits") bindVisits(); else if(sc==="handovers") bindHandovers(); else if(sc==="rooms") bindRooms(); else if(sc==="checklists") bindChecklists(); else if(sc==="cases") bindCases(); else if(sc==="meetings") bindMeetings(); else if(sc==="pause") bindPause(); else if(sc==="polls") bindPolls(); else if(sc==="directory") bindDirectory(); else if(sc==="stats"&&isAdmin()) bindStats(); else if(sc==="journal"&&isAdmin()) bindJournal(); else if(sc==="compose") bindCompose(); else if(sc==="inventory") bindInventory(); else if(sc==="tasks") bindTasks(); else if(sc==="accounts") bindAccounts(); else if(sc==="news") bindNewsAdmin(); else if(sc==="team") bindTeam(); else if(sc==="settings") bindSettings(); else if(sc==="help"||sc==="leaves") {} else if(sc==="patients") bindPatients(); else if(sc==="messages") bindTeam2(); else if(sc==="templates") bindTemplates(); else if(sc==="binder") bindBinder(); else if(sc==="desk") bindDesk(); else if(sc==="waitlist"){ if(S.waitlist) bindWaitlist(); } else if(sc==="fiches") bindFiches(); else if(sc==="infos") bindInfos(); else if(sc==="feedback"&&isAdmin()) bindFeedback(); else if(sc==="annonces"&&isAdmin()) bindAnnonces(); else if(sc==="hours"&&canOffice()) bindHours(); else if(sc==="cash"&&canOffice()) bindCash(); else bindInbox();
 }
 
