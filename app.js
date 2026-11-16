@@ -913,7 +913,7 @@ async function loadStaff(){
   tasks.push(sb.from("patient_records").select("*").order("last_name").then(r=>S.records=r.error?[]:(r.data||[])));
   tasks.push(sb.from("request_notes").select("*").order("created_at").then(r=>S.notes=r.error?[]:(r.data||[])));
   tasks.push(loadLeaves());
-  tasks.push(loadTeam());
+  tasks.push(loadTeam()); tasks.push(loadCases().catch(e=>console.error(e)));
   if(S.waitlist!==undefined||S.cscreen==="waitlist") tasks.push(loadWaitlist());
   await Promise.all(tasks);
   // enfants (demandes, tâches) et parents à afficher
@@ -1225,7 +1225,7 @@ function render(){
 const BASE_TITLE=document.title;
 const badgeCount = () => !S.me||S.me.status!=="active" ? 0
   : S.me.role==="patient" ? S.notifs.filter(n=>!n.read_at).length
-  : S.reqs.filter(awaitingStaff).length + (S.team2&&S.team2.threads?teamUnread():0);
+  : S.reqs.filter(awaitingStaff).length + (S.team2&&S.team2.threads?teamUnread():0) + casesUnread();
 let lastBadge=-1, lastHot=-1, favImg=null;
 document.addEventListener("visibilitychange",()=>{ if(!document.hidden&&S.me) updateBadges(); });
 addEventListener("focus",()=>{ if(S.me) updateBadges(); });
@@ -2090,7 +2090,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261116a";
+const APP_VERSION="20261116b";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -2320,6 +2320,198 @@ function hydrateTeam(){ $$("[data-tfile]:not([data-ready])").forEach(async el=>{
     else if(el.dataset.kind==="audio"){ const au=el.querySelector("audio"); au.src=f.url; fixAudio(au, f.blob, 0); }
     else el.onclick=async e=>{ e.preventDefault(); if(IS_NATIVE&&SEC()){ try{ await nativePreview(f.blob,f.name); }catch(_){ toast("Ce document n'a pas pu être ouvert."); } } else window.open(f.url,"_blank","noopener"); };
   }catch(e){ el.textContent="Fichier indisponible"; } }); }
+/* ---------- discussions de cas (migration 081) ----------
+   Espace séparé de la messagerie : une discussion = un titre (sans nom de patient), une note de situation,
+   un patient lié (facultatif), des collègues invités et un fil de messages. */
+S.cases=[]; S.caseMembers=[]; S.caseMsgs={}; S.casesOk=false;
+let CASE_RT=null, caseRtTimer=null;
+async function loadCases(){
+  const [a,b]=await Promise.all([
+    Promise.resolve(sb.from("case_discussions").select("*").order("last_at",{ascending:false}).limit(300)).catch(e=>({error:e})),
+    Promise.resolve(sb.from("case_members").select("case_id,user_id,last_read_at,added_at")).catch(e=>({error:e}))]);
+  if(a.error||b.error){ S.casesOk=false; S.cases=[]; S.caseMembers=[]; return; }
+  S.casesOk=true; S.cases=a.data||[]; S.caseMembers=b.data||[];
+  await casePatientsLoad();
+  caseRtStart();
+  if(S.caseOpen&&!S.cases.some(c=>c.id===S.caseOpen)) S.caseOpen=null;
+}
+async function casePatientsLoad(){
+  const refs=S.cases.map(c=>c.patient_ref).filter(Boolean).map(r=>r.split(":"));
+  const p=[...new Set(refs.filter(r=>r[0]==="p"&&!S.profiles[r[1]]).map(r=>r[1]))];
+  const c=[...new Set(refs.filter(r=>r[0]==="c"&&!S.children?.[r[1]]).map(r=>r[1]))];
+  const r=[...new Set(refs.filter(x=>x[0]==="r"&&!(S.records||[]).some(y=>String(y.id)===x[1])).map(x=>x[1]))];
+  try{
+    if(p.length){ const {data}=await sb.from("profiles").select("id,first_name,last_name,birth_date,phone").in("id",p); (data||[]).forEach(x=>S.profiles[x.id]={...(S.profiles[x.id]||{}),...x}); }
+    if(c.length){ const {data}=await sb.from("children").select("id,first_name,last_name,birth_date,created_by").in("id",c); S.children=S.children||{}; (data||[]).forEach(x=>S.children[x.id]=x); }
+    if(r.length){ const {data}=await sb.from("patient_records").select("id,first_name,last_name,birth_date,phone").in("id",r); S.records=S.records||[]; (data||[]).forEach(x=>{ if(!S.records.some(y=>y.id===x.id)) S.records.push(x); }); }
+  }catch(e){ console.error(e); }
+}
+function caseRtStart(){
+  if(CASE_RT||!S.casesOk) return;
+  try{ CASE_RT=sb.channel("cmpl-cases-"+S.me.id)
+    .on("postgres_changes",{event:"INSERT",schema:"public",table:"case_messages"},p=>caseRt(p.new&&p.new.case_id))
+    .on("postgres_changes",{event:"*",schema:"public",table:"case_discussions"},()=>caseRt(null))
+    .subscribe(); }catch(e){ CASE_RT=null; }
+}
+function caseRt(cid){ clearTimeout(caseRtTimer); caseRtTimer=setTimeout(async()=>{ if(!S.me||S.me.role==="patient") return;
+  await loadCases(); if(cid&&S.caseMsgs[cid]) await loadCaseMsgs(cid);
+  if(S.cscreen==="cases"&&S.caseOpen===cid&&cid) sb.rpc("case_read",{p_case:cid}).then(()=>{ const m=caseMe(cid); if(m) m.last_read_at=new Date().toISOString(); updateBadges(); });
+  const typing=document.activeElement&&document.activeElement.id==="case-text";
+  if(S.cscreen==="cases"&&typing&&$("#casemsgs")){ $("#casemsgs").innerHTML=caseMsgsHTML(S.caseOpen); caseScroll(); updateBadges(); }
+  else if(S.cscreen==="cases"&&!typing) render(); else updateBadges(); },350); }
+async function loadCaseMsgs(id){
+  const {data,error}=await sb.from("case_messages").select("id,case_id,author_id,body,created_at").eq("case_id",id).order("created_at").limit(1000);
+  if(!error) S.caseMsgs[id]=data||[]; }
+const caseMems = id => S.caseMembers.filter(m=>m.case_id===id);
+const caseMe = id => S.caseMembers.find(m=>m.case_id===id&&m.user_id===S.me.id);
+const caseUnreadOne = c => { const me=caseMe(c.id); return !!me&&(!me.last_read_at||new Date(c.last_at)>new Date(me.last_read_at)); };
+const casesUnread = () => S.casesOk?S.cases.filter(c=>!c.closed_at&&caseUnreadOne(c)).length:0;
+const casePat = c => { if(!c.patient_ref) return null; const [k,...rest]=c.patient_ref.split(":"); return {k,id:rest.join(":")}; };
+const caseCanClose = c => c.created_by===S.me.id||isAdmin();
+
+function casesHTML(){
+  if(!S.casesOk) return `<div class="chead"><div><h1>🩺 Discussions de cas</h1></div></div><section class="card"><p class="hint">Cette fonction n'est pas encore activée : la migration 081 doit être exécutée dans Supabase.</p></section>`;
+  const c=S.caseOpen&&S.cases.find(x=>x.id===S.caseOpen);
+  return c?caseViewHTML(c):caseListHTML(); }
+function caseListHTML(){
+  const tab=S.caseTab||"open", list=S.cases.filter(c=>tab==="open"?!c.closed_at:!!c.closed_at);
+  const nOpen=S.cases.filter(c=>!c.closed_at).length, nClosed=S.cases.length-nOpen;
+  return `<div class="chead"><div><h1>🩺 Discussions de cas</h1><p>Réfléchir à plusieurs autour d'un patient, avec les collègues que vous invitez. Seuls les membres invités voient la discussion. Les conclusions vont dans le dossier CareConnect.</p></div>
+    <button type="button" class="btn" id="case-new">＋ Nouvelle discussion</button></div>
+    <div class="seg" role="group" aria-label="Filtre"><button type="button" data-casetab="open" aria-pressed="${tab==="open"}">En cours (${nOpen})</button><button type="button" data-casetab="closed" aria-pressed="${tab==="closed"}">Clôturées (${nClosed})</button></div>
+    <div class="caselist">${list.map(c=>{ const p=casePat(c), mem=caseMems(c.id).filter(m=>m.user_id!==S.me.id), un=caseUnreadOne(c)&&!c.closed_at;
+      return `<button type="button" class="card caseitem${un?" unread":""}" data-caseopen="${c.id}"><div class="caseh"><b>${esc(c.title)}</b>${un?`<span class="dot" aria-label="Nouveau"></span>`:""}${c.closed_at?`<span class="pill">Clôturée</span>`:""}</div>
+        ${p?`<small>👤 ${esc(pfName(p.k,p.id))}</small>`:""}<small>Avec ${esc(mem.map(m=>staffName(m.user_id)).join(", ")||"personne d'autre")} · ${esc(fmt(c.last_at))}</small></button>`; }).join("")
+      ||`<section class="card"><p class="hint">${tab==="open"?"Aucune discussion en cours. Ouvrez-en une pour demander l'avis de vos collègues sur un cas.":"Aucune discussion clôturée."}</p></section>`}</div>
+    <p class="hint small">Les discussions clôturées sont effacées automatiquement après 6 mois. Ne remplace pas le dossier médical.</p>`; }
+function caseMsgsHTML(id){
+  const ms=S.caseMsgs[id]; if(!ms) return `<p class="hint">Chargement…</p>`;
+  if(!ms.length) return `<p class="hint casehint">Pas encore de message. Posez votre question à vos collègues.</p>`;
+  let last=""; return ms.map(m=>{ const d=new Date(m.created_at).toDateString(), sep=d!==last?`<div class="day"><span>${esc(dayLabel(m.created_at))}</span></div>`:""; last=d;
+    if(!m.author_id) return sep+`<p class="casesys">${esc(m.body)} · ${esc(hm(m.created_at))}</p>`;
+    const mine=m.author_id===S.me.id;
+    return sep+`<div class="tmw ${mine?"me":""}"><div class="bubw"><div class="tm ${mine?"me":""}">${mine?"":`<span class="who">${esc(staffName(m.author_id))}</span>`}<p dir="auto">${esc((m.body))}</p><small>${esc(hm(m.created_at))}</small></div></div></div>`; }).join(""); }
+function caseScroll(){ const b=$("#casemsgs"); if(b) b.scrollTop=b.scrollHeight; }
+function caseViewHTML(c){
+  const p=casePat(c), mem=caseMems(c.id), closed=!!c.closed_at, ed=S.caseNoteEdit===c.id;
+  return `<div class="chead casehead"><div><button type="button" class="linkbtn" id="case-back">‹ Toutes les discussions</button><h1>${esc(c.title)}</h1>
+      <p>${p?`${pfBtn(p.k,p.id,esc(pfName(p.k,p.id)))} · `:""}Ouverte par ${esc(staffName(c.created_by))} le ${esc(fmtDate(c.created_at))}${closed?` · <b>clôturée</b> le ${esc(fmtDate(c.closed_at))}`:""}</p></div></div>
+    <div class="casegrid">
+     <div class="casemain">
+      <section class="card casenote"><div class="casenoteh"><h3>📋 Situation et question</h3>${!closed&&!ed?`<button type="button" class="linkbtn" id="case-note-ed">✏️ Modifier</button>`:""}</div>
+       ${ed?`<textarea id="case-note" rows="7" maxlength="8000" dir="auto">${esc(c.note||"")}</textarea><div class="btnrow"><button type="button" class="btn" id="case-note-save">Enregistrer</button><button type="button" class="btn ghost" id="case-note-x">Annuler</button></div>`
+         :`<p class="casenotetx" dir="auto">${c.note?esc((c.note)):`<span class="hint">Pas encore de note. Décrivez la situation et la question posée.</span>`}</p>
+           ${c.note_at?`<small class="hint">Modifiée par ${esc(staffName(c.note_by))} le ${esc(fmtDate(c.note_at))} à ${esc(hm(c.note_at))} · <button type="button" class="linkbtn" id="case-note-hist">Historique</button></small>`:""}`}
+      </section>
+      <section class="card casechat"><div class="tmsgs casemsgs" id="casemsgs">${caseMsgsHTML(c.id)}</div>
+       ${closed?`<p class="hint casehint">Discussion clôturée.${caseCanClose(c)?" Rouvrez-la pour écrire à nouveau.":""}</p>`
+         :`<div class="casecomp"><textarea id="case-text" rows="2" maxlength="4000" placeholder="Votre avis, une question…" dir="auto">${esc(S.drafts["case"+c.id]||"")}</textarea><button type="button" class="btn" id="case-send">Envoyer</button></div>`}
+      </section>
+     </div>
+     <aside class="card caseside"><h3>Membres (${mem.length})</h3><ul class="casemem">${mem.map(m=>`<li>${esc(staffName(m.user_id))}${m.user_id===c.created_by?` <small>· a ouvert</small>`:""}</li>`).join("")}</ul>
+      ${closed?"":`<button type="button" class="btn ghost" id="case-invite">＋ Inviter des collègues</button>`}
+      <p class="hint small">Plus tard : inviter un intervenant externe, qui ne verra que cette discussion.</p>
+      <div class="btnrow">${caseCanClose(c)?`<button type="button" class="btn ghost" id="case-close">${closed?"Rouvrir":"✓ Clôturer"}</button>`:""}${c.created_by!==S.me.id?`<button type="button" class="btn ghost" id="case-leave">Quitter</button>`:""}</div>
+     </aside>
+    </div>`; }
+function caseNewDialog(pre){
+  const others=(S.team||[]).filter(t=>t.status==="active"&&t.id!==S.me.id).sort((a,b)=>staffName(a.id).localeCompare(staffName(b.id)));
+  let pat=pre||null;
+  const v=document.createElement("div"); v.className="modal casedlg"; v.setAttribute("role","dialog"); v.setAttribute("aria-modal","true"); v.setAttribute("aria-label","Nouvelle discussion de cas");
+  v.innerHTML=`<div class="mbox"><h2>🩺 Nouvelle discussion de cas</h2>
+    <label class="fld">Titre<input id="cn-title" maxlength="120" placeholder="Ex. Douleurs abdominales récidivantes, quel bilan ?"><small class="hint">Sans nom de patient : le titre apparaît dans les listes.</small></label>
+    <div class="fld"><span>Patient concerné <small>(facultatif)</small></span><div id="cn-pat"></div></div>
+    <label class="fld">Situation et question<textarea id="cn-note" rows="5" maxlength="8000" placeholder="Contexte utile, ce qui a déjà été fait, la question posée aux collègues"></textarea></label>
+    <div class="fld"><span>Collègues invités</span><input id="cn-q" class="pcq" placeholder="Rechercher un collègue…" aria-label="Rechercher un collègue">
+     <div class="pclist">${others.map(t=>`<label class="chk2 pcrow" data-n="${esc(staffName(t.id).toLowerCase())}"><input type="checkbox" value="${t.id}"> ${esc(staffName(t.id))} <small>· ${ROLE_LABEL[t.role]}</small></label>`).join("")}</div></div>
+    <div class="btnrow"><button type="button" class="btn" id="cn-ok">Ouvrir la discussion</button><button type="button" class="btn ghost" id="cn-x">Annuler</button></div></div>`;
+  document.body.appendChild(v);
+  const close=()=>{ v.remove(); removeEventListener("keydown",k); }, k=e=>{ if(e.key==="Escape") close(); }; addEventListener("keydown",k);
+  v.querySelector("#cn-x").onclick=close; v.onclick=e=>{ if(e.target===v) close(); };
+  v.querySelector("#cn-q").oninput=e=>{ const q=e.target.value.toLowerCase(); v.querySelectorAll(".pcrow").forEach(r=>r.hidden=!r.dataset.n.includes(q)); };
+  const drawPat=()=>{ const box=v.querySelector("#cn-pat");
+    if(pat){ box.innerHTML=`<div class="cnpat"><b>👤 ${esc(`${pat.first_name||""} ${pat.last_name||""}`)}</b>${pat.birth_date?` <small>né(e) le ${esc(fmtDate(pat.birth_date))}</small>`:""} <button type="button" class="linkbtn" id="cn-patx">Retirer</button></div>`;
+      box.querySelector("#cn-patx").onclick=()=>{ pat=null; drawPat(); }; return; }
+    box.innerHTML=`<input id="cn-pq" class="pcq" placeholder="Nom du patient…" aria-label="Rechercher un patient"><div id="cn-pres" class="pclist"></div>`;
+    let tm; box.querySelector("#cn-pq").oninput=e=>{ clearTimeout(tm); const w=norm(e.target.value).split(/\s+/).filter(x=>x.length>=2); const res=box.querySelector("#cn-pres");
+      if(!w.length){ res.innerHTML=""; return; }
+      tm=setTimeout(async()=>{ const l=await searchPatients(w)||[]; res.innerHTML=l.length?l.map(p=>patientPickRow(p)).join(""):`<p class="hint">Aucun patient trouvé.</p>`;
+        res.querySelectorAll("[data-pick]").forEach(b=>b.onclick=()=>{ pat=l.find(x=>String(x.id)===b.dataset.pick); drawPat(); }); },250); }; };
+  drawPat();
+  v.querySelector("#cn-ok").onclick=async e=>{ const title=v.querySelector("#cn-title").value.trim(), note=v.querySelector("#cn-note").value.trim();
+    const ids=[...v.querySelectorAll(".pcrow input:checked")].map(i=>i.value);
+    if(title.length<2) return toast("Donnez un titre à la discussion.");
+    if(!ids.length) return toast("Invitez au moins un collègue.");
+    const ref=pat?`${pat.child?"c":pat.record?"r":"p"}:${pat.id}`:null;
+    if(pat){ if(pat.child){ S.children=S.children||{}; S.children[pat.id]=pat; } else if(pat.record){ S.records=S.records||[]; if(!S.records.some(x=>x.id===pat.id)) S.records.push(pat); } else S.profiles[pat.id]={...(S.profiles[pat.id]||{}),...pat}; }
+    e.target.disabled=true;
+    const {data,error}=await sb.rpc("case_start",{p_title:title,p_note:note,p_patient:ref,p_members:ids});
+    if(error){ e.target.disabled=false; return toast(frError(error)); }
+    close(); toast("Discussion ouverte"); await loadCases(); S.caseOpen=data; S.caseMsgs[data]=[]; S.cscreen="cases"; render(); scrollTo(0,0); };
+  v.querySelector("#cn-title").focus();
+}
+function bindCases(){
+  if(!S.casesOk) return;
+  $$("[data-casetab]").forEach(b=>b.onclick=()=>{ S.caseTab=b.dataset.casetab; render(); });
+  const nw=$("#case-new"); if(nw) nw.onclick=()=>caseNewDialog(null);
+  $$("[data-caseopen]").forEach(b=>b.onclick=async()=>{ const id=+b.dataset.caseopen; S.caseOpen=id; S.caseNoteEdit=null; render(); scrollTo(0,0);
+    await loadCaseMsgs(id); sb.rpc("case_read",{p_case:id}).then(()=>{ const m=caseMe(id); if(m) m.last_read_at=new Date().toISOString(); updateBadges(); }); if(S.caseOpen===id) render(); });
+  const c=S.caseOpen&&S.cases.find(x=>x.id===S.caseOpen); if(!c) return;
+  if(!S.caseMsgs[c.id]) loadCaseMsgs(c.id).then(()=>{ if(S.caseOpen===c.id) render(); });
+  caseScroll();
+  $("#case-back").onclick=()=>{ S.caseOpen=null; S.caseNoteEdit=null; render(); scrollTo(0,0); };
+  const ne=$("#case-note-ed"); if(ne) ne.onclick=()=>{ S.caseNoteEdit=c.id; render(); $("#case-note")?.focus(); };
+  const nx=$("#case-note-x"); if(nx) nx.onclick=()=>{ S.caseNoteEdit=null; render(); };
+  const ns=$("#case-note-save"); if(ns) ns.onclick=async()=>{ const v=$("#case-note").value; ns.disabled=true;
+    if(await run(()=>sb.rpc("case_set_note",{p_case:c.id,p_note:v}),"Note enregistrée")){ S.caseNoteEdit=null; await loadCases(); render(); } else ns.disabled=false; };
+  const nh=$("#case-note-hist"); if(nh) nh.onclick=async()=>{ const {data,error}=await sb.from("case_note_history").select("old_note,new_note,edited_by,edited_at").eq("case_id",c.id).order("edited_at");
+    if(error) return toast(frError(error)); const h=data||[];
+    const list=h.length?[`<li><b>Version d'origine</b><p dir="auto">${esc(h[0].old_note||"(vide)")}</p></li>`,...h.map((x,i)=>`<li><b>${i===h.length-1?"Version actuelle":"Version "+(i+2)}</b> <small>par ${esc(staffName(x.edited_by))}, ${esc(fmtDate(x.edited_at))} à ${esc(hm(x.edited_at))}</small><p dir="auto">${esc(x.new_note||"(vide)")}</p></li>`)].join(""):`<li>La note n'a pas encore été modifiée.</li>`;
+    const v=tMsgDialog("Historique de la note",`<ol class="mhist">${list}</ol>`,"Fermer","",async()=>true); v.querySelector("[data-no]").remove(); };
+  const ta=$("#case-text"); if(ta){ ta.oninput=()=>{ S.drafts["case"+c.id]=ta.value; };
+    const send=async()=>{ const body=ta.value.trim(); if(!body) return; const b=$("#case-send"); b.disabled=true;
+      const {error}=await sb.rpc("case_send",{p_case:c.id,p_body:body}); b.disabled=false;
+      if(error) return toast(frError(error)); S.drafts["case"+c.id]=""; await loadCaseMsgs(c.id); await loadCases(); render(); $("#case-text")?.focus(); };
+    $("#case-send").onclick=send; ta.onkeydown=e=>{ if(e.key==="Enter"&&(e.ctrlKey||e.metaKey)){ e.preventDefault(); send(); } }; }
+  const inv=$("#case-invite"); if(inv) inv.onclick=()=>pickColleagues("Inviter à la discussion",caseMems(c.id).map(m=>m.user_id),async ids=>{
+    if(await run(()=>sb.rpc("case_add_members",{p_case:c.id,p_members:ids}),"Invitation envoyée")){ await loadCases(); await loadCaseMsgs(c.id); render(); return true; } return false; });
+  const cl=$("#case-close"); if(cl) cl.onclick=async()=>{ const on=!c.closed_at; if(on&&!confirmInline(cl,"Clôturer ?")) return;
+    if(await run(()=>sb.rpc("case_close",{p_case:c.id,p_close:on}),on?"Discussion clôturée":"Discussion rouverte")){ await loadCases(); await loadCaseMsgs(c.id); render(); } };
+  const lv=$("#case-leave"); if(lv) lv.onclick=async()=>{ if(!confirmInline(lv,"Quitter ?")) return;
+    if(await run(()=>sb.rpc("case_leave",{p_case:c.id}),"Vous avez quitté la discussion")){ S.caseOpen=null; await loadCases(); render(); } };
+}
+
+/* ---------- mur des anecdotes (Pause café, migration 081) ---------- */
+const WALL_COLORS=[["jaune","#fff3a6"],["rose","#ffd1dc"],["bleu","#cfe8ff"],["vert","#d4f5c9"],["orange","#ffdcb3"]];
+async function loadWall(){ const {data,error}=await sb.rpc("pause_wall"); S.wallOk=!error; S.wall=error?[]:(data||[]); S.wallLoaded=true; }
+function wallHTML(){
+  if(!S.wallLoaded) return `<section class="card pzcard"><p class="hint">Chargement du mur…</p></section>`;
+  if(!S.wallOk) return `<section class="card pzcard"><p class="hint">Le mur des anecdotes n'est pas encore activé : la migration 081 doit être exécutée dans Supabase.</p></section>`;
+  const col=S.wallColor||"jaune";
+  const rot=id=>((id*37)%7-3)*0.9;
+  return `<section class="card pzcard wallform"><h3>📌 Une anecdote drôle avec un patient ?</h3>
+     <p class="hint wallwarn">⚠️ Jamais de nom, d'âge, de date, de lieu ni de détail qui permettrait de reconnaître le patient. Restez bienveillant : on rit <i>avec</i>, pas <i>de</i>.</p>
+     <textarea id="wall-text" rows="3" maxlength="400" placeholder="Racontez en quelques lignes…" dir="auto">${esc(S.wallDraft||"")}</textarea>
+     <div class="wallopts"><div class="wallcols" role="radiogroup" aria-label="Couleur du post-it">${WALL_COLORS.map(([k,h])=>`<button type="button" class="wallcol${k===col?" on":""}" data-wcol="${k}" style="background:${h}" role="radio" aria-checked="${k===col}" aria-label="${k}"></button>`).join("")}</div>
+      <label class="chk2"><input type="checkbox" id="wall-anon" ${S.wallAnon?"checked":""}> Anonyme</label>
+      <button type="button" class="btn" id="wall-add">📌 Épingler</button></div></section>
+   <div class="wallboard">${(S.wall||[]).map(s=>{ const h=(WALL_COLORS.find(x=>x[0]===s.color)||WALL_COLORS[0])[1];
+     return `<article class="postit" style="--pc:${h};--rot:${rot(s.id)}deg"><span class="pin" aria-hidden="true"></span><p dir="auto">${esc(s.body)}</p>
+       <footer><small>${s.author?esc(s.author):"Anonyme"} · ${esc(fmtDate(s.created_at))}</small><span><button type="button" class="wlaugh${s.laughed?" on":""}" data-wlaugh="${s.id}" aria-pressed="${s.laughed}" title="Ça m'a fait rire">😂 ${s.laughs||""}</button>${s.mine||isAdmin()?`<button type="button" class="wdel" data-wdel="${s.id}" title="Retirer" aria-label="Retirer ce post-it">✕</button>`:""}</span></footer></article>`; }).join("")
+     ||`<p class="hint wallempty">Le mur est vide. Épinglez la première anecdote !</p>`}</div>`; }
+function bindWall(){
+  if(!S.wallLoaded&&!S.wallLoading){ S.wallLoading=true; loadWall().finally(()=>{ S.wallLoading=false; if(S.cscreen==="pause"&&S.pz?.tab==="mur") render(); }); return; }
+  const ta=$("#wall-text"); if(!ta) return; ta.oninput=()=>{ S.wallDraft=ta.value; };
+  $$("[data-wcol]").forEach(b=>b.onclick=()=>{ S.wallColor=b.dataset.wcol; render(); });
+  const an=$("#wall-anon"); if(an) an.onchange=()=>{ S.wallAnon=an.checked; };
+  $("#wall-add").onclick=async e=>{ const t=ta.value.trim(); if(t.length<3) return toast("Écrivez votre anecdote."); e.target.disabled=true;
+    if(await run(()=>sb.rpc("pause_wall_add",{p_body:t,p_color:S.wallColor||"jaune",p_anon:!!S.wallAnon}),"Épinglé au mur 📌")){ S.wallDraft=""; await loadWall(); render(); } else e.target.disabled=false; };
+  $$("[data-wlaugh]").forEach(b=>b.onclick=async()=>{ const id=+b.dataset.wlaugh, s=S.wall.find(x=>x.id===id); const {data,error}=await sb.rpc("pause_wall_laugh",{p_id:id});
+    if(error) return toast(frError(error)); s.laughed=!!data; s.laughs=(s.laughs||0)+(data?1:-1); render(); });
+  $$("[data-wdel]").forEach(b=>b.onclick=async()=>{ if(!confirmInline(b,"Retirer ?")) return; const id=+b.dataset.wdel;
+    if(await run(()=>sb.rpc("pause_wall_delete",{p_id:id}),"Post-it retiré")){ S.wall=S.wall.filter(x=>x.id!==id); render(); } });
+}
+
 function pickColleagues(title, exclude, done, withName, pre){
   const others=(S.team||[]).filter(t=>t.status==="active"&&t.id!==S.me.id&&!exclude.includes(t.id)).sort((a,b)=>staffName(a.id).localeCompare(staffName(b.id)));
   const v=document.createElement("div"); v.className="modal"; v.setAttribute("role","dialog"); v.setAttribute("aria-modal","true");
@@ -2970,6 +3162,8 @@ function staffHelpHTML(){
    ["Ne pas oublier de répondre","Messages : en haut d'une conversation, « Prioritaire » met un drapeau rouge ; la conversation reste tout en haut de votre liste jusqu'à ce que vous retiriez le drapeau. « Non lu » la remet en gras avec une pastille, comme si vous ne l'aviez pas ouverte, jusqu'à ce que vous la rouvriez. Ces repères sont personnels : les collègues ne voient rien changer."],
    ["Ce qui est gardé, ce qui est effacé","Gardé : messages de l'équipe sur l'organisation, inventaire, congés, tâches sans patient, classeur, horaires (5 ans), caisse (10 ans). Effacé : conversations avec les patients (15 jours après la clôture), conversations d'équipe marquées « Concerne des patients » et messages qui joignent une demande (90 jours), tâches liées à un patient (90 jours après)."],
    ["Joindre un document à une tâche","Tâches et Accueil : en créant la tâche, « Joindre un document » (photo, PDF) ou « Scanner » ; ou plus tard, « Joindre » sous la tâche. 10 documents maximum, 5 Mo chacun. Seules les personnes de la tâche les voient ; ils sont effacés 90 jours après que la tâche est faite. Touchez un document pour l'ouvrir."],
+   ["Discussions de cas","Équipe → Discussions de cas : « Nouvelle discussion », un titre sans nom de patient, le patient concerné (facultatif), la situation et la question, puis les collègues à inviter. Seuls les membres voient la discussion. Chacun peut compléter la note (avec historique) et répondre ; on peut inviter d'autres collègues en cours de route. La personne qui l'a ouverte la clôture quand c'est réglé : les conclusions vont dans CareConnect, et les discussions clôturées sont effacées après 6 mois. Aussi depuis la page d'un patient : « 🩺 Discussion de cas ». Les notifications ne contiennent jamais le titre ni le patient."],
+   ["Mur des anecdotes","Pause café → 📌 Anecdotes : un tableau de post-its où chacun épingle un épisode drôle vécu avec un patient, en son nom ou anonymement. Jamais de détail qui permettrait de reconnaître le patient. 😂 pour dire que ça vous a fait rire ; chacun peut retirer ses post-its."],
    ["Corriger un message envoyé à un patient","Dans une demande, sur un de vos messages : 🙂 (ou clic droit) sur ordinateur, appui long sur téléphone, puis « Modifier ». Le patient voit la mention « modifié » et reçoit une notification neutre. L'ancienne version est gardée : touchez « modifié » pour voir tout l'historique (qui, quand, quoi). La correction est aussi inscrite dans le journal. Les messages des patients ne sont jamais modifiables, et une conversation classée doit être rouverte avant correction."],
    ["Modifier ou supprimer un message","Dans les messages de l'équipe, sur un de vos messages : survolez la bulle et cliquez sur 🙂 (ou clic droit) sur ordinateur, appui long sur téléphone, puis « Modifier » ou « Supprimer ». Un message modifié porte la mention « modifié » (touchez-la pour voir l'historique) ; un message supprimé est remplacé par « Message supprimé » pour tout le monde, avec sa pièce jointe. Aucune notification n'est envoyée."],
    ["Répondre à un message et réagir","Comme sur WhatsApp, dans les demandes et dans les messages de l'équipe. Sur ordinateur : passez la souris sur une bulle et cliquez sur 🙂 (ou clic droit). Sur téléphone : appui long sur la bulle. Choisissez un emoji (il s'affiche sous la bulle ; touchez-le à nouveau pour le retirer) ou « Répondre » : le message est cité au-dessus de votre réponse. Touchez une citation pour retrouver le message d'origine."],
@@ -3252,7 +3446,7 @@ const devOfDay = () => DEVINETTES[(dayNum()*13)%DEVINETTES.length];
 async function loadPauseRes(){ const {data,error}=await sb.from("pause_results").select("*").eq("day",todayISO()); if(!error) S.pauseRes=data||[]; S.pauseLoaded=true; }
 function pauseHTML(){
   const P=S.pz||(S.pz={tab:"mot",devOpen:false,breath:false}), a=motOfDay(), st=motState();
-  const tabs=`<div class="seg pztabs" role="group" aria-label="Pause"><button type="button" data-pztab="mot" aria-pressed="${P.tab==="mot"}">🧩 Mot du jour</button><button type="button" data-pztab="sdk" aria-pressed="${P.tab==="sdk"}">🔢 Sudoku</button><button type="button" data-pztab="dev" aria-pressed="${P.tab==="dev"}">🤔 Devinette</button><button type="button" data-pztab="cit" aria-pressed="${P.tab==="cit"}">💬 Citation</button><button type="button" data-pztab="resp" aria-pressed="${P.tab==="resp"}">🌬️ Respirer</button></div>`;
+  const tabs=`<div class="seg pztabs" role="group" aria-label="Pause"><button type="button" data-pztab="mot" aria-pressed="${P.tab==="mot"}">🧩 Mot du jour</button><button type="button" data-pztab="sdk" aria-pressed="${P.tab==="sdk"}">🔢 Sudoku</button><button type="button" data-pztab="dev" aria-pressed="${P.tab==="dev"}">🤔 Devinette</button><button type="button" data-pztab="cit" aria-pressed="${P.tab==="cit"}">💬 Citation</button><button type="button" data-pztab="mur" aria-pressed="${P.tab==="mur"}">📌 Anecdotes</button><button type="button" data-pztab="resp" aria-pressed="${P.tab==="resp"}">🌬️ Respirer</button></div>`;
   const head=`<div class="chead pzhead"><div><h1>☕ Pause café</h1><p>Deux minutes pour souffler entre deux patients. Le même mot, le même sudoku et la même devinette pour toute l'équipe, chaque jour.</p></div></div>`;
   let body="";
   if(P.tab==="mot"){
@@ -3268,6 +3462,8 @@ function pauseHTML(){
       <section class="card pzcard"><h3>Aujourd'hui dans l'équipe</h3>${team.length?team.map(r=>`<p class="pzres">${esc(flairEmoji(r.user_id))} <b>${esc(whoS(r.user_id))}</b> : ${r.solved?`trouvé en ${r.tries}/6`:"pas trouvé"}</p>`).join(""):`<p class="hint">Personne n'a encore fini le mot du jour. À vous de jouer !</p>`}</section>`;
   } else if(P.tab==="sdk"){
     body=sdkHTML();
+  } else if(P.tab==="mur"){
+    body=wallHTML();
   } else if(P.tab==="cit"){
     const n=QUOTES.length, k=(((dayNum()*37)+(P.citOff||0))%n+n)%n, [q,au]=QUOTES[k];
     body=`<section class="card pzcard citcard"><div class="citmark" aria-hidden="true">“</div><blockquote class="cittx">${esc(q)}</blockquote><p class="citau">— ${esc(au)}</p>
@@ -3287,6 +3483,7 @@ function pauseHTML(){
 function bindPause(){
   if(!S.pauseLoaded&&!S.pauseLoading){ S.pauseLoading=true; loadPauseRes().catch(()=>{ S.pauseLoaded=true; }).finally(()=>{ S.pauseLoading=false; if(S.cscreen==="pause") render(); }); }
   const P=S.pz; $$("[data-pztab]").forEach(b=>b.onclick=()=>{ P.tab=b.dataset.pztab; stopBreath(); render(); });
+  if(P.tab==="mur") bindWall();
   const pzt=$(".pztabs"), pza=pzt&&pzt.querySelector("[aria-pressed=true]"); if(pzt&&pza&&pzt.scrollWidth>pzt.clientWidth) pzt.scrollLeft=pza.offsetLeft-(pzt.clientWidth-pza.offsetWidth)/2;
   if(P.tab==="mot"){
     const a=motOfDay();
@@ -3475,7 +3672,7 @@ function pfileHTML(){
     ${k==="p"?avatarHTML(AV.get(id),nm,56):avatarHTML(null,nm,56)}
     <div class="pfwho"><h1>${esc(nm)}</h1><p>${p.birth_date?`Né(e) le ${fmtDate(p.birth_date)}${age!==""?` · ${age} an${age>1?"s":""}`:""}`:""}${p.phone?` · Tél. <a href="${telHref(p.phone)}">${esc(p.phone)}</a>`:""}${k==="r"&&p.email?` · ${esc(p.email)}`:""}</p>${kind}</div>
     <div class="pfacts">${k!=="r"?`<button type="button" class="btn" id="pf-write">${SI.pen}<span>Écrire</span></button>`:`<button type="button" class="btn ghost" id="pf-redit">Modifier l'identité</button>`}
-      <button type="button" class="btn ghost" id="pf-task">＋ Tâche</button>${canExam()?`<button type="button" class="btn ghost" id="pf-exam">🧪 Examen</button>`:""}<button type="button" class="btn ghost" id="pf-talk">💬 En parler</button></div></div>
+      <button type="button" class="btn ghost" id="pf-task">＋ Tâche</button>${canExam()?`<button type="button" class="btn ghost" id="pf-exam">🧪 Examen</button>`:""}<button type="button" class="btn ghost" id="pf-talk">💬 En parler</button>${S.casesOk?`<button type="button" class="btn ghost" id="pf-case">🩺 Discussion de cas</button>`:""}</div></div>
   <div class="pfgrid"><div class="pfcol">${E?edit:view}</div>
    <div class="pfcol">
     ${own&&(own.phone||(own.extra_contacts||[]).length||own.contact_note)?`<section class="card pfcard"><header><h3>👤 Coordonnées données par ${k==="c"?"le parent":"le patient"}</h3></header>
@@ -3498,6 +3695,7 @@ function bindPfile(){
   const re=$("#pf-redit"); if(re) re.onclick=()=>{ S.recEdit=id; S.recDraft={first:p.first_name,last:p.last_name,birth:p.birth_date,phone:p.phone||"",email:p.email||""}; S.cscreen="patients"; render(); scrollTo(0,0); };
   const nt=(mode)=>{ S.tdraft={title:"",notes:"",due:mode==="exam"?addDays(todayISO(),7):"",to:"me",patient:pt,q:"",remind:null,mode}; S.tformOpen=true; S.tview="todo"; S.cscreen="tasks"; render(); scrollTo(0,0); (mode==="exam"?null:$("#tk-title"))?.focus(); };
   $("#pf-task").onclick=()=>nt("task"); const ex=$("#pf-exam"); if(ex) ex.onclick=()=>nt("exam");
+  const pfc=$("#pf-case"); if(pfc) pfc.onclick=()=>caseNewDialog(k==="r"?{...p,id,record:true}:k==="c"?{...p,id,child:true}:{...p,id});
   $("#pf-talk").onclick=()=>pickColleagues("En parler avec…",[],async(ids,name)=>{ const {data,error}=await sb.rpc("team_start",{p_members:ids,p_title:name||null}); if(error){ toast(frError(error)); return false; }
     await loadTeam(); S.tthread=data; S.drafts["t"+data]=`À propos de ${nm}${p.birth_date?` (né(e) le ${fmtDate(p.birth_date)})`:""} : `; S.cscreen="messages"; render(); const c=$("#c-text"); if(c){ c.focus(); c.setSelectionRange(c.value.length,c.value.length); } });
   $$("[data-pfreq]").forEach(b=>b.onclick=()=>{ const r=S.reqs.find(x=>x.id===+b.dataset.pfreq); if(!r) return; S.cscreen="inbox"; S.archive=false; S.itype="all"; S.iq=""; S.sel=r.id; S.scope="all"; render(); scrollTo(0,0); });
@@ -4137,7 +4335,7 @@ function renderStaff(a){
   const sc=S.cscreen;
   const nav=staffNavHTML(sc);
   let body="";
-  if(sc==="dash") body=dashHTML(); else if(sc==="pfile") body=pfileHTML(); else if(sc==="visits") body=visitsHTML(); else if(sc==="handovers") body=handoversHTML(); else if(sc==="rooms") body=roomsHTML(); else if(sc==="checklists") body=checklistsHTML(); else if(sc==="meetings") body=meetingsHTML(); else if(sc==="pause") body=pauseHTML(); else if(sc==="polls") body=pollsHTML(); else if(sc==="directory") body=directoryHTML(); else if(sc==="stats"&&isAdmin()) body=statsHTML(); else if(sc==="journal"&&isAdmin()) body=journalHTML(); else if(sc==="compose") body=composeHTML(); else if(sc==="inventory") body=inventoryHTML(); else if(sc==="tasks") body=tasksHTML(); else if(sc==="accounts") body=accountsHTML(); else if(sc==="news") body=newsAdminHTML(); else if(sc==="team") body=teamHTML(); else if(sc==="settings") body=settingsHTML(); else if(sc==="help") body=staffHelpHTML(); else if(sc==="leaves") body=leavesHTML(); else if(sc==="patients") body=patientsHTML(); else if(sc==="messages") body=teamHTML2(); else if(sc==="templates") body=templatesHTML(); else if(sc==="binder") body=binderHTML(); else if(sc==="desk") body=deskHTML(); else if(sc==="waitlist") body=waitlistHTML(); else if(sc==="fiches") body=fichesHTML(); else if(sc==="infos") body=infosHTML(); else if(sc==="feedback"&&isAdmin()) body=feedbackHTML(); else if(sc==="annonces"&&isAdmin()) body=annoncesHTML(); else if(sc==="hours"&&canOffice()) body=hoursHTML(); else if(sc==="cash"&&canOffice()) body=cashHTML(); else body=inboxHTML();
+  if(sc==="dash") body=dashHTML(); else if(sc==="pfile") body=pfileHTML(); else if(sc==="visits") body=visitsHTML(); else if(sc==="handovers") body=handoversHTML(); else if(sc==="rooms") body=roomsHTML(); else if(sc==="checklists") body=checklistsHTML(); else if(sc==="cases") body=casesHTML(); else if(sc==="meetings") body=meetingsHTML(); else if(sc==="pause") body=pauseHTML(); else if(sc==="polls") body=pollsHTML(); else if(sc==="directory") body=directoryHTML(); else if(sc==="stats"&&isAdmin()) body=statsHTML(); else if(sc==="journal"&&isAdmin()) body=journalHTML(); else if(sc==="compose") body=composeHTML(); else if(sc==="inventory") body=inventoryHTML(); else if(sc==="tasks") body=tasksHTML(); else if(sc==="accounts") body=accountsHTML(); else if(sc==="news") body=newsAdminHTML(); else if(sc==="team") body=teamHTML(); else if(sc==="settings") body=settingsHTML(); else if(sc==="help") body=staffHelpHTML(); else if(sc==="leaves") body=leavesHTML(); else if(sc==="patients") body=patientsHTML(); else if(sc==="messages") body=teamHTML2(); else if(sc==="templates") body=templatesHTML(); else if(sc==="binder") body=binderHTML(); else if(sc==="desk") body=deskHTML(); else if(sc==="waitlist") body=waitlistHTML(); else if(sc==="fiches") body=fichesHTML(); else if(sc==="infos") body=infosHTML(); else if(sc==="feedback"&&isAdmin()) body=feedbackHTML(); else if(sc==="annonces"&&isAdmin()) body=annoncesHTML(); else if(sc==="hours"&&canOffice()) body=hoursHTML(); else if(sc==="cash"&&canOffice()) body=cashHTML(); else body=inboxHTML();
   document.body.classList.add("hasbar","sidenav"); document.body.classList.remove("ddopen");
   a.innerHTML=nav+(sc==="dash"?"":urgBannerHTML()+annBannerHTML())+(sc==="inbox"||sc==="messages"?bdayBannerHTML():"")+body;
   bindAnnBanner();
@@ -4155,7 +4353,7 @@ function renderStaff(a){
   $$("[data-dd]").forEach(b=>b.onclick=e=>{ e.stopPropagation(); openDD(b.dataset.dd); });
   const bk=$(".ddback"); if(bk) bk.onclick=closeDD;
   $$("[data-cs]").forEach(b=>b.onclick=()=>{ closeDD(); if(CREC&&b.dataset.cs!=="compose") composeRecStop(false); S.cscreen=b.dataset.cs; render(); window.scrollTo(0,0); });
-  if(sc==="dash") bindDash(); else if(sc==="pfile") bindPfile(); else if(sc==="visits") bindVisits(); else if(sc==="handovers") bindHandovers(); else if(sc==="rooms") bindRooms(); else if(sc==="checklists") bindChecklists(); else if(sc==="meetings") bindMeetings(); else if(sc==="pause") bindPause(); else if(sc==="polls") bindPolls(); else if(sc==="directory") bindDirectory(); else if(sc==="stats"&&isAdmin()) bindStats(); else if(sc==="journal"&&isAdmin()) bindJournal(); else if(sc==="compose") bindCompose(); else if(sc==="inventory") bindInventory(); else if(sc==="tasks") bindTasks(); else if(sc==="accounts") bindAccounts(); else if(sc==="news") bindNewsAdmin(); else if(sc==="team") bindTeam(); else if(sc==="settings") bindSettings(); else if(sc==="help"||sc==="leaves") {} else if(sc==="patients") bindPatients(); else if(sc==="messages") bindTeam2(); else if(sc==="templates") bindTemplates(); else if(sc==="binder") bindBinder(); else if(sc==="desk") bindDesk(); else if(sc==="waitlist"){ if(S.waitlist) bindWaitlist(); } else if(sc==="fiches") bindFiches(); else if(sc==="infos") bindInfos(); else if(sc==="feedback"&&isAdmin()) bindFeedback(); else if(sc==="annonces"&&isAdmin()) bindAnnonces(); else if(sc==="hours"&&canOffice()) bindHours(); else if(sc==="cash"&&canOffice()) bindCash(); else bindInbox();
+  if(sc==="dash") bindDash(); else if(sc==="pfile") bindPfile(); else if(sc==="visits") bindVisits(); else if(sc==="handovers") bindHandovers(); else if(sc==="rooms") bindRooms(); else if(sc==="checklists") bindChecklists(); else if(sc==="cases") bindCases(); else if(sc==="meetings") bindMeetings(); else if(sc==="pause") bindPause(); else if(sc==="polls") bindPolls(); else if(sc==="directory") bindDirectory(); else if(sc==="stats"&&isAdmin()) bindStats(); else if(sc==="journal"&&isAdmin()) bindJournal(); else if(sc==="compose") bindCompose(); else if(sc==="inventory") bindInventory(); else if(sc==="tasks") bindTasks(); else if(sc==="accounts") bindAccounts(); else if(sc==="news") bindNewsAdmin(); else if(sc==="team") bindTeam(); else if(sc==="settings") bindSettings(); else if(sc==="help"||sc==="leaves") {} else if(sc==="patients") bindPatients(); else if(sc==="messages") bindTeam2(); else if(sc==="templates") bindTemplates(); else if(sc==="binder") bindBinder(); else if(sc==="desk") bindDesk(); else if(sc==="waitlist"){ if(S.waitlist) bindWaitlist(); } else if(sc==="fiches") bindFiches(); else if(sc==="infos") bindInfos(); else if(sc==="feedback"&&isAdmin()) bindFeedback(); else if(sc==="annonces"&&isAdmin()) bindAnnonces(); else if(sc==="hours"&&canOffice()) bindHours(); else if(sc==="cash"&&canOffice()) bindCash(); else bindInbox();
 }
 
 /* ----- durée estimée des rendez-vous de médecine générale (visible par l'équipe seulement) ----- */
@@ -6267,6 +6465,7 @@ function navGroups(){
      ...(isAdmin()?[{cs:"accounts",ic:SI.ucheck,t:"Comptes à valider",n:S.pending.length+(S.pendingKids||[]).length}]:[])]},
    {h:"Équipe",it:[
      {cs:"messages",ic:SI.chat,t:"Messages",n:teamUnread()},
+     ...(S.casesOk?[{cs:"cases",ic:SI.handover,t:"Discussions de cas",n:casesUnread()}]:[]),
      {cs:"tasks",ic:SI.tasks,t:"Tâches",n:myTasks().length},
      {cs:"handovers",ic:SI.handover,t:"Transmissions",n:hoUnread().length},
      {cs:"meetings",ic:SI.meet,t:"Réunions"},
@@ -6412,14 +6611,14 @@ const VC_MONTHS = ["janvier","fevrier","mars","avril","mai","juin","juillet","ao
 const VC_SCREENS = [
   [/tableau de bord|dashboard|page d'?accueil/,"dash"],[/fiches? conseils?/,"fiches"],[/fiches? patients?|dossiers? patients?/,"patients"],
   [/demandes?/,"inbox"],[/visites?( a domicile)?/,"visits"],[/listes? d'?attente/,"waitlist"],[/comptes? a valider/,"accounts"],
-  [/messages?|messagerie|conversations?/,"messages"],[/taches?/,"tasks"],[/transmissions?/,"handovers"],[/reunions?/,"meetings"],
+  [/discussions? de cas|cas cliniques?|discussions? cliniques?/,"cases"],[/messages?|messagerie|conversations?/,"messages"],[/taches?/,"tasks"],[/transmissions?/,"handovers"],[/reunions?/,"meetings"],
   [/sondages?/,"polls"],[/pause cafe|jeux|sudoku|mots? meles|citation/,"pause"],[/conges?|absences?/,"leaves"],
   [/annuaire|contacts?|classeur|carnet d'adresses/,"directory"],[/locaux|salles?/,"rooms"],[/checklists?|check-?lists?/,"checklists"],
   [/horaires?/,"hours"],[/caisse/,"cash"],[/actualites?|news/,"news"],[/inventaire|stock|materiel/,"inventory"],[/annonces?/,"annonces"],
   [/suggestions?/,"feedback"],[/statistiques?|stats/,"stats"],[/reponses? types?|modeles?( de reponse)?/,"templates"],
   [/reglages|parametres|mon profil|mes notifications/,"settings"],[/infos? et documents|documents/,"infos"],[/accueil|guichet/,"desk"],
   [/ecrire a un patient|nouveau message patient/,"compose"],[/equipe|comptes? de l'equipe/,"team"]];
-const VC_SCREEN_NAME = {dash:"Tableau de bord",fiches:"Fiches conseils",patients:"Fiches patients",inbox:"Demandes",visits:"Visites à domicile",waitlist:"Listes d'attente",accounts:"Comptes à valider",messages:"Messages",tasks:"Tâches",handovers:"Transmissions",meetings:"Réunions",polls:"Sondages",pause:"Pause café",leaves:"Congés",directory:"Annuaire",rooms:"Locaux",checklists:"Checklists",hours:"Horaires",cash:"Caisse",news:"Actualités",inventory:"Inventaire",annonces:"Annonces",feedback:"Suggestions",stats:"Statistiques",templates:"Réponses types",settings:"Mon profil et notifications",infos:"Infos et documents",desk:"Accueil",compose:"Écrire à un patient",team:"Comptes de l'équipe"};
+const VC_SCREEN_NAME = {dash:"Tableau de bord",fiches:"Fiches conseils",patients:"Fiches patients",inbox:"Demandes",cases:"Discussions de cas",visits:"Visites à domicile",waitlist:"Listes d'attente",accounts:"Comptes à valider",messages:"Messages",tasks:"Tâches",handovers:"Transmissions",meetings:"Réunions",polls:"Sondages",pause:"Pause café",leaves:"Congés",directory:"Annuaire",rooms:"Locaux",checklists:"Checklists",hours:"Horaires",cash:"Caisse",news:"Actualités",inventory:"Inventaire",annonces:"Annonces",feedback:"Suggestions",stats:"Statistiques",templates:"Réponses types",settings:"Mon profil et notifications",infos:"Infos et documents",desk:"Accueil",compose:"Écrire à un patient",team:"Comptes de l'équipe"};
 
 // dates dites à voix haute → liste de {iso, s, e} (positions dans le texte normalisé)
 function vcDates(n){
@@ -7177,7 +7376,7 @@ function startRealtime(){
       .subscribe();
   }catch(e){ console.error(e); RT=null; }
 }
-function stopRealtime(){ if(RT){ try{ sb.removeChannel(RT); }catch(e){} RT=null; } }
+function stopRealtime(){ if(RT){ try{ sb.removeChannel(RT); }catch(e){} RT=null; } if(CASE_RT){ try{ sb.removeChannel(CASE_RT); }catch(e){} CASE_RT=null; } }
 function rtQueue(id){ if(id) RTQ.add(id); clearTimeout(rtTimer); rtTimer=setTimeout(rtFlush,400); }
 async function rtFlush(){
   if(!S.me) return; const ids=[...RTQ]; RTQ.clear(); const pat=S.me.role==="patient";
