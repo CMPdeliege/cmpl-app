@@ -2090,7 +2090,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261115b";
+const APP_VERSION="20261116a";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -5859,6 +5859,8 @@ function settingsHTML(){
     <p class="hint">Décoché : les nouvelles demandes et les messages de patients arrivent à la réouverture.</p>
     <label class="chk2"><input type="checkbox" id="s-teamafter" ${s.team_after_hours!==false?"checked":""}> <span><b>Équipe</b> : recevoir aussi les messages et les tâches de mes collègues en dehors des heures d'ouverture</span></label>
     <p class="hint">Coché par défaut. Décoché : ils arrivent à la réouverture.</p>
+    <label class="chk2"><input type="checkbox" id="s-taskmail" ${s.task_email!==false?"checked":""}> <span><b>Tâches</b> : recevoir aussi un e-mail quand un collègue me confie une tâche</span></label>
+    <p class="hint">Coché par défaut. L'e-mail dit seulement qui vous a confié la tâche et pour quand, jamais son contenu. Rien pendant vos congés et absences.</p>
     <label class="chk2"><input type="checkbox" id="s-mail" ${s.by_email?"checked":""}> Aussi par e-mail</label>
     ${pushBlockHTML(true)}</section>
    ${S.me.provider_id?`<section class="card"><h3>Contact par les patients</h3>
@@ -5917,7 +5919,9 @@ function bindSettings(){
     if(row.away&&!row.forward_to&&!row.away_message) return toast(am?"Choisissez un collègue, ou activez le message automatique.":"Choisissez le collègue qui recevra vos notifications.");
     if(row.away_until&&row.away_until<new Date().toISOString().slice(0,10)) return toast("La date de retour est déjà passée.");
     row.team_after_hours=$("#s-teamafter")?.checked!==false;
+    row.task_email=$("#s-taskmail")?.checked!==false;
     let res=await sb.from("staff_settings").upsert(row);
+    if(res.error&&/task_email/.test(JSON.stringify(res.error))){ delete row.task_email; res=await sb.from("staff_settings").upsert(row); }   // avant la migration 080
     if(res.error&&/team_after_hours/.test(JSON.stringify(res.error))){ delete row.team_after_hours; res=await sb.from("staff_settings").upsert(row); }   // avant la migration 063
     if(res.error){ toast(frError(res.error)); return; }
     toast("Enregistré"); S.settings={...(S.settings||{}),...row}; render();
