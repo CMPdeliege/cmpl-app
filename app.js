@@ -2090,7 +2090,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261116b";
+const APP_VERSION="20261116c";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -2331,6 +2331,8 @@ async function loadCases(){
     Promise.resolve(sb.from("case_members").select("case_id,user_id,last_read_at,added_at")).catch(e=>({error:e}))]);
   if(a.error||b.error){ S.casesOk=false; S.cases=[]; S.caseMembers=[]; return; }
   S.casesOk=true; S.cases=a.data||[]; S.caseMembers=b.data||[];
+  const g=await Promise.resolve(sb.from("case_guests").select("id,case_id,name,role,email,created_by,created_at,consent_at,revoked_at,last_seen_at,views").order("created_at")).catch(e=>({error:e}));
+  S.guestsOk=!g.error; S.caseGuests=g.error?[]:(g.data||[]);
   await casePatientsLoad();
   caseRtStart();
   if(S.caseOpen&&!S.cases.some(c=>c.id===S.caseOpen)) S.caseOpen=null;
@@ -2360,8 +2362,11 @@ function caseRt(cid){ clearTimeout(caseRtTimer); caseRtTimer=setTimeout(async()=
   if(S.cscreen==="cases"&&typing&&$("#casemsgs")){ $("#casemsgs").innerHTML=caseMsgsHTML(S.caseOpen); caseScroll(); updateBadges(); }
   else if(S.cscreen==="cases"&&!typing) render(); else updateBadges(); },350); }
 async function loadCaseMsgs(id){
-  const {data,error}=await sb.from("case_messages").select("id,case_id,author_id,body,created_at").eq("case_id",id).order("created_at").limit(1000);
-  if(!error) S.caseMsgs[id]=data||[]; }
+  let r=await sb.from("case_messages").select("id,case_id,author_id,guest_id,body,created_at").eq("case_id",id).order("created_at").limit(1000);
+  if(r.error) r=await sb.from("case_messages").select("id,case_id,author_id,body,created_at").eq("case_id",id).order("created_at").limit(1000);
+  if(!r.error) S.caseMsgs[id]=r.data||[]; }
+const caseGuestsOf = id => (S.caseGuests||[]).filter(g=>g.case_id===id);
+const guestLabel = g => g?`${g.name}${g.role?` (${g.role})`:""}`:"Intervenant externe";
 const caseMems = id => S.caseMembers.filter(m=>m.case_id===id);
 const caseMe = id => S.caseMembers.find(m=>m.case_id===id&&m.user_id===S.me.id);
 const caseUnreadOne = c => { const me=caseMe(c.id); return !!me&&(!me.last_read_at||new Date(c.last_at)>new Date(me.last_read_at)); };
@@ -2388,6 +2393,8 @@ function caseMsgsHTML(id){
   const ms=S.caseMsgs[id]; if(!ms) return `<p class="hint">Chargement…</p>`;
   if(!ms.length) return `<p class="hint casehint">Pas encore de message. Posez votre question à vos collègues.</p>`;
   let last=""; return ms.map(m=>{ const d=new Date(m.created_at).toDateString(), sep=d!==last?`<div class="day"><span>${esc(dayLabel(m.created_at))}</span></div>`:""; last=d;
+    if(m.guest_id){ const g=(S.caseGuests||[]).find(x=>x.id===m.guest_id);
+      return sep+`<div class="tmw"><div class="bubw"><div class="tm tguest"><span class="who">${esc(guestLabel(g))} <i class="extag">externe</i></span><p dir="auto">${esc(m.body)}</p><small>${esc(hm(m.created_at))}</small></div></div></div>`; }
     if(!m.author_id) return sep+`<p class="casesys">${esc(m.body)} · ${esc(hm(m.created_at))}</p>`;
     const mine=m.author_id===S.me.id;
     return sep+`<div class="tmw ${mine?"me":""}"><div class="bubw"><div class="tm ${mine?"me":""}">${mine?"":`<span class="who">${esc(staffName(m.author_id))}</span>`}<p dir="auto">${esc((m.body))}</p><small>${esc(hm(m.created_at))}</small></div></div></div>`; }).join(""); }
@@ -2410,7 +2417,11 @@ function caseViewHTML(c){
      </div>
      <aside class="card caseside"><h3>Membres (${mem.length})</h3><ul class="casemem">${mem.map(m=>`<li>${esc(staffName(m.user_id))}${m.user_id===c.created_by?` <small>· a ouvert</small>`:""}</li>`).join("")}</ul>
       ${closed?"":`<button type="button" class="btn ghost" id="case-invite">＋ Inviter des collègues</button>`}
-      <p class="hint small">Plus tard : inviter un intervenant externe, qui ne verra que cette discussion.</p>
+      ${S.guestsOk?`<h3 class="caseexh">Intervenants externes</h3>${caseGuestsOf(c.id).length?`<ul class="casemem caseext">${caseGuestsOf(c.id).map(g=>`<li><b>${esc(g.name)}</b>${g.role?` <small>· ${esc(g.role)}</small>`:""}<small class="hint">${esc(g.email)}</small>
+          <small class="hint">${g.revoked_at?`Accès retiré le ${esc(fmtDate(g.revoked_at))}`:g.last_seen_at?`Vu ${esc(fmt(g.last_seen_at))} · ${g.views} visite${g.views>1?"s":""}`:"Lien pas encore ouvert"}</small>
+          ${!g.revoked_at&&!closed?`<span class="caseextb"><button type="button" class="linkbtn" data-gresend="${g.id}">Renvoyer le lien</button><button type="button" class="linkbtn tdel" data-grevoke="${g.id}">Retirer l'accès</button></span>`:""}</li>`).join("")}</ul>`:`<p class="hint small">Aucun pour l'instant.</p>`}
+        ${closed?"":`<button type="button" class="btn ghost" id="case-guest">＋ Inviter un intervenant externe</button>`}
+        <p class="hint small">L'externe reçoit un lien personnel par e-mail et voit toute la discussion. Le lien ne marche plus dès que la discussion est clôturée ou que vous retirez l'accès.</p>`:""}
       <div class="btnrow">${caseCanClose(c)?`<button type="button" class="btn ghost" id="case-close">${closed?"Rouvrir":"✓ Clôturer"}</button>`:""}${c.created_by!==S.me.id?`<button type="button" class="btn ghost" id="case-leave">Quitter</button>`:""}</div>
      </aside>
     </div>`; }
@@ -2450,6 +2461,19 @@ function caseNewDialog(pre){
     close(); toast("Discussion ouverte"); await loadCases(); S.caseOpen=data; S.caseMsgs[data]=[]; S.cscreen="cases"; render(); scrollTo(0,0); };
   v.querySelector("#cn-title").focus();
 }
+function caseGuestDialog(c){
+  const v=tMsgDialog("Inviter un intervenant externe",`<label class="fld">Nom<input id="cg-name" maxlength="120" placeholder="Ex. Dr Claire Martin"></label>
+    <label class="fld">Qualité ou spécialité <small>(facultatif)</small><input id="cg-role" maxlength="120" placeholder="Ex. Gastro-entérologue, CHU Saint-Pierre"></label>
+    <label class="fld">E-mail<input id="cg-mail" type="email" maxlength="200" autocomplete="off" placeholder="nom@hopital.be"></label>
+    <label class="chk2 cgcons"><input type="checkbox" id="cg-ok"> <span><b>J'ai recueilli l'accord du patient</b> pour partager cette discussion avec cet intervenant.</span></label>
+    <p class="hint small">Il recevra un lien personnel par e-mail (sans nom de patient ni contenu). Avec ce lien, il voit toute la discussion (titre, patient, note et messages) et peut répondre, sans créer de compte. Le lien ne marche plus dès que la discussion est clôturée ou que vous retirez l'accès. Son accès est inscrit dans la discussion.</p>`,"Envoyer l'invitation","",async()=>{
+    const name=v.querySelector("#cg-name").value.trim(), role=v.querySelector("#cg-role").value.trim(), mail=v.querySelector("#cg-mail").value.trim();
+    if(name.length<2){ toast("Indiquez le nom de l'intervenant."); return false; }
+    if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(mail)){ toast("Adresse e-mail invalide."); return false; }
+    if(!v.querySelector("#cg-ok").checked){ toast("Confirmez que l'accord du patient a été recueilli."); return false; }
+    const r=await run(()=>sb.rpc("case_invite_guest",{p_case:c.id,p_name:name,p_role:role||null,p_email:mail,p_consent:true}),"Invitation envoyée à "+mail); if(!r) return false;
+    await loadCases(); await loadCaseMsgs(c.id); render(); return true; });
+  v.classList.add("casedlg"); v.querySelector("#cg-name").focus(); }
 function bindCases(){
   if(!S.casesOk) return;
   $$("[data-casetab]").forEach(b=>b.onclick=()=>{ S.caseTab=b.dataset.casetab; render(); });
@@ -2475,6 +2499,10 @@ function bindCases(){
     $("#case-send").onclick=send; ta.onkeydown=e=>{ if(e.key==="Enter"&&(e.ctrlKey||e.metaKey)){ e.preventDefault(); send(); } }; }
   const inv=$("#case-invite"); if(inv) inv.onclick=()=>pickColleagues("Inviter à la discussion",caseMems(c.id).map(m=>m.user_id),async ids=>{
     if(await run(()=>sb.rpc("case_add_members",{p_case:c.id,p_members:ids}),"Invitation envoyée")){ await loadCases(); await loadCaseMsgs(c.id); render(); return true; } return false; });
+  const gi=$("#case-guest"); if(gi) gi.onclick=()=>caseGuestDialog(c);
+  $$("[data-gresend]").forEach(b=>b.onclick=async()=>{ if(!confirmInline(b,"Renvoyer ?")) return; await run(()=>sb.rpc("case_guest_resend",{p_guest:+b.dataset.gresend}),"Lien renvoyé par e-mail"); });
+  $$("[data-grevoke]").forEach(b=>b.onclick=async()=>{ if(!confirmInline(b,"Retirer l'accès ?")) return;
+    if(await run(()=>sb.rpc("case_guest_revoke",{p_guest:+b.dataset.grevoke}),"Accès retiré : le lien ne marche plus")){ await loadCases(); await loadCaseMsgs(c.id); render(); } });
   const cl=$("#case-close"); if(cl) cl.onclick=async()=>{ const on=!c.closed_at; if(on&&!confirmInline(cl,"Clôturer ?")) return;
     if(await run(()=>sb.rpc("case_close",{p_case:c.id,p_close:on}),on?"Discussion clôturée":"Discussion rouverte")){ await loadCases(); await loadCaseMsgs(c.id); render(); } };
   const lv=$("#case-leave"); if(lv) lv.onclick=async()=>{ if(!confirmInline(lv,"Quitter ?")) return;
@@ -3163,6 +3191,7 @@ function staffHelpHTML(){
    ["Ce qui est gardé, ce qui est effacé","Gardé : messages de l'équipe sur l'organisation, inventaire, congés, tâches sans patient, classeur, horaires (5 ans), caisse (10 ans). Effacé : conversations avec les patients (15 jours après la clôture), conversations d'équipe marquées « Concerne des patients » et messages qui joignent une demande (90 jours), tâches liées à un patient (90 jours après)."],
    ["Joindre un document à une tâche","Tâches et Accueil : en créant la tâche, « Joindre un document » (photo, PDF) ou « Scanner » ; ou plus tard, « Joindre » sous la tâche. 10 documents maximum, 5 Mo chacun. Seules les personnes de la tâche les voient ; ils sont effacés 90 jours après que la tâche est faite. Touchez un document pour l'ouvrir."],
    ["Discussions de cas","Équipe → Discussions de cas : « Nouvelle discussion », un titre sans nom de patient, le patient concerné (facultatif), la situation et la question, puis les collègues à inviter. Seuls les membres voient la discussion. Chacun peut compléter la note (avec historique) et répondre ; on peut inviter d'autres collègues en cours de route. La personne qui l'a ouverte la clôture quand c'est réglé : les conclusions vont dans CareConnect, et les discussions clôturées sont effacées après 6 mois. Aussi depuis la page d'un patient : « 🩺 Discussion de cas ». Les notifications ne contiennent jamais le titre ni le patient."],
+   ["Inviter un intervenant externe","Dans une discussion de cas : « Inviter un intervenant externe » (nom, spécialité, e-mail), après avoir recueilli l'accord du patient. Il reçoit un lien personnel par e-mail, sans nom de patient ; avec ce lien il voit toute la discussion et peut répondre, sans compte. Le lien ne marche plus dès que la discussion est clôturée ou que vous retirez l'accès. Vous voyez quand il l'a ouvert ; « Renvoyer le lien » s'il ne le retrouve plus. Il reçoit un e-mail quand l'équipe écrit (au plus un par heure)."],
    ["Mur des anecdotes","Pause café → 📌 Anecdotes : un tableau de post-its où chacun épingle un épisode drôle vécu avec un patient, en son nom ou anonymement. Jamais de détail qui permettrait de reconnaître le patient. 😂 pour dire que ça vous a fait rire ; chacun peut retirer ses post-its."],
    ["Corriger un message envoyé à un patient","Dans une demande, sur un de vos messages : 🙂 (ou clic droit) sur ordinateur, appui long sur téléphone, puis « Modifier ». Le patient voit la mention « modifié » et reçoit une notification neutre. L'ancienne version est gardée : touchez « modifié » pour voir tout l'historique (qui, quand, quoi). La correction est aussi inscrite dans le journal. Les messages des patients ne sont jamais modifiables, et une conversation classée doit être rouverte avant correction."],
    ["Modifier ou supprimer un message","Dans les messages de l'équipe, sur un de vos messages : survolez la bulle et cliquez sur 🙂 (ou clic droit) sur ordinateur, appui long sur téléphone, puis « Modifier » ou « Supprimer ». Un message modifié porte la mention « modifié » (touchez-la pour voir l'historique) ; un message supprimé est remplacé par « Message supprimé » pour tout le monde, avec sa pièce jointe. Aucune notification n'est envoyée."],
@@ -3190,7 +3219,7 @@ function staffHelpHTML(){
    ["Transmissions","Équipe → Transmissions : avant une absence, laissez un message à un ou plusieurs collègues, avec les patients à suivre. Ils le voient sur leur tableau de bord pendant la période choisie et reçoivent une notification sans détail."],
    ["Locaux","Secrétariat → Locaux : la vue « Par jour » montre qui occupe chaque local, heure par heure. « Habituel » : l'occupation de chaque semaine (ex. Dr X au local 1 le lundi de 9 h à 13 h). « Réserver » ou « Libérer un créneau » : un changement pour un jour seulement. Le secrétariat et l'administrateur gèrent la liste des locaux."],
    ["Checklists","Secrétariat → Checklists : ouverture, fermeture, contrôle de la semaine. Chacun coche ce qu'il a fait (nom et heure notés) et note la température du frigo à vaccins : une valeur en dehors de 2 à 8 °C est signalée en rouge, aussi sur le tableau de bord. L'historique garde 3 ans de relevés."],
-   ["Réunions d'équipe","Équipe → Réunions : chacun ajoute ses points à l'ordre du jour. Pendant la réunion, « Rédiger le procès-verbal » : présents, décisions point par point (« En faire une tâche »), compte rendu. « Clôturer » archive le PV, téléchargeable en PDF."],
+   ["Réunions d'équipe","Équipe → Réunions : chacun ajoute ses points à l'ordre du jour. Pendant la réunion, « Rédiger le procès-verbal » : présents, décisions point par point (« En faire une tâche »), compte rendu. « Clôturer » archive le PV, téléchargeable en PDF. Une réunion qui a déjà eu lieu ? « Ajouter une réunion passée » sous « Réunions précédentes », puis rédigez son PV. Un PV archivé se modifie avec « Modifier le PV ». Dans le PV, rien n'est enregistré avant « Enregistrer » : « Annuler » abandonne les changements."],
    ["Réponses types du centre","Dans une conversation, le bouton 💬 propose d'abord les réponses du type de la demande (rendez-vous, prescription…). Tout le monde peut proposer une réponse du centre, avec un ton courtois et respectueux."],
    ["Page patient (adresse, infos pratiques, contacts)","Chaque patient a sa page, visible uniquement par l'équipe : ouvrez-la avec « 👤 Page patient » dans une demande ou une tâche, avec la recherche (Ctrl K) ou depuis Fiches patients. Notez l'adresse, les infos pratiques (étage, sonnette, code de la porte, maison de repos…) et les contacts utiles (infirmière, famille, aidant…). L'adresse et les infos pratiques s'affichent aussi en résumé dans ses demandes. Jamais d'informations médicales : le dossier reste dans CareConnect."],
    ["Pause café","Équipe → Pause café : le mot du jour (de 5 à 8 lettres selon le jour, 8 le vendredi, 6 essais), le sudoku du jour (simple ou moyen), la devinette, la citation du jour et une minute de respiration guidée. Le même contenu pour toute l'équipe. Masquable dans Réglages → Ambiance."],
@@ -4249,11 +4278,30 @@ async function mtPdf(m){
   if(m.minutes) blocks.push({rule:true},{h:"Compte rendu"},{p:m.minutes});
   return textPdf(`Procès-verbal — ${m.title}`,[mtWhen(m)+(m.location?` · ${m.location}`:""),`Rédigé le ${new Date().toLocaleString("fr-BE")}`],blocks);
 }
+// procès-verbal : les changements restent dans un brouillon jusqu'à « Enregistrer » ; « Annuler » les abandonne
+function mtDraftOpen(m){ const M=S.mt; M.pvFor=m.id; M.draft={attendees:[...(m.attendees||[])],minutes:m.minutes||"",items:Object.fromEntries(mtItems(m.id).map(i=>[i.id,{discussed:!!i.discussed,decision:i.decision||""}])),add:[]}; }
+async function mtPvSave(m,msg){ const D=S.mt.draft; if(!D) return true;
+  let r=await sb.from("meetings").update({attendees:D.attendees,minutes:D.minutes.trim()||null,updated_at:new Date().toISOString()}).eq("id",m.id);
+  if(r.error){ toast(frError(r.error)); return false; }
+  for(const i of mtItems(m.id)){ const d=D.items[i.id]; if(!d) continue; const dec=d.decision.trim()||null;
+    if(!!i.discussed!==d.discussed||(i.decision||null)!==dec){ r=await sb.from("meeting_items").update({discussed:d.discussed,decision:dec}).eq("id",i.id); if(r.error){ toast(frError(r.error)); return false; } i.discussed=d.discussed; i.decision=dec; } }
+  const add=D.add.filter(a=>a.text.trim());
+  if(add.length){ r=await sb.from("meeting_items").insert(add.map((a,k)=>({meeting_id:m.id,author_id:S.me.id,text:a.text.trim().slice(0,300),decision:a.decision.trim()||null,discussed:true,sort_order:(Date.now()+k)%2147483647})));
+    if(r.error){ toast(frError(r.error)); return false; } D.add=[]; }
+  m.attendees=[...D.attendees]; m.minutes=D.minutes.trim()||null; if(msg) toast(msg); return true; }
+function mtPvHTML(m,itemRow){ const D=S.mt.draft, past=!!m.closed_at, its=mtItems(m.id);
+  return `<div class="mtpv"><h3>Procès-verbal</h3><p class="fldl">Présents</p><div class="pchips">${activeStaff().map(t=>`<button type="button" class="pchip" data-mtatt="${t.id}" aria-pressed="${D.attendees.includes(t.id)}">${esc(staffName(t.id))}</button>`).join("")}</div>
+    ${past?`<p class="fldl">Points abordés</p><ol class="mtlist">${its.map((i,n)=>itemRow(i,n,true)).join("")}${D.add.map((a,k)=>`<li class="mti mtnew"><div class="mtih"><b>${its.length+k+1}.</b><input type="text" data-mtanew="${k}" maxlength="300" value="${esc(a.text)}" placeholder="Point abordé" aria-label="Point abordé"><button type="button" class="linkbtn tdel" data-mtadel="${k}">Retirer</button></div>
+      <label class="fld">Décision / suite<textarea data-mtadec="${k}" rows="2" maxlength="2000" placeholder="Ce qui a été décidé, qui s'en occupe">${esc(a.decision)}</textarea></label></li>`).join("")}</ol>
+      ${its.length+D.add.length?"":`<p class="hint">Aucun point noté pour cette réunion.</p>`}<button type="button" class="linkbtn" id="mt-addpt">＋ Ajouter un point abordé</button>`:""}
+    <label class="fld">Compte rendu<textarea id="mt-min" rows="6" maxlength="20000" placeholder="Résumé des échanges, informations données, prochaines étapes…">${esc(D.minutes)}</textarea></label>
+    <div class="btnrow"><button type="button" class="btn ghost" id="mt-pvsave">Enregistrer</button>${past?"":`<button type="button" class="btn" id="mt-close">✓ Clôturer la réunion</button>`}<button type="button" class="btn ghost" id="mt-pdf">📄 PV en PDF</button><button type="button" class="btn ghost" id="mt-pvcancel">Annuler</button></div>
+    <p class="hint small">Rien n'est enregistré tant que vous ne touchez pas « Enregistrer »${past?"":", « Clôturer »"} ou « PV en PDF ». « Annuler » abandonne les changements.</p></div>`; }
 function meetingsHTML(){
   const head=`<div class="chead"><div><h1>Réunions d'équipe</h1><p>Chacun ajoute ses points à l'ordre du jour pendant la semaine. Pendant la réunion, on note les décisions et le procès-verbal, puis on le garde ici (et en PDF).</p></div></div>`;
   if(!S.orgLoaded) return head+`<p class="hint">Chargement…</p>`;
   if(S.orgOk===false) return head+orgMissing();
-  const M=S.mt||(S.mt={plan:null,pv:false,open:null}), nx=mtNext(), pool=mtItems(null), items=nx?mtItems(nx.id):pool, past=(S.meetings||[]).filter(m=>m.closed_at);
+  const M=S.mt||(S.mt={plan:null,pvFor:null,draft:null,open:null,past:null}), nx=mtNext(), pool=mtItems(null), items=nx?mtItems(nx.id):pool, past=(S.meetings||[]).filter(m=>m.closed_at);
   const P=M.plan;
   const planForm=P?`<section class="card mtform"><h3>${P.id?"Modifier la réunion":"Planifier une réunion"}</h3>
     <label class="fld">Titre<input type="text" id="mt-t" maxlength="120" value="${esc(P.title)}"></label>
@@ -4261,23 +4309,27 @@ function meetingsHTML(){
     <label class="fld">Lieu<input type="text" id="mt-l" maxlength="120" value="${esc(P.loc)}" placeholder="Ex. Salle d'attente après la fermeture"></label>
     ${P.id?"":`<p class="hint">Les points déjà proposés y seront ajoutés. L'équipe reçoit une notification.</p>`}
     <div class="btnrow"><button type="button" class="btn" id="mt-save">${P.id?"Enregistrer":"🗓️ Planifier"}</button><button type="button" class="btn ghost" id="mt-x">Annuler</button>${P.id?`<button type="button" class="linkbtn tdel" id="mt-del">Supprimer la réunion</button>`:""}</div></section>`:"";
-  const itemRow=(i,n,pv)=>`<li class="mti${i.discussed?" ok":""}"><div class="mtih"><b>${n+1}. ${esc(i.text)}</b><small>proposé par ${esc(whoS(i.author_id))}</small>${i.author_id===S.me.id||isAdmin()?`<button type="button" class="linkbtn tdel" data-mtidel="${i.id}">Retirer</button>`:""}</div>
+  const itemRow=(i,n,pv)=>`<li class="mti${i.discussed?" ok":""}"><div class="mtih"><b>${n+1}. ${esc(i.text)}</b><small>proposé par ${esc(whoS(i.author_id))}</small>${!pv&&(i.author_id===S.me.id||isAdmin())?`<button type="button" class="linkbtn tdel" data-mtidel="${i.id}">Retirer</button>`:""}</div>
     ${i.details?`<p>${esc(i.details)}</p>`:""}
-    ${pv?`<label class="chk2"><input type="checkbox" data-mtok="${i.id}" ${i.discussed?"checked":""}> Traité</label><label class="fld">Décision / suite<textarea data-mtdec="${i.id}" rows="2" maxlength="2000" placeholder="Ce qui a été décidé, qui s'en occupe">${esc(i.decision||"")}</textarea></label>
+    ${pv?`<label class="chk2"><input type="checkbox" data-mtok="${i.id}" ${(M.draft?.items[i.id]?.discussed??i.discussed)?"checked":""}> Traité</label><label class="fld">Décision / suite<textarea data-mtdec="${i.id}" rows="2" maxlength="2000" placeholder="Ce qui a été décidé, qui s'en occupe">${esc(M.draft?.items[i.id]?.decision??i.decision??"")}</textarea></label>
       <button type="button" class="linkbtn" data-mttask="${i.id}">＋ En faire une tâche</button>`:i.decision?`<p class="mtdec">➜ ${esc(i.decision)}</p>`:""}</li>`;
   return head+planForm+`
   <section class="card mtnext">${nx?`<header><div><h3>🗓️ ${esc(nx.title)}</h3><p><b>${esc(mtWhen(nx))}</b>${nx.location?` · ${esc(nx.location)}`:""}</p></div><span>${P?"":`<button type="button" class="linkbtn" id="mt-edit">Modifier</button>`}</span></header>`
     :`<header><div><h3>📝 Points pour la prochaine réunion</h3><p class="hint">Aucune réunion planifiée.</p></div>${P?"":`<button type="button" class="btn" id="mt-new">🗓️ Planifier une réunion</button>`}</header>`}
-    <ol class="mtlist">${items.map((i,n)=>itemRow(i,n,M.pv&&nx)).join("")||`<p class="hint">Aucun point pour l'instant.</p>`}</ol>
+    <ol class="mtlist">${items.map((i,n)=>itemRow(i,n,!!(nx&&M.pvFor===nx.id&&M.draft))).join("")||`<p class="hint">Aucun point pour l'instant.</p>`}</ol>
     <div class="mtadd"><input type="text" id="mt-it" maxlength="300" placeholder="Ajouter un point à l'ordre du jour…" aria-label="Nouveau point"><input type="text" id="mt-id" maxlength="2000" placeholder="Détails (facultatif)" aria-label="Détails"><button type="button" class="btn" id="mt-iadd">＋ Ajouter</button></div>
-    ${nx?(M.pv?`<div class="mtpv"><h3>Procès-verbal</h3><p class="fldl">Présents</p><div class="pchips">${activeStaff().map(t=>`<button type="button" class="pchip" data-mtatt="${t.id}" aria-pressed="${(nx.attendees||[]).includes(t.id)}">${esc(staffName(t.id))}</button>`).join("")}</div>
-      <label class="fld">Compte rendu<textarea id="mt-min" rows="6" maxlength="20000" placeholder="Résumé des échanges, informations données, prochaines étapes…">${esc(nx.minutes||"")}</textarea></label>
-      <div class="btnrow"><button type="button" class="btn ghost" id="mt-pvsave">Enregistrer</button><button type="button" class="btn" id="mt-close">✓ Clôturer la réunion</button><button type="button" class="btn ghost" id="mt-pdf">📄 PV en PDF</button></div></div>`
-      :`<div class="btnrow"><button type="button" class="btn" id="mt-pv">📝 Rédiger le procès-verbal</button></div>`):""}
+    ${nx?(M.pvFor===nx.id&&M.draft?mtPvHTML(nx,itemRow):`<div class="btnrow"><button type="button" class="btn" id="mt-pv">📝 Rédiger le procès-verbal</button></div>`):""}
   </section>
-  ${past.length?`<h3 class="secth">Réunions précédentes</h3>${past.map(m=>{ const o=M.open===m.id, its=mtItems(m.id);
-    return `<section class="card mtpast"><header><button type="button" class="linkbtn mtph" data-mtopen="${m.id}" aria-expanded="${o}"><b>${esc(m.title)}</b> · ${esc(mtWhen(m))} ${o?"▴":"▾"}</button><button type="button" class="linkbtn" data-mtpdf="${m.id}">📄 PDF</button></header>
-      ${o?`${(m.attendees||[]).length?`<p class="hint">Présents : ${esc(m.attendees.map(staffName).join(", "))}</p>`:""}<ol class="mtlist">${its.map((i,n)=>itemRow(i,n,false)).join("")}</ol>${m.minutes?`<div class="mtmin">${esc(m.minutes)}</div>`:""}`:""}</section>`; }).join("")}`:""}`;
+  <div class="secth mtpasth"><h3>Réunions précédentes</h3>${M.past?"":`<button type="button" class="btn ghost" id="mt-pastnew">＋ Ajouter une réunion passée</button>`}</div>
+  ${M.past?`<section class="card mtform"><h3>Ajouter une réunion qui a déjà eu lieu</h3>
+    <label class="fld">Titre<input type="text" id="mp-t" maxlength="120" value="${esc(M.past.title)}"></label>
+    <div class="row2"><label class="fld">Date<input type="date" id="mp-d" max="${todayISO()}" value="${esc(M.past.date)}"></label><label class="fld">Heure<input type="time" id="mp-h" step="900" value="${esc(M.past.time)}"></label></div>
+    <label class="fld">Lieu <small>(facultatif)</small><input type="text" id="mp-l" maxlength="120" value="${esc(M.past.loc)}"></label>
+    <p class="hint">Elle est rangée directement dans les réunions précédentes, sans notification à l'équipe. Vous pourrez ensuite rédiger son procès-verbal.</p>
+    <div class="btnrow"><button type="button" class="btn" id="mp-save">Ajouter et rédiger le PV</button><button type="button" class="btn ghost" id="mp-x">Annuler</button></div></section>`:""}
+  ${past.length?past.sort((a,b)=>new Date(b.starts_at)-new Date(a.starts_at)).map(m=>{ const ed=M.pvFor===m.id&&M.draft, o=M.open===m.id||ed, its=mtItems(m.id);
+    return `<section class="card mtpast" id="mtp-${m.id}"><header><button type="button" class="linkbtn mtph" data-mtopen="${m.id}" aria-expanded="${o}"><b>${esc(m.title)}</b> · ${esc(mtWhen(m))} ${o?"▴":"▾"}</button><span>${ed?"":`<button type="button" class="linkbtn" data-mtedit="${m.id}">✏️ ${m.minutes||its.length?"Modifier le PV":"Rédiger le PV"}</button>`}<button type="button" class="linkbtn" data-mtpdf="${m.id}">📄 PDF</button></span></header>
+      ${ed?mtPvHTML(m,itemRow):o?`${(m.attendees||[]).length?`<p class="hint">Présents : ${esc(m.attendees.map(staffName).join(", "))}</p>`:""}<ol class="mtlist">${its.map((i,n)=>itemRow(i,n,false)).join("")}</ol>${m.minutes?`<div class="mtmin">${esc(m.minutes)}</div>`:""}${!its.length&&!m.minutes?`<p class="hint">Pas encore de procès-verbal.</p>`:""}`:""}</section>`; }).join(""):`<p class="hint">Aucune réunion archivée pour l'instant.</p>`}`;
 }
 function bindMeetings(){
   if(!S.orgLoaded&&!S.orgLoading){ S.orgLoading=true; loadOrg().catch(e=>{ console.error(e); S.orgOk=false; S.orgLoaded=true; }).finally(()=>{ S.orgLoading=false; softRender("meetings"); }); return; }
@@ -4296,18 +4348,32 @@ function bindMeetings(){
     if(await run(()=>sb.from("meeting_items").insert({meeting_id:nx?nx.id:null,author_id:S.me.id,text:t,details:$("#mt-id").value.trim()||null,sort_order:Date.now()%2147483647}),"Point ajouté")){ await reload(); $("#mt-it")?.focus(); } else e.target.disabled=false; };
   $("#mt-it").onkeydown=e=>{ if(e.key==="Enter") $("#mt-iadd").click(); };
   $$("[data-mtidel]").forEach(b=>b.onclick=async()=>{ if(!confirmInline(b,"Retirer ?")) return; if(await run(()=>sb.from("meeting_items").delete().eq("id",+b.dataset.mtidel),"Point retiré")) await reload(); });
-  const pv=$("#mt-pv"); if(pv) pv.onclick=()=>{ M.pv=true; render(); };
-  $$("[data-mtok]").forEach(c=>c.onchange=async()=>{ const i=S.mitems.find(x=>x.id===+c.dataset.mtok); if(await run(()=>sb.from("meeting_items").update({discussed:c.checked}).eq("id",i.id))){ i.discussed=c.checked; } });
-  $$("[data-mtdec]").forEach(t=>t.onchange=async()=>{ const i=S.mitems.find(x=>x.id===+t.dataset.mtdec); if(await run(()=>sb.from("meeting_items").update({decision:t.value.trim()||null}).eq("id",i.id),"Décision enregistrée")) i.decision=t.value.trim()||null; });
+  const pv=$("#mt-pv"); if(pv) pv.onclick=()=>{ mtDraftOpen(nx); render(); };
+  const D=M.draft, pm=M.pvFor&&(S.meetings||[]).find(x=>x.id===M.pvFor);
+  $$("[data-mtok]").forEach(c=>c.onchange=()=>{ if(D&&D.items[+c.dataset.mtok]) D.items[+c.dataset.mtok].discussed=c.checked; });
+  $$("[data-mtdec]").forEach(t=>t.oninput=()=>{ if(D&&D.items[+t.dataset.mtdec]) D.items[+t.dataset.mtdec].decision=t.value; });
+  $$("[data-mtanew]").forEach(t=>t.oninput=()=>{ D.add[+t.dataset.mtanew].text=t.value; });
+  $$("[data-mtadec]").forEach(t=>t.oninput=()=>{ D.add[+t.dataset.mtadec].decision=t.value; });
+  $$("[data-mtadel]").forEach(b=>b.onclick=()=>{ D.add.splice(+b.dataset.mtadel,1); render(); });
+  const ap=$("#mt-addpt"); if(ap) ap.onclick=()=>{ D.add.push({text:"",decision:""}); render(); const l=$$("[data-mtanew]"); l[l.length-1]?.focus(); };
+  const mn=$("#mt-min"); if(mn&&D) mn.oninput=()=>{ D.minutes=mn.value; };
+  const pc=$("#mt-pvcancel"); if(pc) pc.onclick=()=>{ M.pvFor=null; M.draft=null; render(); };
+  $$("[data-mtedit]").forEach(b=>b.onclick=()=>{ const m=S.meetings.find(x=>x.id===+b.dataset.mtedit); mtDraftOpen(m); M.open=m.id; render(); $("#mtp-"+m.id)?.scrollIntoView({block:"start",behavior:"smooth"}); });
+  const pn=$("#mt-pastnew"); if(pn) pn.onclick=()=>{ M.past={title:"Réunion d'équipe",date:addDays(todayISO(),-7),time:"13:00",loc:""}; render(); $("#mp-t")?.focus(); };
+  const px=$("#mp-x"); if(px) px.onclick=()=>{ M.past=null; render(); };
+  const ps2=$("#mp-save"); if(ps2) ps2.onclick=async()=>{ const t=$("#mp-t").value.trim()||"Réunion d'équipe", d=$("#mp-d").value, h=$("#mp-h").value||"12:00";
+    if(!d) return toast("Choisissez la date de la réunion."); if(d>todayISO()) return toast("Pour une réunion à venir, utilisez « Planifier une réunion ».");
+    const at=new Date(`${d}T${h}:00`).toISOString(); ps2.disabled=true;
+    const {data,error}=await sb.from("meetings").insert({title:t,starts_at:at,location:$("#mp-l").value.trim()||null,created_by:S.me.id,closed_at:at,updated_at:new Date().toISOString()}).select("id").single();
+    if(error){ ps2.disabled=false; return toast(frError(error)); }
+    toast("Réunion ajoutée"); M.past=null; await loadOrg(); const m=S.meetings.find(x=>x.id===data.id); if(m){ mtDraftOpen(m); M.open=m.id; } render(); $("#mtp-"+data.id)?.scrollIntoView({block:"start",behavior:"smooth"}); };
   $$("[data-mttask]").forEach(b=>b.onclick=()=>{ const i=S.mitems.find(x=>x.id===+b.dataset.mttask); S.tdraft={title:(i.decision||i.text).slice(0,200),notes:`Réunion d'équipe : ${i.text}`,due:"",to:"me",patient:null,q:"",remind:null}; S.tformOpen=true; S.tview="todo"; S.cscreen="tasks"; render(); scrollTo(0,0); });
-  $$("[data-mtatt]").forEach(b=>b.onclick=async()=>{ const id=b.dataset.mtatt, a=nx.attendees||[], n2=a.includes(id)?a.filter(x=>x!==id):[...a,id];
-    if(await run(()=>sb.from("meetings").update({attendees:n2}).eq("id",nx.id))){ nx.attendees=n2; render(); } });
-  const savePv=async msg=>{ const v=$("#mt-min").value; const ok=await run(()=>sb.from("meetings").update({minutes:v.trim()||null,updated_at:new Date().toISOString()}).eq("id",nx.id),msg); if(ok) nx.minutes=v.trim()||null; return ok; };
-  const ps=$("#mt-pvsave"); if(ps) ps.onclick=()=>savePv("Procès-verbal enregistré");
-  const cl=$("#mt-close"); if(cl) cl.onclick=async()=>{ if(!confirmInline(cl,"Clôturer ?")) return; if(!(await savePv())) return;
-    if(await run(()=>sb.from("meetings").update({closed_at:new Date().toISOString()}).eq("id",nx.id),"Réunion clôturée, PV archivé")){ M.pv=false; await reload(); } };
+  $$("[data-mtatt]").forEach(b=>b.onclick=()=>{ if(!D) return; const id=b.dataset.mtatt; D.attendees=D.attendees.includes(id)?D.attendees.filter(x=>x!==id):[...D.attendees,id]; render(); });
+  const ps=$("#mt-pvsave"); if(ps) ps.onclick=async()=>{ ps.disabled=true; if(await mtPvSave(pm,"Procès-verbal enregistré")){ await loadOrg(); const m=S.meetings.find(x=>x.id===pm.id); if(m) mtDraftOpen(m); render(); } else ps.disabled=false; };
+  const cl=$("#mt-close"); if(cl) cl.onclick=async()=>{ if(!confirmInline(cl,"Clôturer ?")) return; if(!(await mtPvSave(pm))) return;
+    if(await run(()=>sb.from("meetings").update({closed_at:new Date().toISOString()}).eq("id",pm.id),"Réunion clôturée, PV archivé")){ M.pvFor=null; M.draft=null; await reload(); } };
   const pdf=async m=>{ try{ const blob=await mtPdf(m); await saveFile(blob,`PV ${m.title} ${new Date(m.starts_at).toISOString().slice(0,10)}.pdf`); }catch(e){ console.error(e); toast("Le PDF n'a pas pu être créé."); } };
-  const pd=$("#mt-pdf"); if(pd) pd.onclick=async()=>{ await savePv(); pdf(nx); };
+  const pd=$("#mt-pdf"); if(pd) pd.onclick=async()=>{ if(!(await mtPvSave(pm,"Procès-verbal enregistré"))) return; pdf(pm); };
   $$("[data-mtpdf]").forEach(b=>b.onclick=()=>pdf(S.meetings.find(x=>x.id===+b.dataset.mtpdf)));
   $$("[data-mtopen]").forEach(b=>b.onclick=()=>{ const id=+b.dataset.mtopen; M.open=M.open===id?null:id; render(); });
 }
@@ -7400,14 +7466,64 @@ async function rtFlush(){
 }
 
 /* =====================================================================
+   INTERVENANT EXTERNE : page d'une discussion de cas ouverte avec un lien personnel (?cas=…)
+   Sans compte : tout passe par guest_case_view / guest_case_send (migration 082).
+   ===================================================================== */
+const GUEST=(()=>{ try{ const t=new URL(location.href).searchParams.get("cas"); return t&&/^[0-9a-f]{64}$/.test(t)?t:null; }catch(e){ return null; } })();
+const G={data:null,err:null,draft:"",timer:null};
+function guestShell(inner){ return `<div class="wrap gwrap"><header class="ghead"><img src="logo.png" alt="" width="44" height="44"><div><b>Centre Médical Prince de Liège</b><small>Discussion de cas · accès intervenant externe</small></div></header>${inner}
+  <p class="hint small gfoot">Centre Médical Prince de Liège · 21-23 rue du Potaerdenberg, 1070 Anderlecht · 02 781 18 75. Ce lien est personnel : merci de ne pas le transférer. Les informations partagées ici sont couvertes par le secret médical.</p></div>`; }
+function guestHTML(){
+  const d=G.data;
+  if(G.err) return guestShell(`<section class="card"><p class="err">${esc(G.err)}</p><button type="button" class="btn" id="g-retry">Réessayer</button></section>`);
+  if(!d) return guestShell(`<section class="card"><p class="hint">Chargement de la discussion…</p></section>`);
+  if(d.status!=="ok") return guestShell(`<section class="card"><h2>${d.status==="closed"?"Discussion clôturée":d.status==="revoked"?"Accès retiré":"Lien non valable"}</h2>
+    <p>${d.status==="closed"?"Cette discussion de cas a été clôturée par l'équipe : le lien n'est plus actif. Merci pour votre participation.":d.status==="revoked"?"L'équipe a retiré votre accès à cette discussion.":"Ce lien n'est pas (ou plus) valable. Vérifiez que vous avez copié l'adresse complète depuis l'e-mail."}</p>
+    <p class="hint">Pour toute question : 02 781 18 75.</p></section>`);
+  const c=d.case, p=c.patient, ms=d.messages||[];
+  let last=""; const msgs=ms.map(m=>{ const day=new Date(m.created_at).toDateString(), sep=day!==last?`<div class="day"><span>${esc(dayLabel(m.created_at))}</span></div>`:""; last=day;
+    if(m.kind==="system") return sep+`<p class="casesys">${esc(m.body)} · ${esc(hm(m.created_at))}</p>`;
+    const mine=m.kind==="me";
+    return sep+`<div class="tmw ${mine?"me":""}"><div class="bubw"><div class="tm ${mine?"me":m.kind==="guest"?"tguest":""}">${mine?"":`<span class="who">${esc(m.who||"Membre de l'équipe")}${m.kind==="guest"?` <i class="extag">externe</i>`:""}</span>`}<p dir="auto">${esc(m.body)}</p><small>${esc(hm(m.created_at))}</small></div></div></div>`; }).join("");
+  return guestShell(`<div class="chead"><div><p class="hint">Bonjour ${esc(d.me.name)}, vous êtes invité(e) à cette discussion par l'équipe du centre.</p><h1>${esc(c.title)}</h1>
+      <p>${p?`👤 <b>${esc(`${p.first_name||""} ${p.last_name||""}`.trim())}</b>${p.birth_date?`, né(e) le ${esc(fmtDate(p.birth_date))}`:""} · `:""}Ouverte par ${esc(c.opened_by||"l'équipe")} le ${esc(fmtDate(c.created_at))}</p></div></div>
+    <div class="casegrid"><div class="casemain">
+      <section class="card casenote"><h3>📋 Situation et question</h3><p class="casenotetx" dir="auto">${c.note?esc(c.note):`<span class="hint">Pas de note.</span>`}</p></section>
+      <section class="card casechat"><div class="tmsgs casemsgs" id="g-msgs">${msgs||`<p class="hint casehint">Pas encore de message.</p>`}</div>
+        <div class="casecomp"><textarea id="g-text" rows="3" maxlength="4000" placeholder="Votre avis, vos questions…" dir="auto">${esc(G.draft)}</textarea><button type="button" class="btn" id="g-send">Envoyer</button></div>
+        <p class="hint small">Vos messages sont visibles par tous les participants de cette discussion.</p></section>
+    </div><aside class="card caseside"><h3>Participants</h3><ul class="casemem">${(d.members||[]).map(x=>`<li>${esc(x)}</li>`).join("")}</ul></aside></div>`); }
+async function guestLoad(){
+  try{ const {data,error}=await sb.rpc("guest_case_view",{p_token:GUEST}); if(error) throw error; G.data=data; G.err=null; }
+  catch(e){ console.error(e); if(!G.data) G.err="Impossible de charger la discussion pour l'instant. Vérifiez votre connexion internet puis réessayez."; } }
+function guestRender(){
+  const ta=document.activeElement&&document.activeElement.id==="g-text";
+  app().innerHTML=guestHTML(); document.title="Discussion de cas · CMPL";
+  const b=$("#g-msgs"); if(b) b.scrollTop=b.scrollHeight;
+  const r=$("#g-retry"); if(r) r.onclick=async()=>{ G.err=null; guestRender(); await guestLoad(); guestRender(); };
+  const t=$("#g-text"); if(!t) return; if(ta) t.focus();
+  t.oninput=()=>{ G.draft=t.value; };
+  const send=async()=>{ const body=t.value.trim(); if(!body) return; const sb2=$("#g-send"); sb2.disabled=true;
+    const {error}=await sb.rpc("guest_case_send",{p_token:GUEST,p_body:body}); sb2.disabled=false;
+    if(error){ toast(frError(error)); return; } G.draft=""; await guestLoad(); guestRender(); toast("Message envoyé"); };
+  $("#g-send").onclick=send; t.onkeydown=e=>{ if(e.key==="Enter"&&(e.ctrlKey||e.metaKey)){ e.preventDefault(); send(); } }; }
+async function guestBoot(){
+  applyLang("fr"); guestRender(); await guestLoad(); guestRender();
+  // nouveaux messages : toutes les 20 secondes, sans déranger la frappe
+  G.timer=setInterval(async()=>{ if(document.hidden) return; const el=document.activeElement; if(el&&el.id==="g-text"&&el.value) return;
+    const before=JSON.stringify(G.data&&G.data.messages); await guestLoad(); if(JSON.stringify(G.data&&G.data.messages)!==before) guestRender(); },20000); }
+
+/* =====================================================================
    DÉMARRAGE
    ===================================================================== */
 sb.auth.onAuthStateChange((event, session)=>{
+  if(GUEST) return;
   S.session=session;
   if(event==="PASSWORD_RECOVERY"){ S.recovery=true; render(); return; }
   if(event==="SIGNED_IN"||event==="SIGNED_OUT"||event==="USER_UPDATED") setTimeout(refresh,0);
 });
 (async()=>{
+  if(GUEST){ guestBoot(); return; }
   applyLang(L);
   try{ const {data}=await sb.auth.getSession(); S.session=data.session; await refresh(); }
   catch(e){ console.error(e); app().innerHTML=`<div class="wrap"><div class="err" style="margin-top:20px">Impossible de joindre le centre pour l'instant. Vérifiez votre connexion internet puis rechargez la page.</div></div>`; return; }
@@ -7415,7 +7531,7 @@ sb.auth.onAuthStateChange((event, session)=>{
 })();
 // Actualisation automatique (toutes les 60 s, et au retour sur l'app), sans perdre ce qui est en cours d'écriture
 let busy=false;
-async function autoRefresh(){ if(busy||!S.session||S.loading||document.hidden||S.mfa) return; const el=document.activeElement;
+async function autoRefresh(){ if(GUEST||busy||!S.session||S.loading||document.hidden||S.mfa) return; const el=document.activeElement;
   if(el&&(el.tagName==="TEXTAREA"||el.tagName==="INPUT"||el.tagName==="SELECT")) return;
   if(S.screen==="flow"||S.rec||S.pend||S.editNews||S.cscreen==="compose"||S.cscreen==="settings"||S.cscreen==="tasks"||S.cscreen==="inventory"&&S.inv&&(S.inv.title||S.inv.photos.length)||CREC||document.querySelector(".viewer,.scanner,.tour")) return; busy=true; try{ await refresh(); } finally{ busy=false; } }
 setInterval(autoRefresh, 60000);

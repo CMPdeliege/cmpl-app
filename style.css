@@ -2269,3 +2269,18 @@ span.medit{font-style:italic}
 .postit footer>span{display:flex;flex-wrap:nowrap;flex:none}
 .casedlg input:not([type=checkbox]){width:100%;box-sizing:border-box;font:inherit;font-size:15px;padding:9px 12px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink);margin-top:4px}
 .casedlg #cn-pres:empty{display:none}
+/* intervenants externes */
+.tm.tguest{background:color-mix(in srgb,#2e7d5b 10%,var(--surface));border:1px solid color-mix(in srgb,#2e7d5b 35%,transparent)}
+.extag{font-style:normal;font-size:11px;padding:1px 6px;border-radius:999px;background:#2e7d5b;color:#fff;margin-left:4px}
+.caseexh{margin:16px 0 4px;font-size:15px}
+.caseext li{display:flex;flex-direction:column;gap:2px}.caseextb{display:flex;gap:12px;flex-wrap:wrap;margin-top:2px}
+.cgcons{margin:8px 0}
+.gwrap{max-width:1100px;margin:0 auto;padding:16px}
+.ghead{display:flex;align-items:center;gap:12px;margin:4px 0 18px}.ghead b{display:block;color:var(--accent);font-size:17px}.ghead small{color:var(--muted)}
+.gfoot{margin-top:22px;text-align:center}
+/* réunions passées */
+.mtpasth{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}.mtpasth h3{margin:0}
+.mtpast header>span{display:flex;gap:12px;flex-wrap:wrap}
+.mtnew .mtih input{flex:1;min-width:0;font:inherit;padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink)}
+.casemsgs .day{text-align:center;margin:10px 0 4px}
+.casemsgs .day span{display:inline-block;font-size:12px;font-weight:700;color:var(--muted);background:var(--surface);padding:3px 11px;border-radius:999px}
