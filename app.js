@@ -2090,7 +2090,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261116d";
+const APP_VERSION="20261116e";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -3287,9 +3287,13 @@ function joyWatch(){
 
 /* ----- mercis ----- */
 const kudosRecent = () => (S.kudos||[]).filter(k=>Date.now()-new Date(k.created_at)<14*864e5);
+const KUDO_REPLIES=["Avec plaisir 😊","De rien !","C'était normal 💪","Merci à toi aussi 🙏","Toujours là pour toi 🤝"];
 function kudoNoteHTML(k){
-  const mine=k.from_id===S.me.id||k.to_id===S.me.id||isAdmin();
-  return `<div class="mnote" style="--mc:${esc(k.color||"#fff1c9")}"><p>Merci <b>${esc(flairEmoji(k.to_id))} ${esc(staffFirst(k.to_id))}</b> ${esc(k.body)}</p><small>— ${esc(flairEmoji(k.from_id))} ${esc(staffFirst(k.from_id))} · ${fmt(k.created_at)}${mine?` <button type="button" class="linkbtn" data-kdel="${k.id}">retirer</button>`:""}</small></div>`;
+  const mine=k.from_id===S.me.id||k.to_id===S.me.id||isAdmin(), forMe=k.to_id===S.me.id&&"reply" in k;
+  const choose=forMe&&(!k.reply||S.kdReply===k.id);
+  return `<div class="mnote" style="--mc:${esc(k.color||"#fff1c9")}"><p>Merci <b>${esc(flairEmoji(k.to_id))} ${esc(staffFirst(k.to_id))}</b> ${esc(k.body)}</p><small>— ${esc(flairEmoji(k.from_id))} ${esc(staffFirst(k.from_id))} · ${fmt(k.created_at)}${mine?` <button type="button" class="linkbtn" data-kdel="${k.id}">retirer</button>`:""}</small>
+    ${k.reply&&!choose?`<p class="kreply">↩︎ <b>${esc(staffFirst(k.to_id))}</b> : ${esc(k.reply)}${forMe?` <button type="button" class="linkbtn" data-kdchg="${k.id}">changer</button>`:""}</p>`:""}
+    ${choose?`<div class="kreplies" role="group" aria-label="Répondre au merci">${KUDO_REPLIES.map(r=>`<button type="button" class="kchip${k.reply===r?" on":""}" data-kdrep="${k.id}" data-r="${esc(r)}">${esc(r)}</button>`).join("")}</div>`:""}</div>`;
 }
 function kudoFormHTML(){
   const F=S.kdForm; if(!F) return "";
@@ -3300,6 +3304,10 @@ function kudoFormHTML(){
 }
 function bindKudos(){
   const n=$("#kd-new"); if(n) n.onclick=()=>{ S.kdForm={to:"",body:"",color:FLAIR_COLORS[(dayNum()+S.kudos.length)%6]}; render(); $("#kd-to")?.focus(); };
+  $$("[data-kdrep]").forEach(b=>b.onclick=async()=>{ const k=S.kudos.find(x=>x.id===+b.dataset.kdrep); const r=b.dataset.r===k.reply?null:b.dataset.r; b.disabled=true;
+    const {error}=await sb.rpc("kudos_reply",{p_id:k.id,p_reply:r}); if(error){ b.disabled=false; return toast(frError(error)); }
+    k.reply=r; k.reply_at=r?new Date().toISOString():null; S.kdReply=null; render(); if(r) toast("Réponse envoyée"); });
+  $$("[data-kdchg]").forEach(b=>b.onclick=()=>{ S.kdReply=+b.dataset.kdchg; render(); });
   $$("[data-kdel]").forEach(b=>b.onclick=async()=>{ if(!confirmInline(b,"Retirer ?")) return; if(await run(()=>sb.from("kudos").delete().eq("id",+b.dataset.kdel),"Retiré")){ S.kudos=S.kudos.filter(k=>k.id!==+b.dataset.kdel); render(); } });
   const F=S.kdForm; if(!F||!$("#kd-go")) return;
   const keep=()=>{ F.to=$("#kd-to").value; F.body=$("#kd-b").value; };
@@ -7465,7 +7473,7 @@ function startRealtime(){
       .on("postgres_changes",{event:"*",schema:"public",table:"broadcasts"},()=>annRt())
       .on("postgres_changes",{event:"*",schema:"public",table:"checklist_runs"},()=>orgRt())
       .on("postgres_changes",{event:"*",schema:"public",table:"meeting_items"},()=>orgRt())
-      .on("postgres_changes",{event:"INSERT",schema:"public",table:"kudos"},()=>orgRt())
+      .on("postgres_changes",{event:"*",schema:"public",table:"kudos"},()=>orgRt())
       .subscribe();
   }catch(e){ console.error(e); RT=null; }
 }
