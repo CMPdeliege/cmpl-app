@@ -2233,7 +2233,8 @@ span.medit{font-style:italic}
 .caseitem .dot{width:9px;height:9px;border-radius:50%;background:var(--accent);display:inline-block}
 .caseitem.unread b{color:var(--accent)}
 .casehead h1{margin:4px 0}
-.casegrid{display:grid;grid-template-columns:minmax(0,1fr) 260px;gap:16px;align-items:start}
+.casegrid{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;align-items:start}
+@media (min-width:1100px){ .casegrid{grid-template-columns:minmax(0,1fr) 260px} }
 .casemain{display:flex;flex-direction:column;gap:16px;min-width:0}
 .casenoteh{display:flex;justify-content:space-between;align-items:center}.casenoteh h3{margin:0}
 .casenotetx{white-space:pre-wrap;margin:10px 0 6px}
@@ -2248,7 +2249,7 @@ span.medit{font-style:italic}
 .casedlg textarea{width:100%;box-sizing:border-box;font:inherit;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink)}
 .casedlg .fld>span{display:block;font-size:13px;color:var(--muted);margin-bottom:4px}
 .cnpat{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 10px;border:1px solid var(--line);border-radius:10px}
-@media (max-width:860px){ .casegrid{grid-template-columns:1fr} }
+
 /* mur des anecdotes */
 .wallform textarea{width:100%;box-sizing:border-box;font:inherit;font-size:15px;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink);resize:vertical}
 .wallwarn{margin:4px 0 10px}
@@ -2297,3 +2298,5 @@ span.medit{font-style:italic}
 .mtnotif{margin:6px 0 0}
 .casecomp2{margin-top:10px}.casecomp2 .chatbar{position:static;margin:0;border-radius:14px}
 .gwrap .casecomp .cbtn{flex:none}
+
+.casecomp{min-width:0}.casecomp textarea{flex:1 1 auto;min-width:0}
