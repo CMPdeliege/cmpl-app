@@ -2295,3 +2295,5 @@ span.medit{font-style:italic}
 .kchip{border:1px solid rgba(0,0,0,.12);background:rgba(255,255,255,.7);border-radius:999px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer;color:var(--ink)}
 .kchip:hover{background:#fff}.kchip.on{background:var(--accent);color:#fff;border-color:var(--accent)}
 .mtnotif{margin:6px 0 0}
+.casecomp2{margin-top:10px}.casecomp2 .chatbar{position:static;margin:0;border-radius:14px}
+.gwrap .casecomp .cbtn{flex:none}

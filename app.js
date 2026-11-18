@@ -2090,7 +2090,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261118b";
+const APP_VERSION="20261118c";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -2358,13 +2358,30 @@ function caseRtStart(){
 function caseRt(cid){ clearTimeout(caseRtTimer); caseRtTimer=setTimeout(async()=>{ if(!S.me||S.me.role==="patient") return;
   await loadCases(); if(cid&&S.caseMsgs[cid]) await loadCaseMsgs(cid);
   if(S.cscreen==="cases"&&S.caseOpen===cid&&cid) sb.rpc("case_read",{p_case:cid}).then(()=>{ const m=caseMe(cid); if(m) m.last_read_at=new Date().toISOString(); updateBadges(); });
-  const typing=document.activeElement&&document.activeElement.id==="case-text";
-  if(S.cscreen==="cases"&&typing&&$("#casemsgs")){ $("#casemsgs").innerHTML=caseMsgsHTML(S.caseOpen); caseScroll(); updateBadges(); }
+  const typing=(document.activeElement&&document.activeElement.id==="c-text")||!!S.pend||(typeof REC!=="undefined"&&!!REC);
+  if(S.cscreen==="cases"&&typing&&$("#casemsgs")){ $("#casemsgs").innerHTML=caseMsgsHTML(S.caseOpen); hydrateCase(false); caseScroll(); updateBadges(); }
   else if(S.cscreen==="cases"&&!typing) render(); else updateBadges(); },350); }
 async function loadCaseMsgs(id){
-  let r=await sb.from("case_messages").select("id,case_id,author_id,guest_id,body,created_at").eq("case_id",id).order("created_at").limit(1000);
+  let r=await sb.from("case_messages").select("id,case_id,author_id,guest_id,body,created_at,file_mime,file_name,file_size").eq("case_id",id).order("created_at").limit(1000);
+  if(r.error) r=await sb.from("case_messages").select("id,case_id,author_id,guest_id,body,created_at").eq("case_id",id).order("created_at").limit(1000);
   if(r.error) r=await sb.from("case_messages").select("id,case_id,author_id,body,created_at").eq("case_id",id).order("created_at").limit(1000);
   if(!r.error) S.caseMsgs[id]=r.data||[]; }
+function caseFileHTML(m){ if(!m.file_mime) return "";
+  return m.file_mime.startsWith("image")?`<button type="button" class="tfile img" data-cfile="${m.id}" data-kind="image"><span class="loading">Photo…</span></button>`
+    :m.file_mime.startsWith("audio")?`<div class="tfile" data-cfile="${m.id}" data-kind="audio"><audio controls preload="none"></audio></div>`
+    :`<a class="tfile pdf" href="#" data-cfile="${m.id}" data-kind="pdf">📄 ${esc(m.file_name||"document.pdf")}</a>`; }
+const CFILES=new Map();
+async function caseFile(id,guest){ const k=(guest?"g":"s")+id; if(CFILES.has(k)) return CFILES.get(k);
+  const p=(async()=>{ const {data,error}=guest?await sb.rpc("guest_case_file",{p_token:GUEST,p_id:id}):await sb.rpc("case_file",{p_id:id}); if(error) throw error; const d=(data||[])[0]; if(!d) throw new Error("absent");
+    const bin=atob(d.data), u8=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u8[i]=bin.charCodeAt(i);
+    const blob=new Blob([u8],{type:d.mime}); return {blob,url:URL.createObjectURL(blob),name:d.name,mime:d.mime}; })();
+  CFILES.set(k,p); p.catch(()=>CFILES.delete(k)); return p; }
+function hydrateCase(guest){ $$("[data-cfile]:not([data-ready])").forEach(async el=>{ el.dataset.ready="1";
+  try{ const f=await caseFile(+el.dataset.cfile,guest);
+    if(el.dataset.kind==="image"){ el.innerHTML=`<img src="${f.url}" alt="Photo">`; el.onclick=()=>openViewer(f.url); }
+    else if(el.dataset.kind==="audio"){ const au=el.querySelector("audio"); au.src=f.url; if(typeof fixAudio==="function") fixAudio(au, f.blob, 0); }
+    else el.onclick=async e=>{ e.preventDefault(); if(IS_NATIVE&&SEC()){ try{ await nativePreview(f.blob,f.name); }catch(_){ toast("Ce document n'a pas pu être ouvert."); } } else window.open(f.url,"_blank","noopener"); };
+  }catch(e){ el.textContent="Fichier indisponible"; } }); }
 const caseGuestsOf = id => (S.caseGuests||[]).filter(g=>g.case_id===id);
 const guestLabel = g => g?`${g.name}${g.role?` (${g.role})`:""}`:"Intervenant externe";
 const caseMems = id => S.caseMembers.filter(m=>m.case_id===id);
@@ -2394,10 +2411,10 @@ function caseMsgsHTML(id){
   if(!ms.length) return `<p class="hint casehint">Pas encore de message. Posez votre question à vos collègues.</p>`;
   let last=""; return ms.map(m=>{ const d=new Date(m.created_at).toDateString(), sep=d!==last?`<div class="day"><span>${esc(dayLabel(m.created_at))}</span></div>`:""; last=d;
     if(m.guest_id){ const g=(S.caseGuests||[]).find(x=>x.id===m.guest_id);
-      return sep+`<div class="tmw"><div class="bubw"><div class="tm tguest"><span class="who">${esc(guestLabel(g))} <i class="extag">externe</i></span><p dir="auto">${esc(m.body)}</p><small>${esc(hm(m.created_at))}</small></div></div></div>`; }
+      return sep+`<div class="tmw"><div class="bubw"><div class="tm tguest"><span class="who">${esc(guestLabel(g))} <i class="extag">externe</i></span>${m.body?`<p dir="auto">${esc(m.body)}</p>`:""}${caseFileHTML(m)}<small>${esc(hm(m.created_at))}</small></div></div></div>`; }
     if(!m.author_id) return sep+`<p class="casesys">${esc(m.body)} · ${esc(hm(m.created_at))}</p>`;
     const mine=m.author_id===S.me.id;
-    return sep+`<div class="tmw ${mine?"me":""}"><div class="bubw"><div class="tm ${mine?"me":""}">${mine?"":`<span class="who">${esc(staffName(m.author_id))}</span>`}<p dir="auto">${esc((m.body))}</p><small>${esc(hm(m.created_at))}</small></div></div></div>`; }).join(""); }
+    return sep+`<div class="tmw ${mine?"me":""}"><div class="bubw"><div class="tm ${mine?"me":""}">${mine?"":`<span class="who">${esc(staffName(m.author_id))}</span>`}${m.body?`<p dir="auto">${esc((m.body))}</p>`:""}${caseFileHTML(m)}<small>${esc(hm(m.created_at))}</small></div></div></div>`; }).join(""); }
 function caseScroll(){ const b=$("#casemsgs"); if(b) b.scrollTop=b.scrollHeight; }
 function caseViewHTML(c){
   const p=casePat(c), mem=caseMems(c.id), closed=!!c.closed_at, ed=S.caseNoteEdit===c.id;
@@ -2412,7 +2429,7 @@ function caseViewHTML(c){
       </section>
       <section class="card casechat"><div class="tmsgs casemsgs" id="casemsgs">${caseMsgsHTML(c.id)}</div>
        ${closed?`<p class="hint casehint">Discussion clôturée.${caseCanClose(c)?" Rouvrez-la pour écrire à nouveau.":""}</p>`
-         :`<div class="casecomp"><textarea id="case-text" rows="2" maxlength="4000" placeholder="Votre avis, une question…" dir="auto">${esc(S.drafts["case"+c.id]||"")}</textarea><button type="button" class="btn" id="case-send">Envoyer</button></div>`}
+         :`<div class="casecomp2">${composerHTML("k"+c.id)}</div>`}
       </section>
      </div>
      <aside class="card caseside"><h3>Membres (${mem.length})</h3><ul class="casemem">${mem.map(m=>`<li>${esc(staffName(m.user_id))}${m.user_id===c.created_by?` <small>· a ouvert</small>`:""}</li>`).join("")}</ul>
@@ -2493,11 +2510,12 @@ function bindCases(){
     if(error) return toast(frError(error)); const h=data||[];
     const list=h.length?[`<li><b>Version d'origine</b><p dir="auto">${esc(h[0].old_note||"(vide)")}</p></li>`,...h.map((x,i)=>`<li><b>${i===h.length-1?"Version actuelle":"Version "+(i+2)}</b> <small>par ${esc(staffName(x.edited_by))}, ${esc(fmtDate(x.edited_at))} à ${esc(hm(x.edited_at))}</small><p dir="auto">${esc(x.new_note||"(vide)")}</p></li>`)].join(""):`<li>La note n'a pas encore été modifiée.</li>`;
     const v=tMsgDialog("Historique de la note",`<ol class="mhist">${list}</ol>`,"Fermer","",async()=>true); v.querySelector("[data-no]").remove(); };
-  const ta=$("#case-text"); if(ta){ ta.oninput=()=>{ S.drafts["case"+c.id]=ta.value; };
-    const send=async()=>{ const body=ta.value.trim(); if(!body) return; const b=$("#case-send"); b.disabled=true;
-      const {error}=await sb.rpc("case_send",{p_case:c.id,p_body:body}); b.disabled=false;
-      if(error) return toast(frError(error)); S.drafts["case"+c.id]=""; await loadCaseMsgs(c.id); await loadCases(); render(); $("#case-text")?.focus(); };
-    $("#case-send").onclick=send; ta.onkeydown=e=>{ if(e.key==="Enter"&&(e.ctrlKey||e.metaKey)){ e.preventDefault(); send(); } }; }
+  hydrateCase(false);
+  if(!c.closed_at) bindComposer("k"+c.id, async (text,pend)=>{
+    const args={p_case:c.id,p_body:text||"",p_mime:null,p_name:null,p_data:null};
+    if(pend){ toast("Envoi…"); args.p_mime=pend.mime; args.p_name=pend.name; args.p_data=await blobToB64(pend.blob); }
+    const {error}=await sb.rpc("case_send",args); if(error){ toast(frError(error)); return false; }
+    S.drafts["k"+c.id]=""; clearPend(); await loadCaseMsgs(c.id); await loadCases(); render(); return true; });
   const inv=$("#case-invite"); if(inv) inv.onclick=()=>pickColleagues("Inviter à la discussion",caseMems(c.id).map(m=>m.user_id),async ids=>{
     if(await run(()=>sb.rpc("case_add_members",{p_case:c.id,p_members:ids}),"Invitation envoyée")){ await loadCases(); await loadCaseMsgs(c.id); render(); return true; } return false; });
   const gi=$("#case-guest"); if(gi) gi.onclick=()=>caseGuestDialog(c);
@@ -7521,13 +7539,15 @@ function guestHTML(){
   let last=""; const msgs=ms.map(m=>{ const day=new Date(m.created_at).toDateString(), sep=day!==last?`<div class="day"><span>${esc(dayLabel(m.created_at))}</span></div>`:""; last=day;
     if(m.kind==="system") return sep+`<p class="casesys">${esc(m.body)} · ${esc(hm(m.created_at))}</p>`;
     const mine=m.kind==="me";
-    return sep+`<div class="tmw ${mine?"me":""}"><div class="bubw"><div class="tm ${mine?"me":m.kind==="guest"?"tguest":""}">${mine?"":`<span class="who">${esc(m.who||"Membre de l'équipe")}${m.kind==="guest"?` <i class="extag">externe</i>`:""}</span>`}<p dir="auto">${esc(m.body)}</p><small>${esc(hm(m.created_at))}</small></div></div></div>`; }).join("");
+    return sep+`<div class="tmw ${mine?"me":""}"><div class="bubw"><div class="tm ${mine?"me":m.kind==="guest"?"tguest":""}">${mine?"":`<span class="who">${esc(m.who||"Membre de l'équipe")}${m.kind==="guest"?` <i class="extag">externe</i>`:""}</span>`}${m.body?`<p dir="auto">${esc(m.body)}</p>`:""}${caseFileHTML(m)}<small>${esc(hm(m.created_at))}</small></div></div></div>`; }).join("");
   return guestShell(`<div class="chead"><div><p class="hint">Bonjour ${esc(d.me.name)}, vous êtes invité(e) à cette discussion par l'équipe du centre.</p><h1>${esc(c.title)}</h1>
       <p>${p?`👤 <b>${esc(`${p.first_name||""} ${p.last_name||""}`.trim())}</b>${p.birth_date?`, né(e) le ${esc(fmtDate(p.birth_date))}`:""} · `:""}Ouverte par ${esc(c.opened_by||"l'équipe")} le ${esc(fmtDate(c.created_at))}</p></div></div>
     <div class="casegrid"><div class="casemain">
       <section class="card casenote"><h3>📋 Situation et question</h3><p class="casenotetx" dir="auto">${c.note?esc(c.note):`<span class="hint">Pas de note.</span>`}</p></section>
       <section class="card casechat"><div class="tmsgs casemsgs" id="g-msgs">${msgs||`<p class="hint casehint">Pas encore de message.</p>`}</div>
-        <div class="casecomp"><textarea id="g-text" rows="3" maxlength="4000" placeholder="Votre avis, vos questions…" dir="auto">${esc(G.draft)}</textarea><button type="button" class="btn" id="g-send">Envoyer</button></div>
+        ${G.file?`<div class="attprev">${G.file.kind==="image"?`<img src="${G.file.url}" alt="">`:"📄"}<span><b>${esc(G.file.name)}</b><small>${kb(G.file.blob.size)} · prêt à envoyer</small></span><button type="button" class="cbtn sm" id="g-unatt" aria-label="Retirer la pièce jointe">✕</button></div>`:""}
+        <div class="casecomp"><button type="button" class="cbtn" id="g-att" aria-label="Joindre une photo ou un PDF" title="Photo ou PDF">${IC.clip}</button><input type="file" id="g-file" accept="image/*,application/pdf" hidden>
+          <textarea id="g-text" rows="3" maxlength="4000" placeholder="Votre avis, vos questions…" dir="auto">${esc(G.draft)}</textarea><button type="button" class="btn" id="g-send">Envoyer</button></div>
         <p class="hint small">Vos messages sont visibles par tous les participants de cette discussion.</p></section>
     </div><aside class="card caseside"><h3>Participants</h3><ul class="casemem">${(d.members||[]).map(x=>`<li>${esc(x)}</li>`).join("")}</ul></aside></div>`); }
 async function guestLoad(){
@@ -7536,18 +7556,23 @@ async function guestLoad(){
 function guestRender(){
   const ta=document.activeElement&&document.activeElement.id==="g-text";
   app().innerHTML=guestHTML(); document.title="Discussion de cas · CMPL";
-  const b=$("#g-msgs"); if(b) b.scrollTop=b.scrollHeight;
+  const b=$("#g-msgs"); if(b) b.scrollTop=b.scrollHeight; hydrateCase(true);
   const r=$("#g-retry"); if(r) r.onclick=async()=>{ G.err=null; guestRender(); await guestLoad(); guestRender(); };
   const t=$("#g-text"); if(!t) return; if(ta) t.focus();
   t.oninput=()=>{ G.draft=t.value; };
-  const send=async()=>{ const body=t.value.trim(); if(!body) return; const sb2=$("#g-send"); sb2.disabled=true;
-    const {error}=await sb.rpc("guest_case_send",{p_token:GUEST,p_body:body}); sb2.disabled=false;
-    if(error){ toast(frError(error)); return; } G.draft=""; await guestLoad(); guestRender(); toast("Message envoyé"); };
+  const gf=$("#g-file"); $("#g-att").onclick=()=>gf.click();
+  gf.onchange=async()=>{ const f=gf.files[0]; gf.value=""; if(!f) return; try{ if(G.file&&G.file.url) URL.revokeObjectURL(G.file.url); G.file=await prepFile(f,"g"); guestRender(); }catch(e){ toast(e.message); } };
+  const ua=$("#g-unatt"); if(ua) ua.onclick=()=>{ if(G.file&&G.file.url) URL.revokeObjectURL(G.file.url); G.file=null; guestRender(); };
+  const send=async()=>{ const body=t.value.trim(); if(!body&&!G.file) return; const sb2=$("#g-send"); sb2.disabled=true;
+    const args={p_token:GUEST,p_body:body,p_mime:null,p_name:null,p_data:null};
+    if(G.file){ toast("Envoi…"); args.p_mime=G.file.mime; args.p_name=G.file.name; args.p_data=await blobToB64(G.file.blob); }
+    const {error}=await sb.rpc("guest_case_send",args); sb2.disabled=false;
+    if(error){ toast(frError(error)); return; } G.draft=""; if(G.file&&G.file.url) URL.revokeObjectURL(G.file.url); G.file=null; await guestLoad(); guestRender(); toast("Message envoyé"); };
   $("#g-send").onclick=send; t.onkeydown=e=>{ if(e.key==="Enter"&&(e.ctrlKey||e.metaKey)){ e.preventDefault(); send(); } }; }
 async function guestBoot(){
   applyLang("fr"); guestRender(); await guestLoad(); guestRender();
   // nouveaux messages : toutes les 20 secondes, sans déranger la frappe
-  G.timer=setInterval(async()=>{ if(document.hidden) return; const el=document.activeElement; if(el&&el.id==="g-text"&&el.value) return;
+  G.timer=setInterval(async()=>{ if(document.hidden||G.file) return; const el=document.activeElement; if(el&&el.id==="g-text"&&el.value) return;
     const before=JSON.stringify(G.data&&G.data.messages); await guestLoad(); if(JSON.stringify(G.data&&G.data.messages)!==before) guestRender(); },20000); }
 
 /* =====================================================================
