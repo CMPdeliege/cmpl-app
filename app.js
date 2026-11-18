@@ -931,8 +931,8 @@ async function refresh(){
   if(!S.session){ S.me=null; render(); return; }
   await loadMe();
   if(!S.me){ render(); return; }
-  // App Android (Play Store) : réservée aux patients. L'équipe utilise app.cmpl.be dans Chrome (notifications comprises).
-  if(IS_ANDROID_APP&&S.me.role!=="patient"){ S.androidStaff=true; stopRealtime(); await sb.auth.signOut(); S.session=null; S.me=null; S.mfa=null; render(); return; }
+  // App Android (Play Store) : ouverte à l'équipe depuis la version 20261118f. Avec l'empreinte digitale si le
+  // module natif CMPLSecure est présent dans l'app (nouvelle version Play Store), sinon avec le code à 6 chiffres.
   syncLang(); syncTextSize();
   S.mfa=null;
   if(S.me.status==="active"&&S.me.role!=="patient"){
@@ -2116,7 +2116,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261118e";
+const APP_VERSION="20261118f";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
