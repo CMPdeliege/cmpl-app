@@ -2090,7 +2090,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261118a";
+const APP_VERSION="20261118b";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -2446,8 +2446,9 @@ function caseNewDialog(pre){
     box.innerHTML=`<input id="cn-pq" class="pcq" placeholder="Nom du patient…" aria-label="Rechercher un patient"><div id="cn-pres" class="pclist"></div>`;
     let tm; box.querySelector("#cn-pq").oninput=e=>{ clearTimeout(tm); const w=norm(e.target.value).split(/\s+/).filter(x=>x.length>=2); const res=box.querySelector("#cn-pres");
       if(!w.length){ res.innerHTML=""; return; }
-      tm=setTimeout(async()=>{ const l=await searchPatients(w)||[]; res.innerHTML=l.length?l.map(p=>patientPickRow(p)).join(""):`<p class="hint">Aucun patient trouvé.</p>`;
-        res.querySelectorAll("[data-pick]").forEach(b=>b.onclick=()=>{ pat=l.find(x=>String(x.id)===b.dataset.pick); drawPat(); }); },250); }; };
+      tm=setTimeout(async()=>{ const recs=(S.records||[]).filter(r=>!r.archived_at&&!r.merged_into&&w.every(x=>norm(`${r.first_name||""} ${r.last_name||""}`).includes(x))).slice(0,12).map(r=>({...r,record:true}));
+        const l=[...(await searchPatients(w)||[]),...recs]; res.innerHTML=l.length?l.map(p=>patientPickRow(p)).join(""):`<p class="hint">Aucun patient trouvé.</p>`;
+        res.querySelectorAll("[data-pick]").forEach((b,i)=>b.onclick=()=>{ pat=l[i]; drawPat(); }); },250); }; };
   drawPat();
   v.querySelector("#cn-ok").onclick=async e=>{ const title=v.querySelector("#cn-title").value.trim(), note=v.querySelector("#cn-note").value.trim();
     const ids=[...v.querySelectorAll(".pcrow input:checked")].map(i=>i.value);
