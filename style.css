@@ -2300,3 +2300,4 @@ span.medit{font-style:italic}
 .gwrap .casecomp .cbtn{flex:none}
 
 .casecomp{min-width:0}.casecomp textarea{flex:1 1 auto;min-width:0}
+.quickfid{margin:4px 0 14px;text-align:center}.quickfid small{display:block;margin-top:6px;color:var(--muted)}.quickfid .hint{margin:12px 0 0}

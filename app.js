@@ -1021,12 +1021,33 @@ async function faceIdSetup(){
   if(v.error){ await sb.auth.mfa.unenroll({factorId:data.id}).catch(()=>{}); throw v.error; }
   await SEC().save({key:fidKey(),value:JSON.stringify({f:data.id,s:data.totp.secret})});
   try{ localStorage.setItem(fidKey(),data.id); }catch(e){}
+  await quickSave(data.id,data.totp.secret);
 }
 async function faceIdSecret(){ const r=await SEC().load({key:fidKey(),reason:"Connexion au Centre Médical Prince de Liège"}); return JSON.parse(r.value); }
-async function faceIdLogin(){ const {f,s:sec}=await faceIdSecret(); const v=await sb.auth.mfa.challengeAndVerify({factorId:f,code:await totpCode(sec)}); if(v.error) throw v.error; }
+async function faceIdLogin(){ const {f,s:sec}=await faceIdSecret(); const v=await sb.auth.mfa.challengeAndVerify({factorId:f,code:await totpCode(sec)}); if(v.error) throw v.error; await quickSave(f,sec); }
+/* ---------- connexion directe par Face ID (app iPhone) ----------
+   Après une connexion e-mail + mot de passe + Face ID, l'identifiant, le mot de passe et le secret de double
+   authentification sont rangés dans le trousseau de l'iPhone, protégés par Face ID (comme les mots de passe
+   enregistrés d'iOS). Ensuite, l'écran de connexion propose « Se connecter avec Face ID » : un seul Face ID suffit. */
+const QUICK_KEY="cmpl_quick_login"; let LAST_LOGIN=null, QUICK_BUSY=false;
+const quickEmail = () => { try{ return localStorage.getItem("cmpl_quick")||""; }catch(e){ return ""; } };
+async function quickSave(f,sec){ if(!LAST_LOGIN||!SEC()) return; const {email,pass}=LAST_LOGIN; LAST_LOGIN=null;
+  try{ await SEC().save({key:QUICK_KEY,value:JSON.stringify({e:email,p:pass,f,s:sec})}); localStorage.setItem("cmpl_quick",email); }catch(e){ console.error(e); } }
+async function quickForget(){ try{ await SEC()?.remove({key:QUICK_KEY}); }catch(e){} try{ localStorage.removeItem("cmpl_quick"); }catch(e){} }
+async function quickLogin(show){
+  if(QUICK_BUSY) return; QUICK_BUSY=true; lockDone=true;
+  try{
+    const r=await SEC().load({key:QUICK_KEY,reason:"Connexion au Centre Médical Prince de Liège"}); const c=JSON.parse(r.value);
+    const {error}=await sb.auth.signInWithPassword({email:c.e,password:c.p});
+    if(error){ if(/invalid|credentials/i.test(error.message||"")){ await quickForget(); render(); show("Votre mot de passe a changé : connectez-vous une fois avec votre e-mail et votre mot de passe, puis "+bioName()+". La connexion rapide sera mise à jour."); } else show(frError(error)); return; }
+    const v=await sb.auth.mfa.challengeAndVerify({factorId:c.f,code:await totpCode(c.s)});
+    if(!v.error){ markActive(); lastAct=Date.now(); toast("Connecté"); }
+    await refresh();
+  }catch(e){ if(!(e&&e.code==="CANCELED")){ console.error(e); show(BioName()+" n'a pas fonctionné. Réessayez ou connectez-vous avec votre e-mail."); } }
+  finally{ QUICK_BUSY=false; } }
 async function faceIdForget(unenroll){ const f=(()=>{ try{ return localStorage.getItem(fidKey()); }catch(e){ return null; } })();
   if(unenroll&&f) await sb.auth.mfa.unenroll({factorId:f}).catch(()=>{});
-  try{ await SEC().remove({key:fidKey()}); }catch(e){} try{ localStorage.removeItem(fidKey()); }catch(e){} }
+  try{ await SEC().remove({key:fidKey()}); }catch(e){} try{ localStorage.removeItem(fidKey()); }catch(e){} await quickForget(); }
 /* ---------- diagnostic temporaire de mise en page (app iPhone) ----------
    Si la page devient plus large que l'écran ou zoomée, un bouton rouge « Diag » apparaît ;
    une capture de son contenu permet de trouver l'élément en cause. */
@@ -1161,7 +1182,7 @@ function renderMfa(a){
         catch(e){ if(bt) bt.disabled=false; if(e&&e.code==="CANCELED") return;
           if(e&&e.code!=="ERROR"){ await faceIdForget(false); z.innerHTML=""; msg(BioName()+" n'est plus configuré"+bioE()+" sur ce téléphone : entrez le code de votre application, puis réactivez "+n+" dans Mon profil."); }
           else msg(BioName()+" n'a pas fonctionné. Réessayez ou entrez le code."); } };
-      $("#fid-go").onclick=go; go();
+      $("#fid-go").onclick=go; if(!QUICK_BUSY) go();
     } else if(enroll){
       z.innerHTML=`<button class="btn full" id="fid-new">Activer avec ${n} (recommandé)</button><p class="hint" style="text-align:center;margin:6px 0 0">Rien à installer : ${n} remplace l'application d'authentification sur ce téléphone. Ou utilisez le code QR ci-dessous.</p>`;
       $("#fid-new").onclick=async e=>{ e.target.disabled=true;
@@ -1397,6 +1418,7 @@ function renderAuth(a){
     <button id="m-login" aria-pressed="${m==="login"}">J'ai un compte</button>
     <button id="m-signup" aria-pressed="${m==="signup"}">Créer un compte</button>
    </div>
+   ${m==="login"&&IS_NATIVE&&SEC()&&quickEmail()?`<div class="quickfid"><button type="button" class="btn full" id="q-fid">Se connecter avec ${bioName()}</button><small>${esc(quickEmail())}</small><p class="hint">ou avec votre e-mail et votre mot de passe :</p></div>`:""}
    <form class="form" id="authform" novalidate>
     ${m==="signup"?`
      <div class="row2"><label class="fld" for="f-first">Prénom<input id="f-first" autocomplete="given-name" required></label>
@@ -1419,6 +1441,9 @@ function renderAuth(a){
   $("#m-signup").onclick=()=>{S.authMode="signup";render()};
   const fg=$("#m-forgot"); if(fg) fg.onclick=()=>{S.authMode="forgot";render()};
   const bk=$("#m-back"); if(bk) bk.onclick=()=>{S.authMode="login";render()};
+  const qf=$("#q-fid"); if(qf){ const qshow=t=>{ const mm=$("#f-msg"); if(mm) mm.innerHTML=`<div class="err">${esc(t)}</div>`; };
+    bioInfo().then(()=>{ const b=$("#q-fid"); if(b) b.textContent="Se connecter avec "+bioName(); });
+    qf.onclick=async()=>{ qf.disabled=true; await quickLogin(qshow); const b=$("#q-fid"); if(b) b.disabled=false; }; }
   $("#authform").onsubmit=async e=>{
     e.preventDefault();
     const msg=$("#f-msg"), btn=e.target.querySelector('button[type="submit"]');
@@ -1429,6 +1454,7 @@ function renderAuth(a){
     try{
       if(m==="login"){
         const {error}=await sb.auth.signInWithPassword({email,password:pass}); if(error) throw error;
+        if(IS_NATIVE&&SEC()){ LAST_LOGIN={email,pass}; setTimeout(()=>{ LAST_LOGIN=null; },10*60*1000); }   // pour la connexion rapide par Face ID (gardé en mémoire 10 minutes au plus)
       } else if(m==="forgot"){
         const {error}=await sb.auth.resetPasswordForEmail(email,{redirectTo:location.origin+location.pathname}); if(error) throw error;
         show("Si un compte existe avec cette adresse, un lien vient de vous être envoyé.",true);
@@ -2090,7 +2116,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261118d";
+const APP_VERSION="20261118e";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -3250,7 +3276,7 @@ function staffHelpHTML(){
    ["Suivi des factures","Infos et documents → Documents : chaque facture affiche « À payer », « En retard » (échéance dépassée) ou « Payée le… ». Le filtre « Impayées » donne le total à encaisser. « ✓ Payée » enregistre la date du paiement ; « 📄 Rappel » prépare une lettre de rappel (PDF) à envoyer au destinataire."],
    ["Statistiques du mois (administrateurs)","Le centre → Statistiques : demandes reçues, délai de première réponse, part des demandes traitées dans le délai annoncé, répartition par type, par prestataire, par heure et par jour, comparées au mois précédent. Aucun nom de patient."],
    ["Journal et sauvegarde (administrateurs)","Le centre → Journal et sauvegarde : qui a ouvert quelle demande, écrit, classé, transféré, modifié un compte, affiché un mot de passe, créé ou annulé un reçu, sur les 3 derniers mois (export Excel possible). « Télécharger la sauvegarde » produit un fichier Excel des patients, pages patients, annuaire, tâches et factures : à garder sur un ordinateur protégé du centre. Un rappel arrive le 1er de chaque mois."],
-   ["Face ID sur l'iPhone","Dans l'app iPhone : Mon profil et notifications → Face ID. Ensuite l'app se déverrouille avec votre visage, sans code."],
+   ["Face ID sur l'iPhone","Dans l'app iPhone : Mon profil et notifications → Face ID. Ensuite l'app se déverrouille avec votre visage, sans code. Après une connexion avec e-mail, mot de passe et Face ID, l'écran de connexion propose « Se connecter avec Face ID » : plus besoin de retaper l'e-mail et le mot de passe. Désactiver Face ID dans Mon profil efface aussi cette connexion rapide."],
    ["Un problème avec l'app","Prévenez l'administrateur du centre en précisant l'écran concerné (une capture d'écran aide beaucoup)."]];
   return `<div class="chead"><div><h1>Aide</h1><p>Les réponses aux questions les plus fréquentes de l'équipe.</p></div></div>
   <div class="settings">${Q.map(([q,r])=>`<details class="faq card"><summary>${q}</summary><p>${r}</p></details>`).join("")}${versionHTML()}</div>`;
