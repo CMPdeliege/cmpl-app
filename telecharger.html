@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Télécharger l'app CMPL</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="favicon-64.png">
+<style>
+  :root{--bx:#6e1f24;--gold:#b08d4a;--ink:#2a1a1b;--muted:#6b5a5a;--bg:#fbf8f2;--card:#fff;--line:#eadfd6}
+  @media (prefers-color-scheme:dark){:root{--ink:#f3ece6;--muted:#c5b8b0;--bg:#1d1617;--card:#2a2022;--line:#3d3133}}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--ink);display:flex;min-height:100vh;align-items:center;justify-content:center;padding:16px}
+  main{max-width:440px;width:100%;background:var(--card);border:1px solid var(--line);border-radius:20px;padding:28px 24px;text-align:center}
+  img.logo{width:84px;height:84px}
+  h1{font-size:22px;margin:12px 0 4px;color:var(--bx)}
+  @media (prefers-color-scheme:dark){h1{color:#e8b9bd}}
+  p{color:var(--muted);line-height:1.45;margin:8px 0}
+  a.btn{display:flex;align-items:center;justify-content:center;gap:10px;margin:12px 0 0;padding:14px 16px;border-radius:14px;background:var(--bx);color:#fff;text-decoration:none;font-weight:600;font-size:16px}
+  a.btn.alt{background:transparent;color:var(--ink);border:1px solid var(--line)}
+  small{display:block;margin-top:18px;color:var(--muted);font-size:12.5px}
+</style>
+</head>
+<body>
+<main>
+  <img class="logo" src="logo.png" alt="">
+  <h1>L'app du Centre Médical Prince de Liège</h1>
+  <p id="msg">Choisissez votre téléphone :</p>
+  <a class="btn" id="ios" href="#">Télécharger sur l'App Store (iPhone)</a>
+  <a class="btn" id="android" href="#">▶ Télécharger sur Google Play (Android)</a>
+  <a class="btn alt" href="https://app.cmpl.be/">Utiliser l'app dans le navigateur</a>
+  <small>Centre Médical Prince de Liège · 21-23 rue du Potaerdenberg, 1070 Anderlecht · 02 781 18 75</small>
+</main>
+<script>
+  // Liens des stores. IOS_URL : coller ici le lien de l'App Store (apps.apple.com/…/id…) ;
+  // tant qu'il est vide, la page le retrouve automatiquement grâce à l'identifiant de l'app.
+  var IOS_URL = "";
+  var BUNDLE = "be.cmpl.app";
+  var ANDROID_URL = "https://play.google.com/store/apps/details?id=be.cmpl.app";
+  var IOS_FALLBACK = "https://apps.apple.com/be/search?term=CMPL%20Centre%20M%C3%A9dical%20Prince%20de%20Li%C3%A8ge";
+
+  var ua = navigator.userAgent || "";
+  var isIOS = /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  var isAndroid = /Android/i.test(ua);
+  var ios = document.getElementById("ios"), and = document.getElementById("android"), msg = document.getElementById("msg");
+  and.href = ANDROID_URL;
+  ios.href = IOS_URL || IOS_FALLBACK;
+
+  function go(url){ msg.textContent = "Ouverture du store…"; setTimeout(function(){ location.replace(url); }, 400); }
+  function iosReady(url){ ios.href = url; if (isIOS) go(url); }
+
+  window.cmplLookup = function(r){
+    try { var u = r && r.results && r.results[0] && r.results[0].trackViewUrl; iosReady(u || IOS_FALLBACK); }
+    catch(e){ iosReady(IOS_FALLBACK); }
+  };
+  if (IOS_URL) { iosReady(IOS_URL); }
+  else {
+    var s = document.createElement("script");
+    s.src = "https://itunes.apple.com/lookup?bundleId=" + encodeURIComponent(BUNDLE) + "&country=be&callback=cmplLookup";
+    s.onerror = function(){ iosReady(IOS_FALLBACK); };
+    document.head.appendChild(s);
+    if (isIOS) setTimeout(function(){ if (msg.textContent.indexOf("Ouverture") < 0) iosReady(IOS_FALLBACK); }, 3500);
+  }
+  if (isAndroid) go(ANDROID_URL);
+</script>
+</body>
+</html>
