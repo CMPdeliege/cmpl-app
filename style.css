@@ -2301,3 +2301,10 @@ span.medit{font-style:italic}
 
 .casecomp{min-width:0}.casecomp textarea{flex:1 1 auto;min-width:0}
 .quickfid{margin:4px 0 14px;text-align:center}.quickfid small{display:block;margin-top:6px;color:var(--muted)}.quickfid .hint{margin:12px 0 0}
+/* Réponses guidées (087) */
+.gwait{background:var(--soft,#f6f1ea);border:1px solid var(--line,#e5ddd2);border-radius:14px;padding:14px 16px;margin:12px 0 6px;display:flex;flex-direction:column;gap:6px}
+.gwait b{font-size:15px}.gwait span{font-size:14px;color:var(--muted,#5b5b5b);line-height:1.45}.gwait .btnrow{margin-top:6px}
+.gask{display:flex;gap:8px;align-items:center;background:#eaf5ec;color:#1f5130;border-radius:12px;padding:9px 12px;margin:10px 0 4px;font-size:14px}
+.gstaff{display:flex;flex-direction:column;gap:4px;margin:8px 0 2px;padding:10px 12px;border:1px dashed var(--line,#d9cfc2);border-radius:12px}
+.gstaff .chk2{font-weight:600}.gstaff .hint{margin:0}
+.gset h3{display:flex;align-items:center;gap:8px}.tagtest{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;background:#a58953;color:#fff;border-radius:999px;padding:2px 8px}

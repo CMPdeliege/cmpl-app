@@ -284,13 +284,36 @@ Object.keys(FLOWS).forEach(k=>{ const f=FLOWS[k]; let i=f.length; while(i>0&&f[i
 ["rdv","question","prescription","rapport","document"].forEach(k=>FLOWS[k].push(ABS_NOTE,ABS_NOTE2));
 ["question","prescription","rapport","resultats","document"].forEach(k=>FLOWS[k].unshift(POUR_STEP));
 FLOWS.rdv.push(KID_NOTE); FLOWS.question.push(KID_NOTE);
+/* ----- Réponses guidées (réglage du centre) : pas de texte libre côté patient ----- */
+const guidedOn = () => !!S.guided;
+const guidedReq = r => !!(r&&r.guided&&S.guided);
+const G_SYMPT=["Fièvre","Toux, rhume ou mal de gorge","Douleur","Ventre ou digestion","Peau","Fatigue","Moral, stress ou sommeil","Autre symptôme"];
+const G_TRAIT=["Un effet secondaire","Une question sur la dose","J'ai oublié ou arrêté le traitement","Un autre médicament en même temps","Autre"];
+const G_ADMIN=["Certificat médical","Attestation","Formulaire à compléter","Autre document"];
+const gAlt=(flow,id,alt)=>{ const s=FLOWS[flow].find(x=>x.id===id); if(s) s.g=alt; };
+gAlt("rdv","details",null);
+gAlt("rdv","raison",{id:"raison",kind:"choice",q:"Pour quelle raison souhaitez-vous ce rendez-vous ?",options:["Contrôle ou suivi","Nouveau problème","Douleur","Résultats à discuter","Autre"],when:a=>!isGP(a)});
+gAlt("question","texte",[
+  {id:"precision",kind:"multi",q:"Quel type de symptôme ? Vous pouvez en choisir plusieurs.",options:G_SYMPT,when:a=>a.sujet==="Un symptôme"},
+  {id:"precision",kind:"choice",q:"À propos de votre traitement :",options:G_TRAIT,when:a=>a.sujet==="Un traitement en cours"},
+  {id:"precision",kind:"choice",q:"De quel document avez-vous besoin ?",options:G_ADMIN,when:a=>a.sujet==="Un document administratif"},
+  {id:"attente",kind:"choice",q:"Qu'attendez-vous du centre ?",options:["Une réponse par message","Être rappelé(e) par téléphone","Un rendez-vous","Je ne sais pas, le centre me conseille"]}]);
+gAlt("prescription","remarque",{id:"remarque",kind:"choice",q:"Une précision pour le médecin ?",options:["Rien de particulier","Je suis presque à court","J'ai des effets secondaires","Ma dose a été changée"]});
+gAlt("rapport","destinataire",{id:"destinataire",kind:"choice",q:"Pour qui est ce rapport ?",options:["Mutuelle ou médecin-conseil","Employeur ou médecine du travail","Assurance","École ou crèche","Autre"]});
+gAlt("rapport","echeance",{id:"echeance",kind:"choice",q:"Pour quand en avez-vous besoin ?",options:["Cette semaine","Dans les 2 semaines","Dans le mois","Pas pressé"]});
+gAlt("rapport","details",[
+  {id:"type_rapport",kind:"choice",q:"De quel type de rapport s'agit-il ?",options:["Incapacité de travail","Reprise du travail","Aptitude (sport, école…)","Formulaire d'assurance","Autre"]},
+  {id:"fichiers",kind:"files",optional:true,q:"Un formulaire à compléter ? Ajoutez-le maintenant (photo, scan ou PDF). Sinon, continuez."}]);
+gAlt("document","note",null);
+{ const n=FLOWS.rapport.find(x=>x.kind==="note"&&/formulaire à compléter/.test(x.q)); if(n) n.g={kind:"note",q:"Le médecin vous répond ici. Il peut vous proposer un rendez-vous si un examen est nécessaire."}; }
 const LABELS={doc:"Document",fichiers:"Fichiers",note:"Message",de:"De",pour:"Pour",specialite:"Consultation",medecin:"Prestataire",equipe:"Autre médecin de l'équipe",motif:"Motif",delai:"Pour quand",urgence:"Délai souhaité",details:"Détails",moment:"Disponibilités",lieu:"Lieu",
  sujet:"Sujet",depuis:"Depuis",texte:"Question",medicament:"Médicaments",historique:"Déjà prescrit",nouveau:"Choix",remarque:"Remarque",
  examen:"Examen",quand:"Date",demandeur:"Demandé par",contact:"Contact souhaité",
- premiere:"Première consultation",deja_vu:"Déjà consulté",raison:"Raison",destinataire:"Rapport pour",echeance:"Pour quand"};
+ premiere:"Première consultation",deja_vu:"Déjà consulté",raison:"Raison",destinataire:"Rapport pour",echeance:"Pour quand",
+ precision:"Précision",attente:"Souhait",type_rapport:"Type de rapport"};
 const HIDDEN_KEYS=new Set(["provider_id","medicaments"]);
-const answersDL = a => Object.entries(a||{}).filter(([k])=>!HIDDEN_KEYS.has(k)).map(([k,v])=>`<dt>${esc(LABELS[k]||k)}</dt><dd>${esc(v||"—")}</dd>`).join("");
-const summaryLine = a => a.motif||a.raison||(a.destinataire?"Pour "+a.destinataire:"")||a.texte||a.medicament||a.examen||a.doc||a.sujet||"";
+const answersDL = a => Object.entries(a||{}).filter(([k,v])=>!HIDDEN_KEYS.has(k)&&!(k==="fichiers"&&!v)).map(([k,v])=>`<dt>${esc(LABELS[k]||k)}</dt><dd>${esc(v||"—")}</dd>`).join("");
+const summaryLine = a => a.motif||a.raison||(a.destinataire?"Pour "+a.destinataire:"")||a.texte||a.precision||a.medicament||a.examen||a.doc||a.sujet||"";
 const qText = s => typeof s.q==="function" ? s.q() : s.q;
 const optsOf = s => typeof s.options==="function" ? s.options(S.answers) : s.options;
 
@@ -880,6 +903,8 @@ async function reqQuery(build){ let r=await build(REQ_SELECT);
   if(r.error&&ED_OK&&/edited_at/i.test(JSON.stringify(r.error))){ ED_OK=false; REQ_SELECT=REQ_SELECT.replace(",edited_at,",","); r=await build(REQ_SELECT); }
   if(r.error&&RX_OK&&/reply_to|message_reactions/i.test(JSON.stringify(r.error))){ RX_OK=false; REQ_SELECT=REQ_SELECT.replace(REQ_RX,REQ_BASE); r=await build(REQ_SELECT); }
   if(r.error&&REQ_SELECT.includes(REQ_UPD)&&/request_updates/i.test(JSON.stringify(r.error))){ REQ_SELECT=REQ_SELECT.replace(REQ_UPD,""); r=await build(REQ_SELECT); } return r; }
+// Réglage du centre « réponses guidées » (migration 087 ; absent = désactivé)
+async function loadGuided(){ try{ const r=await sb.from("app_settings").select("value").eq("key","guided_patient").maybeSingle(); S.guided=!r.error&&r.data?.value===true; S.guidedOk=!r.error; }catch(e){ S.guided=false; S.guidedOk=false; } }
 async function loadPatient(){
   const uid=S.session.user.id;
   const [rq, md, nt] = await Promise.all([
@@ -888,6 +913,7 @@ async function loadPatient(){
     sb.from("notifications").select("*").eq("user_id", uid).order("created_at",{ascending:false}).limit(50)
   ]);
   S.reqs = rq.data||[]; S.meds = md.data||[]; S.notifs = nt.data||[];
+  await loadGuided();
   try{ const ab=await sb.rpc("provider_absences"); S.absences=ab.error?[]:(ab.data||[]); }catch(e){ S.absences=[]; }
   loadPhotos();
   if(S.me.status==="active"){ const f=await sb.rpc("my_family"); S.family=f.error?null:f.data; }
@@ -907,6 +933,7 @@ async function loadStaff(){
   if(role==="secretariat"||role==="admin"||role==="gestion") tasks.push(sb.from("announcements").select("*").order("published_at",{ascending:false}).limit(100).then(r=>S.allNews=r.data||[]));
   if(role==="secretariat"||role==="admin"||role==="gestion") tasks.push(sb.rpc("news_audience").then(r=>S.audience=r.data));
   if(isAdminP(S.me)) tasks.push(sb.from("children").select("id,first_name,last_name,birth_date,status,created_by,created_at").eq("status","pending").is("removed_at",null).order("created_at").then(r=>S.pendingKids=r.data||[]));
+  tasks.push(loadGuided());
   tasks.push(loadTasks());
   if(isAdminP(S.me)) tasks.push(loadPhotos());
   tasks.push(loadInventory());
@@ -1882,7 +1909,7 @@ async function exportMyData(){
 
 /* ----- formulaire guidé ----- */
 function startFlow(k, preset, pour){ (S.flowFiles||[]).forEach(f=>f.url&&URL.revokeObjectURL(f.url)); S.flowFiles=[]; S.flow=k; S.answers=pour&&kids().length?{pour}:{}; S.drug={q:"",basket:preset?[...preset]:[],manual:false}; S.screen="flow"; render(); scrollTo(0,0); }
-const activeSteps = () => FLOWS[S.flow].filter(s=>!s.when||s.when(S.answers));
+const activeSteps = () => FLOWS[S.flow].flatMap(s=>guidedOn()&&("g" in s)?(s.g==null?[]:[].concat(s.g)):[s]).filter(s=>!s.when||s.when(S.answers));
 function patientFlow(a){
   const steps=activeSteps();
   let html=`<div class="convhead"><button class="back" id="back" aria-label="Retour">${IC.back}</button><div><h2>${TYPES[S.flow].title}</h2><small>Questions guidées</small></div></div><div class="thread">`;
@@ -1902,15 +1929,15 @@ function patientFlow(a){
   if(current) bindAnswer(current); else bindSummary();
   const last=a.querySelector(".answer,.summary"); if(last) last.scrollIntoView({block:"nearest"});
 }
-function filesUI(){
+function filesUI(s){
   const F=S.flowFiles;
   return `<div class="answer"><div class="filelist">${F.length?F.map((f,i)=>`<div class="fileitem">${f.kind==="image"?`<img src="${f.url}" alt="">`:IC.doc}<span><b>${esc(f.name)}</b><small>${f.pages?f.pages+" page"+(f.pages>1?"s":"")+" · ":""}${kb(f.blob.size)}</small></span><button type="button" class="linkbtn" data-frm="${i}">Retirer</button></div>`).join(""):`<p class="hint" style="margin:0">Aucun fichier pour l'instant.</p>`}</div>
    <input type="file" id="ffile" accept="image/*,application/pdf" hidden>
    <div class="btnrow">${F.length<5?`<button type="button" class="btn ghost" id="fscan">${IC.scan} Scanner</button><button type="button" class="btn ghost" id="fpick">${IC.clip} Photo ou PDF</button>`:`<p class="hint">5 fichiers maximum.</p>`}</div>
-   <div class="btnrow"><button class="btn" id="fnext" ${F.length?"":"disabled"}>Continuer${F.length>1?` avec ${F.length} fichiers`:""}</button></div></div>`;
+   <div class="btnrow"><button class="btn" id="fnext" ${F.length||s?.optional?"":"disabled"}>${!F.length&&s?.optional?"Continuer sans document":`Continuer${F.length>1?` avec ${F.length} fichiers`:""}`}</button></div></div>`;
 }
 function answerUI(s){
-  if(s.kind==="files") return filesUI();
+  if(s.kind==="files") return filesUI(s);
   if(s.kind==="drug") return drugUI();
   if(s.kind==="choice") return `<div class="answer"><div class="opts">${optsOf(s).map(o=>`<button class="opt" data-o="${esc(o)}">${esc(o)}</button>`).join("")}</div></div>`;
   if(s.kind==="multi") return `<div class="answer"><p class="hint" style="margin:0 0 8px">Plusieurs choix possibles</p><div class="opts">${optsOf(s).map(o=>`<button class="opt multi" aria-pressed="false" data-m="${esc(o)}"><span class="box" aria-hidden="true"></span>${esc(o)}</button>`).join("")}</div><div class="btnrow"><button class="btn" id="mnext" disabled>Continuer</button></div></div>`;
@@ -2101,9 +2128,11 @@ function patientReq(a){
   a.innerHTML=`<div class="convhead sticky"><button class="back" id="back" aria-label="Retour">${IC.back}</button>${PAV.get(r.provider_id)?avatarHTML(PAV.get(r.provider_id),"",40):`<div class="ic avatar">${IC[r.type]}</div>`}<div style="min-width:0"><h2>${esc(reqWho(r))}</h2><small>${TYPES[r.type].label}${r.child_id?` · pour ${esc(childFirst(r.child_id))}`:""} · ${stLabelP(r)}</small></div></div>
   ${chatHTML(r,"patient")}${itemsHTML}
   ${r.purged_at||r.status==="traite"?`<div class="closed"><b>${r.purged_at?"Conversation effacée":"Conversation clôturée par le centre"}</b><span>${r.purged_at?"":`Vous pouvez la relire jusqu'au ${fmtDate(purgeDate(r))}, date à laquelle elle sera effacée. <b>Pour la garder, enregistrez-la en PDF.</b> `}Pour une suite ou une autre question, ouvrez une nouvelle demande.</span>${r.purged_at?"":`<div class="btnrow savepdf"><button class="btn ghost" id="savepdf">${IC.doc} Enregistrer la conversation (PDF)</button></div>`}<div class="btnrow"><button class="btn" id="newq">Nouvelle question</button><button class="btn ghost" id="newr">Demander un rendez-vous</button></div></div>`
-  :`${composerHTML(key)}<p class="hint center small">Lu pendant les heures d'ouverture. Urgence vitale : appelez le 112.</p>`}`;
+  :guidedReq(r)&&!r.patient_can_reply?`<div class="gwait"><b>Le centre vous répondra ici.</b><span>Pas besoin d'écrire : si l'équipe a besoin d'une précision, elle vous permettra de répondre dans cette conversation.</span><div class="btnrow"><button class="btn ghost" id="gnew">Faire une nouvelle demande</button></div></div><p class="hint center small">Urgence vitale : appelez le 112.</p>`
+   :`${guidedReq(r)?`<div class="gask">✍️ <span>L'équipe vous invite à répondre à son message.</span></div>`:""}${composerHTML(key)}<p class="hint center small">Lu pendant les heures d'ouverture. Urgence vitale : appelez le 112.</p>`}`;
   $("#back").onclick=()=>{ clearPend(); S.screen="home"; render(); scrollTo(0,0); };
   if(r.purged_at||r.status==="traite"){ $("#newq").onclick=()=>startFlow("question"); $("#newr").onclick=()=>startFlow("rdv"); bindSavePdf(r); return; }
+  const gn=$("#gnew"); if(gn){ gn.onclick=()=>{ clearPend(); S.screen="home"; render(); scrollTo(0,0); }; return; }
   bindComposer(key, async (text,pend)=>{
     const ok = pend ? await uploadAtt(r.id,pend,text) : await run(()=>sendWithReply(key, rp=>sb.from("messages").insert(rp?{request_id:r.id, body:text, reply_to:rp}:{request_id:r.id, body:text})),"Message envoyé");
     if(!ok) return false;
@@ -2116,7 +2145,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261118f";
+const APP_VERSION="20261119a";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -4648,11 +4677,13 @@ function detailHTML(){
       ${open&&r.type!=="centre"?(canMarkSeen(r)?`<div class="seenrow"><button class="btn ghost seenbtn" id="seen">✓ Vu · prévenir le patient</button><span class="hint">Le patient voit que sa demande est en cours de traitement (notification, sans e-mail).</span></div>`
      :seenSinceLast(r)?`<div class="seenrow"><span class="seenok">✓ Patient prévenu ${fmt(seenSinceLast(r).created_at)}</span></div>`:""):""}
    ${notesHTML(r)}
-   ${r.purged_at?"":`<dl class="qa">${Object.entries(r.answers||{}).filter(([k])=>!HIDDEN_KEYS.has(k)).map(([k,v])=>`<div><dt>${esc(LABELS[k]||k)}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>`}
+   ${r.purged_at?"":`<dl class="qa">${Object.entries(r.answers||{}).filter(([k,v])=>!HIDDEN_KEYS.has(k)&&!(k==="fichiers"&&!v)).map(([k,v])=>`<div><dt>${esc(LABELS[k]||k)}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>`}
    ${items.some(i=>i.decision)?`<div class="itemlist">${items.filter(i=>i.decision).map(i=>`<div><span>${esc(i.label)}<small class="qty">${qtyText(i.quantity||1)}</small></span><span class="dtag ${i.decision==="accorde"?"ok":"no"}">${i.decision==="accorde"?"Accordé":"Refusé"}</span></div>`).join("")}</div>`:""}
    ${msgsOf(r).length||(r.request_updates||[]).length||r.purged_at||!open?chatHTML(r,"centre"):""}
    ${open?`${isRx?`<div class="rx"><p class="hint" style="margin:0">Décision par médicament</p>${todo.map(it=>`<div class="rxrow"><span>${esc(it.label)}<b class="qty">${qtyText(it.quantity||1)}</b></span><div class="decs"><button class="dec ok" aria-pressed="${dec[it.id]==="accorde"}" data-dec="${it.id}:accorde">Accorder</button><button class="dec no" aria-pressed="${dec[it.id]==="refuse"}" data-dec="${it.id}:refuse">Refuser</button></div></div>`).join("")}</div>`:""}
    ${composerHTML("s"+r.id)}
+   ${guidedReq(r)?`<div class="gstaff"><label class="chk2"><input type="checkbox" id="g-allow" ${S.drafts["ga"+r.id]?"checked":""}> Le patient peut répondre à ce message</label>
+    <span class="hint">${r.patient_can_reply?"✍️ Le patient peut actuellement écrire (jusqu'à votre prochain message). <button type=\"button\" class=\"linkbtn\" id=\"g-revoke\">Retirer</button>":"🔒 Réponses guidées : le patient ne peut pas écrire. Sans la case, il lit votre réponse sans pouvoir répondre."}</span></div>`:""}
    <div class="btnrow"><button class="btn" id="close" ${canClose?"":"disabled"}>${closeBtn}</button></div>
    <p class="hint">Le message écrit ci-dessus est envoyé avec la clôture. <b>Avant de classer, reportez dans CareConnect ce qui doit rester au dossier</b> : la conversation et ses pièces jointes sont effacées ${PURGE_DAYS} jours après la clôture.</p>
    <div class="transfer">${r.status==="nouveau"?'<button class="linkbtn" id="take">Je m\'en occupe</button>':""}<label class="hint" for="tr">Transférer à</label><select id="tr">${transferOpts}</select><button class="linkbtn" id="dotr">Transférer</button>
@@ -4692,11 +4723,15 @@ function bindDetail(){
   const isRx=r.type==="prescription"&&(r.request_items||[]).some(i=>!i.decision);
   const dec=S.drafts["d"+r.id]||(S.drafts["d"+r.id]={});
   bindComposer(key, async (text,pend)=>{
-    const ok = pend ? await uploadAtt(r.id,pend,text) : await run(()=>sendWithReply(key, rp=>sb.rpc("staff_message",rp?{p_id:r.id,p_body:text,p_reply:rp}:{p_id:r.id,p_body:text})),"Message envoyé · patient notifié");
+    const allow=guidedReq(r)&&!!$("#g-allow")?.checked;
+    const ok = pend ? await uploadAtt(r.id,pend,text) : await run(()=>sendWithReply(key, rp=>sb.rpc("staff_message",rp?{p_id:r.id,p_body:text,p_reply:rp}:{p_id:r.id,p_body:text})),allow?"Message envoyé · le patient peut répondre":"Message envoyé · patient notifié");
     if(!ok) return false;
-    S.drafts[key]=""; clearPend(); await refresh(); return true;
+    if(allow){ const {error}=await sb.rpc("request_allow_reply",{p_id:r.id,p_allow:true}); if(error) toast("Le message est parti, mais l'autorisation de répondre n'a pas pu être donnée : "+frError(error)); }
+    delete S.drafts["ga"+r.id]; S.drafts[key]=""; clearPend(); await refresh(); return true;
   }, v=>{ if(!isRx) close.disabled=!(msgsOf(r).some(m=>!m.from_patient)||v.trim()); });
   bindTplPicker(r);
+  const ga=$("#g-allow"); if(ga) ga.onchange=()=>{ S.drafts["ga"+r.id]=ga.checked; };
+  const gr=$("#g-revoke"); if(gr) gr.onclick=async()=>{ if(await run(()=>sb.rpc("request_allow_reply",{p_id:r.id,p_allow:false}),"Le patient ne peut plus écrire")) await refresh(); };
   $$("[data-prio]").forEach(b=>b.onclick=async()=>{ if(await run(()=>sb.rpc("set_request_priority",{p_id:r.id,p_priority:b.dataset.prio}),`Priorité : ${PRIO_LABEL[b.dataset.prio]}`)) await refresh(); });
   $$("[data-dec]").forEach(b=>b.onclick=()=>{ const [id,d]=b.dataset.dec.split(":"); dec[id]=dec[id]===d?undefined:d; if(!dec[id]) delete dec[id]; render(); });
   close.onclick=async()=>{ close.disabled=true; const text=($("#c-text")?.value||"").trim();
@@ -4780,6 +4815,7 @@ function bindCompose(){
     const id=r.data; let okAll=true;
     for(const f of C.files){ if(!await uploadAtt(id,f,null)){ okAll=false; break; } }
     if(!C.reply) await run(()=>sb.rpc("close_request",{p_id:id,p_body:null}));
+    else if(S.guided) await sb.rpc("request_allow_reply",{p_id:id,p_allow:true});
     toast(okAll?"Message envoyé · patient notifié":"Message envoyé, mais une pièce jointe a échoué : ajoutez-la dans la conversation.");
     C.files.forEach(f=>f.url&&URL.revokeObjectURL(f.url)); S.compose=null;
     if(C.patient.child) S.children[C.patient.id]=C.patient; else S.profiles[C.patient.id]=C.patient; S.cscreen="inbox"; S.archive=!C.reply; await refresh();
@@ -6081,6 +6117,9 @@ function teamHTML(){
   const provOpts=sel=>`<option value="">— prestataire —</option>`+S.providers.map(p=>`<option value="${p.id}" ${p.id===sel?"selected":""}>${esc(P.label(p))}</option>`).join("");
   const adm=isAdmin();
   return `<div class="chead"><div><h1>Équipe</h1><p>${adm?"Chaque membre de l'équipe crée d'abord son compte dans l'app (« Créer un compte »). Retrouvez-le ensuite ci-dessous et donnez-lui son rôle.":"Les membres de l'équipe du centre et leur rôle. Seul l'administrateur peut ajouter ou retirer quelqu'un."}</p></div></div>
+  ${adm&&S.guidedOk?`<section class="card gset" style="margin-bottom:12px"><h3>💬 Réponses guidées des patients <small class="tagtest">test</small></h3>
+   <label class="chk2"><input type="checkbox" id="g-mode" ${S.guided?"checked":""}> Activer les réponses guidées</label>
+   <p class="hint" style="margin:6px 0 0">Les patients remplissent leurs demandes uniquement avec des choix à cocher et ne peuvent plus écrire librement dans la conversation. L'équipe répond comme d'habitude : clôturer, ou cocher « Le patient peut répondre » pour l'autoriser à répondre à ce message. S'applique aux nouvelles demandes ; désactiver rend la messagerie libre comme avant.</p></section>`:""}
   ${adm?`<section class="card" style="margin-bottom:12px"><h3>Donner un rôle à un compte</h3>
    <label class="fld" for="t-search">Nom de la personne inscrite<input id="t-search" type="text" placeholder="Tapez au moins 2 lettres du nom"></label>
    <div id="t-results"></div></section>`:""}
@@ -6089,6 +6128,9 @@ function teamHTML(){
   <template id="t-row"><div class="person" style="border-top:1px solid var(--line);padding-top:10px;margin-top:10px"><b class="t-name"></b><div class="pgrid"><label>Rôle<select class="t-role"><option value="secretariat">Secrétariat</option><option value="provider">Prestataire</option><option value="gestion">Administration (gestion du centre)</option><option value="admin">Prestataire et administrateur</option></select></label><label>Prestataire<select class="t-prov">${provOpts("")}</select></label></div><div class="btnrow"><button class="btn t-go">Enregistrer</button></div></div></template>`;
 }
 function bindTeam(){
+  const gm=$("#g-mode"); if(gm) gm.onchange=async()=>{ const on=gm.checked; gm.disabled=true;
+    if(await run(()=>sb.rpc("set_app_setting",{p_key:"guided_patient",p_value:on}),on?"Réponses guidées activées pour les nouvelles demandes":"Réponses guidées désactivées : messagerie libre")){ S.guided=on; render(); }
+    else { gm.checked=!on; gm.disabled=false; } };
   const inp=$("#t-search"), out=$("#t-results"); let timer;
   if(!inp) return;
   inp.oninput=()=>{ clearTimeout(timer); timer=setTimeout(async()=>{ const q=inp.value.trim(); out.innerHTML=""; if(q.length<2) return;
