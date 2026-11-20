@@ -2308,3 +2308,11 @@ span.medit{font-style:italic}
 .gstaff{display:flex;flex-direction:column;gap:4px;margin:8px 0 2px;padding:10px 12px;border:1px dashed var(--line,#d9cfc2);border-radius:12px}
 .gstaff .chk2{font-weight:600}.gstaff .hint{margin:0}
 .gset h3{display:flex;align-items:center;gap:8px}.tagtest{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;background:#a58953;color:#fff;border-radius:999px;padding:2px 8px}
+.act.soon{opacity:.55;filter:grayscale(.6)}.act.soon span{font-style:italic}
+/* Bandeau raison de la demande (fiche) */
+.rbanner{display:flex;flex-direction:column;gap:3px;border-radius:14px;padding:12px 16px;margin:12px 0 6px;border-left:7px solid var(--rb);background:color-mix(in srgb,var(--rb) 13%,var(--card,#fff))}
+.rbanner b{font-family:Poppins,system-ui,sans-serif;font-size:21px;line-height:1.2;color:var(--rb);letter-spacing:.01em}
+.rbanner span{font-size:15px;color:var(--ink,#2b1b1c);line-height:1.4}
+.rb-rdvu{--rb:#c62828}.rb-rdv{--rb:#e07b00}.rb-prescription{--rb:#1e63c6}.rb-rapport{--rb:#2e7d32}
+.rb-question{--rb:#7b3fb5}.rb-resultats{--rb:#00838f}.rb-document{--rb:#6d4c41}.rb-centre{--rb:#a58953}
+:root[data-theme="dark"] .rbanner span{color:inherit}

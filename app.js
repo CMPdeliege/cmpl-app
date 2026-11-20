@@ -1609,12 +1609,12 @@ function newsBanner(n){ const poster=n.image_path;
 function openNewSheet(){
   const v=document.createElement("div"); v.className="modal sheetmodal"; v.setAttribute("role","dialog"); v.setAttribute("aria-modal","true"); v.setAttribute("aria-labelledby","ns-t");
   v.innerHTML=`<div class="sheet"><div class="grab" aria-hidden="true"></div><div class="sheethead"><h2 id="ns-t">Que souhaitez-vous faire ?</h2><button type="button" class="cbtn sm" id="ns-x" aria-label="Fermer">✕</button></div>
-    <div class="actions sheetacts">${PATIENT_TYPES.map(k=>[k,TYPES[k]]).map(([k,t])=>`<button class="act t-${k}" data-nstart="${k}"><div class="ic">${IC[k]}</div><b>${t.title}</b><span>${t.desc}</span></button>`).join("")}</div></div>`;
+    <div class="actions sheetacts">${PATIENT_TYPES.map(k=>[k,TYPES[k]]).map(([k,t])=>{ const off=k==="question"&&guidedOn(); return `<button class="act t-${k}${off?" soon":""}" data-nstart="${k}" ${off?'aria-disabled="true"':""}><div class="ic">${IC[k]}</div><b>${t.title}</b><span>${off?"Bientôt disponible":t.desc}</span></button>`; }).join("")}</div></div>`;
   document.body.appendChild(v); document.body.classList.add("sheeton");
   const close=()=>{ v.classList.add("closing"); document.body.classList.remove("sheeton"); removeEventListener("keydown",esc_); setTimeout(()=>v.remove(),180); };
   const esc_=e=>{ if(e.key==="Escape") close(); }; addEventListener("keydown",esc_);
   v.onclick=e=>{ if(e.target===v) close(); }; v.querySelector("#ns-x").onclick=close;
-  v.querySelectorAll("[data-nstart]").forEach(b=>b.onclick=()=>{ v.remove(); document.body.classList.remove("sheeton"); removeEventListener("keydown",esc_); startFlow(b.dataset.nstart); });
+  v.querySelectorAll("[data-nstart]").forEach(b=>b.onclick=()=>{ if(b.classList.contains("soon")){ toast("Cette fonctionnalité n\'est pas encore disponible."); return; } v.remove(); document.body.classList.remove("sheeton"); removeEventListener("keydown",esc_); startFlow(b.dataset.nstart); });
   v.querySelector("[data-nstart]").focus();
 }
 function patientHome(a){
@@ -1718,7 +1718,7 @@ function patientNotifs(a){
     if(n.request_id) openRequest(n.request_id); else if(n.announcement_id){ S.openNews=n.announcement_id; S.screen="news"; render(); } else render(); });
 }
 /* ---------- visite guidée et aide (patients) ---------- */
-const TOUR=[
+const TOUR_ALL=[
  {ic:"bell",t:"Bienvenue dans l'app du Centre Médical Prince de Liège",x:"Découvrez en une minute tout ce que vous pouvez faire avec l'app. Touchez « Suivant »."},
  {ic:"rdv",t:"Demander un rendez-vous",x:"Choisissez le type de consultation et le motif. Le secrétariat vous propose ensuite un moment, directement dans la conversation."},
  {ic:"question",t:"Poser une question",x:"Écrivez à un prestataire du centre : par message, photo ou message vocal. Réponse dans les 24 à 72 heures, pendant les heures d'ouverture."},
@@ -1735,6 +1735,7 @@ function markTourDone(){ if(!S.me) return; const now=new Date().toISOString(); S
   sb.from("profiles").update({tour_done_at:now}).eq("id",S.me.id).then(()=>{},()=>{}); }
 function openTour(){
   if(document.querySelector(".tour")) return;
+  const TOUR=guidedOn()?TOUR_ALL.filter(s=>s.ic!=="question"):TOUR_ALL;
   let i=0; const v=document.createElement("div"); v.className="tour"; v.setAttribute("role","dialog"); v.setAttribute("aria-modal","true"); v.setAttribute("aria-label","Visite guidée");
   const close=()=>{ markTourDone(); v.remove(); removeEventListener("keydown",key); };
   const key=e=>{ if(e.key==="Escape") close(); else if(e.key==="ArrowRight"&&i<TOUR.length-1){ i++; paint(); } else if(e.key==="ArrowLeft"&&i>0){ i--; paint(); } };
@@ -1908,7 +1909,7 @@ async function exportMyData(){
 }
 
 /* ----- formulaire guidé ----- */
-function startFlow(k, preset, pour){ (S.flowFiles||[]).forEach(f=>f.url&&URL.revokeObjectURL(f.url)); S.flowFiles=[]; S.flow=k; S.answers=pour&&kids().length?{pour}:{}; S.drug={q:"",basket:preset?[...preset]:[],manual:false}; S.screen="flow"; render(); scrollTo(0,0); }
+function startFlow(k, preset, pour){ if(k==="question"&&guidedOn()){ toast("Cette fonctionnalité n\'est pas encore disponible."); return; } (S.flowFiles||[]).forEach(f=>f.url&&URL.revokeObjectURL(f.url)); S.flowFiles=[]; S.flow=k; S.answers=pour&&kids().length?{pour}:{}; S.drug={q:"",basket:preset?[...preset]:[],manual:false}; S.screen="flow"; render(); scrollTo(0,0); }
 const activeSteps = () => FLOWS[S.flow].flatMap(s=>guidedOn()&&("g" in s)?(s.g==null?[]:[].concat(s.g)):[s]).filter(s=>!s.when||s.when(S.answers));
 function patientFlow(a){
   const steps=activeSteps();
@@ -2127,11 +2128,11 @@ function patientReq(a){
   a.className="wrap chatpage";
   a.innerHTML=`<div class="convhead sticky"><button class="back" id="back" aria-label="Retour">${IC.back}</button>${PAV.get(r.provider_id)?avatarHTML(PAV.get(r.provider_id),"",40):`<div class="ic avatar">${IC[r.type]}</div>`}<div style="min-width:0"><h2>${esc(reqWho(r))}</h2><small>${TYPES[r.type].label}${r.child_id?` · pour ${esc(childFirst(r.child_id))}`:""} · ${stLabelP(r)}</small></div></div>
   ${chatHTML(r,"patient")}${itemsHTML}
-  ${r.purged_at||r.status==="traite"?`<div class="closed"><b>${r.purged_at?"Conversation effacée":"Conversation clôturée par le centre"}</b><span>${r.purged_at?"":`Vous pouvez la relire jusqu'au ${fmtDate(purgeDate(r))}, date à laquelle elle sera effacée. <b>Pour la garder, enregistrez-la en PDF.</b> `}Pour une suite ou une autre question, ouvrez une nouvelle demande.</span>${r.purged_at?"":`<div class="btnrow savepdf"><button class="btn ghost" id="savepdf">${IC.doc} Enregistrer la conversation (PDF)</button></div>`}<div class="btnrow"><button class="btn" id="newq">Nouvelle question</button><button class="btn ghost" id="newr">Demander un rendez-vous</button></div></div>`
+  ${r.purged_at||r.status==="traite"?`<div class="closed"><b>${r.purged_at?"Conversation effacée":"Conversation clôturée par le centre"}</b><span>${r.purged_at?"":`Vous pouvez la relire jusqu'au ${fmtDate(purgeDate(r))}, date à laquelle elle sera effacée. <b>Pour la garder, enregistrez-la en PDF.</b> `}Pour une suite ou une autre question, ouvrez une nouvelle demande.</span>${r.purged_at?"":`<div class="btnrow savepdf"><button class="btn ghost" id="savepdf">${IC.doc} Enregistrer la conversation (PDF)</button></div>`}<div class="btnrow">${guidedOn()?"":`<button class="btn" id="newq">Nouvelle question</button>`}<button class="btn ghost" id="newr">Demander un rendez-vous</button></div></div>`
   :guidedReq(r)&&!r.patient_can_reply?`<div class="gwait"><b>Le centre vous répondra ici.</b><span>Pas besoin d'écrire : si l'équipe a besoin d'une précision, elle vous permettra de répondre dans cette conversation.</span><div class="btnrow"><button class="btn ghost" id="gnew">Faire une nouvelle demande</button></div></div><p class="hint center small">Urgence vitale : appelez le 112.</p>`
    :`${guidedReq(r)?`<div class="gask">✍️ <span>L'équipe vous invite à répondre à son message.</span></div>`:""}${composerHTML(key)}<p class="hint center small">Lu pendant les heures d'ouverture. Urgence vitale : appelez le 112.</p>`}`;
   $("#back").onclick=()=>{ clearPend(); S.screen="home"; render(); scrollTo(0,0); };
-  if(r.purged_at||r.status==="traite"){ $("#newq").onclick=()=>startFlow("question"); $("#newr").onclick=()=>startFlow("rdv"); bindSavePdf(r); return; }
+  if(r.purged_at||r.status==="traite"){ const nq=$("#newq"); if(nq) nq.onclick=()=>startFlow("question"); $("#newr").onclick=()=>startFlow("rdv"); bindSavePdf(r); return; }
   const gn=$("#gnew"); if(gn){ gn.onclick=()=>{ clearPend(); S.screen="home"; render(); scrollTo(0,0); }; return; }
   bindComposer(key, async (text,pend)=>{
     const ok = pend ? await uploadAtt(r.id,pend,text) : await run(()=>sendWithReply(key, rp=>sb.from("messages").insert(rp?{request_id:r.id, body:text, reply_to:rp}:{request_id:r.id, body:text})),"Message envoyé");
@@ -2145,7 +2146,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261119a";
+const APP_VERSION="20261120a";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -4655,6 +4656,18 @@ function inboxHTML(){
    <div id="detail">${rxBatchHTML()}${detailHTML()}</div>
   </div>`;
 }
+// Bandeau coloré : la raison de la demande, en grand, en tête de la fiche
+function reasonKind(r){
+  const a=r.answers||{};
+  if(r.type==="rdv") return (a.urgence==="Le plus tôt possible"||r.priority==="haute")?["rdvu","Rendez-vous urgent"]:["rdv","Rendez-vous"];
+  return [r.type,{question:"Question",prescription:"Prescription",rapport:"Rapport médical",resultats:"Résultats",document:"Document",centre:"Message du centre"}[r.type]||TYPES[r.type]?.label||r.type];
+}
+function reasonBannerHTML(r){
+  const [k,label]=reasonKind(r), a=r.answers||{};
+  const items=r.type==="prescription"?(r.request_items||[]).map(i=>i.label).filter(Boolean).slice(0,4).join(", "):"";
+  const sub=[a.motif||a.raison||(a.destinataire?"Pour "+a.destinataire:"")||a.type_rapport||a.precision||a.texte||items||"",a.urgence&&r.type!=="rdv"?"":a.urgence].filter(Boolean).map(x=>String(x).slice(0,140));
+  return `<div class="rbanner rb-${k}"><b>${esc(label)}</b>${sub.length?`<span>${sub.map(esc).join(" · ")}</span>`:""}</div>`;
+}
 function detailHTML(){
   const r=S.reqs.find(x=>x.id===S.sel); if(!r) return "";
   const p=S.profiles[r.patient_id]||{}, open=r.status!=="traite", items=r.request_items||[];
@@ -4662,9 +4675,9 @@ function detailHTML(){
   const dec=S.drafts["d"+r.id]||{}; const allDecided=isRx&&items.filter(i=>!i.decision).every(i=>dec[i.id]);
   const draft=S.drafts["s"+r.id]||"";
   const staffWrote=msgsOf(r).some(m=>!m.from_patient&&!/· message automatique$/.test(m.author_label||""));
-  const canClose=isRx?allDecided:(staffWrote||!!draft.trim());
+  const canClose=isRx?allDecided:true;
   const todo=items.filter(i=>!i.decision);
-  const closeBtn=!isRx?"Clôturer et classer":!allDecided?`Décidez pour chaque médicament (${todo.filter(i=>dec[i.id]).length}/${todo.length})`:todo.some(i=>dec[i.id]==="accorde")?"Valider la prescription et classer":"Envoyer le refus et classer";
+  const closeBtn=!isRx?(staffWrote||draft.trim()?"Clôturer et classer":"Classer sans répondre"):!allDecided?`Décidez pour chaque médicament (${todo.filter(i=>dec[i.id]).length}/${todo.length})`:todo.some(i=>dec[i.id]==="accorde")?"Valider la prescription et classer":"Envoyer le refus et classer";
   const transferOpts=[`<option value="">Secrétariat</option>`,`<option value="__admin" ${r.queue==="administration"?"selected":""}>Administration</option>`,...S.providers.map(pv=>`<option value="${pv.id}" ${pv.id===r.provider_id?"selected":""}>${esc(P.label(pv))}</option>`)].join("");
   return `<div class="detail">
    <div class="dhead">${r.child_id?avatarHTML(null,reqName(r),52):avatarHTML(AV.get(r.patient_id),patientName(r.patient_id),52)}<div><h2>${esc(reqName(r))}</h2>
@@ -4677,6 +4690,7 @@ function detailHTML(){
       ${open&&r.type!=="centre"?(canMarkSeen(r)?`<div class="seenrow"><button class="btn ghost seenbtn" id="seen">✓ Vu · prévenir le patient</button><span class="hint">Le patient voit que sa demande est en cours de traitement (notification, sans e-mail).</span></div>`
      :seenSinceLast(r)?`<div class="seenrow"><span class="seenok">✓ Patient prévenu ${fmt(seenSinceLast(r).created_at)}</span></div>`:""):""}
    ${notesHTML(r)}
+   ${reasonBannerHTML(r)}
    ${r.purged_at?"":`<dl class="qa">${Object.entries(r.answers||{}).filter(([k,v])=>!HIDDEN_KEYS.has(k)&&!(k==="fichiers"&&!v)).map(([k,v])=>`<div><dt>${esc(LABELS[k]||k)}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>`}
    ${items.some(i=>i.decision)?`<div class="itemlist">${items.filter(i=>i.decision).map(i=>`<div><span>${esc(i.label)}<small class="qty">${qtyText(i.quantity||1)}</small></span><span class="dtag ${i.decision==="accorde"?"ok":"no"}">${i.decision==="accorde"?"Accordé":"Refusé"}</span></div>`).join("")}</div>`:""}
    ${msgsOf(r).length||(r.request_updates||[]).length||r.purged_at||!open?chatHTML(r,"centre"):""}
@@ -4685,7 +4699,7 @@ function detailHTML(){
    ${guidedReq(r)?`<div class="gstaff"><label class="chk2"><input type="checkbox" id="g-allow" ${S.drafts["ga"+r.id]?"checked":""}> Le patient peut répondre à ce message</label>
     <span class="hint">${r.patient_can_reply?"✍️ Le patient peut actuellement écrire (jusqu'à votre prochain message). <button type=\"button\" class=\"linkbtn\" id=\"g-revoke\">Retirer</button>":"🔒 Réponses guidées : le patient ne peut pas écrire. Sans la case, il lit votre réponse sans pouvoir répondre."}</span></div>`:""}
    <div class="btnrow"><button class="btn" id="close" ${canClose?"":"disabled"}>${closeBtn}</button></div>
-   <p class="hint">Le message écrit ci-dessus est envoyé avec la clôture. <b>Avant de classer, reportez dans CareConnect ce qui doit rester au dossier</b> : la conversation et ses pièces jointes sont effacées ${PURGE_DAYS} jours après la clôture.</p>
+   <p class="hint">Le message écrit ci-dessus est envoyé avec la clôture ; sans message, la demande est simplement classée. <b>Avant de classer, reportez dans CareConnect ce qui doit rester au dossier</b> : la conversation et ses pièces jointes sont effacées ${PURGE_DAYS} jours après la clôture.</p>
    <div class="transfer">${r.status==="nouveau"?'<button class="linkbtn" id="take">Je m\'en occupe</button>':""}<label class="hint" for="tr">Transférer à</label><select id="tr">${transferOpts}</select><button class="linkbtn" id="dotr">Transférer</button>
     <textarea id="trnote" class="trnote" rows="2" maxlength="1000" placeholder="Un mot pour le collègue (facultatif) : visible seulement par l'équipe, jamais par le patient"></textarea>
     ${r.type!=="centre"?`<label class="chk2 trinform"><input type="checkbox" id="trinform" checked> Prévenir le patient que sa demande est transmise</label>`:""}</div>
@@ -4728,13 +4742,16 @@ function bindDetail(){
     if(!ok) return false;
     if(allow){ const {error}=await sb.rpc("request_allow_reply",{p_id:r.id,p_allow:true}); if(error) toast("Le message est parti, mais l'autorisation de répondre n'a pas pu être donnée : "+frError(error)); }
     delete S.drafts["ga"+r.id]; S.drafts[key]=""; clearPend(); await refresh(); return true;
-  }, v=>{ if(!isRx) close.disabled=!(msgsOf(r).some(m=>!m.from_patient)||v.trim()); });
+  }, v=>{ if(!isRx){ close.disabled=false; close.textContent=v.trim()||msgsOf(r).some(m=>!m.from_patient&&!/· message automatique$/.test(m.author_label||""))?"Clôturer et classer":"Classer sans répondre"; } });
   bindTplPicker(r);
   const ga=$("#g-allow"); if(ga) ga.onchange=()=>{ S.drafts["ga"+r.id]=ga.checked; };
   const gr=$("#g-revoke"); if(gr) gr.onclick=async()=>{ if(await run(()=>sb.rpc("request_allow_reply",{p_id:r.id,p_allow:false}),"Le patient ne peut plus écrire")) await refresh(); };
   $$("[data-prio]").forEach(b=>b.onclick=async()=>{ if(await run(()=>sb.rpc("set_request_priority",{p_id:r.id,p_priority:b.dataset.prio}),`Priorité : ${PRIO_LABEL[b.dataset.prio]}`)) await refresh(); });
   $$("[data-dec]").forEach(b=>b.onclick=()=>{ const [id,d]=b.dataset.dec.split(":"); dec[id]=dec[id]===d?undefined:d; if(!dec[id]) delete dec[id]; render(); });
-  close.onclick=async()=>{ close.disabled=true; const text=($("#c-text")?.value||"").trim();
+  close.onclick=async()=>{ const text=($("#c-text")?.value||"").trim();
+    const silent=!isRx&&!text&&!msgsOf(r).some(m=>!m.from_patient&&!/· message automatique$/.test(m.author_label||""));
+    if(silent&&!close.dataset.ok){ tMsgDialog("Classer sans répondre ?",`<p class="hint" style="margin:0">Le patient verra sa demande comme traitée, sans message de votre part.</p>`,"Classer","",async()=>{ close.dataset.ok="1"; setTimeout(()=>close.click(),0); return true; }); return; }
+    close.disabled=true;
 
     const decisions={}; for(const [k,v] of Object.entries(dec)) decisions[k]=v;
     if(await run(()=>sb.rpc("close_request",{p_id:r.id,p_body:text||null,p_decisions:decisions}),"Conversation classée")){ S.drafts[key]=""; delete S.drafts["d"+r.id]; clearPend(); await refresh(); } else close.disabled=false; };
