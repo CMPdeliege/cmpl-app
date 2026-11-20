@@ -62,6 +62,50 @@ function trTree(root){
     else if(!skip(n)) for(const a of TR_ATTRS){ if(n.hasAttribute(a)){ const v=n.getAttribute(a),t=tr(v); if(t!==v) n.setAttribute(a,t); } }
   }
 }
+/* ----- Dates et heures toujours au format JJ/MM/AAAA et 24 h -----
+   Les champs natifs suivent la langue du navigateur ou du téléphone (souvent MM/JJ/AA en anglais US).
+   Chaque <input type="date|time"> reste en place (le code lit toujours .value au format ISO), mais il est
+   caché derrière un champ texte saisissable + un bouton calendrier qui ouvre le sélecteur natif. */
+const DT_VAL=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value");
+const p2=n=>String(n).padStart(2,"0");
+function dtShow(kind,v){ if(!v) return ""; if(kind==="time") return v.slice(0,5); const [y,m,d]=v.split("-"); return d&&m&&y?`${d}/${m}/${y}`:""; }
+function dtParse(kind,t){
+  t=t.trim(); if(!t) return "";
+  if(kind==="time"){ const m=t.match(/^(\d{1,2})[:hH.]?(\d{2})?$/); if(!m) return null; const h=+m[1], mi=+(m[2]||0); return h<24&&mi<60?`${p2(h)}:${p2(mi)}`:null; }
+  const m=t.match(/^(\d{1,2})[\/.\- ](\d{1,2})[\/.\- ](\d{2}|\d{4})$/)||t.match(/^(\d{2})(\d{2})(\d{4})$/); if(!m) return null;
+  let d=+m[1], mo=+m[2], y=+m[3]; if(y<100) y+= y>(new Date().getFullYear()%100)+1?1900:2000;
+  const dt=new Date(y,mo-1,d); if(dt.getFullYear()!==y||dt.getMonth()!==mo-1||dt.getDate()!==d) return null;
+  return `${y}-${p2(mo)}-${p2(d)}`;
+}
+function dtEnhance(inp){
+  if(inp.dataset.dtx||inp.closest(".dtimeedit")) return; inp.dataset.dtx="1";
+  const kind=inp.type, wrap=document.createElement("span"), txt=document.createElement("input"), btn=document.createElement("span");
+  wrap.className="dtwrap"; txt.type="text"; txt.className="dttxt"; txt.inputMode="numeric"; txt.autocomplete="off";
+  txt.placeholder=kind==="time"?"hh:mm":"jj/mm/aaaa"; txt.maxLength=kind==="time"?5:10;
+  if(inp.required) txt.required=true; if(inp.disabled) txt.disabled=true;
+  const lab=inp.getAttribute("aria-label"); if(lab) txt.setAttribute("aria-label",lab);
+  if(inp.id){ txt.id=inp.id+"-txt"; const L2=inp.closest("label"); if(L2&&L2.htmlFor===inp.id) L2.htmlFor=txt.id; }
+  btn.className="dtbtn"; btn.setAttribute("aria-hidden","true"); btn.textContent=kind==="time"?"🕑":"📅";
+  inp.parentNode.insertBefore(wrap,inp); wrap.append(txt,btn); btn.appendChild(inp); inp.tabIndex=-1; inp.classList.add("dtnative");
+  const sync=()=>{ if(document.activeElement!==txt) txt.value=dtShow(kind,DT_VAL.get.call(inp)); txt.setCustomValidity(""); };
+  Object.defineProperty(inp,"value",{configurable:true,get(){return DT_VAL.get.call(this);},set(v){DT_VAL.set.call(this,v); sync();}});
+  inp.addEventListener("change",sync); inp.addEventListener("input",sync);
+  inp.addEventListener("click",()=>{ try{ inp.showPicker&&inp.showPicker(); }catch(e){} });
+  txt.addEventListener("input",()=>{
+    if(kind==="date"){ let v=txt.value.replace(/[^\d\/]/g,""); if(/^\d{3}$/.test(v)) v=v.slice(0,2)+"/"+v.slice(2); if(/^\d{2}\/\d{3}$/.test(v)) v=v.slice(0,5)+"/"+v.slice(5); if(v!==txt.value) txt.value=v; }
+    else { let v=txt.value.replace(/[^\d:]/g,""); if(/^\d{3}$/.test(v)) v=+v.slice(0,2)>23?v[0]+":"+v.slice(1):v.slice(0,2)+":"+v.slice(2); if(v!==txt.value) txt.value=v; }
+    const iso=dtParse(kind,txt.value);
+    if(iso!==null&&iso!==DT_VAL.get.call(inp)&&(iso===""||txt.value.length>=(kind==="time"?4:8))){ DT_VAL.set.call(inp,iso); inp.dispatchEvent(new Event("input",{bubbles:true})); inp.dispatchEvent(new Event("change",{bubbles:true})); }
+  });
+  txt.addEventListener("blur",()=>{ const iso=dtParse(kind,txt.value);
+    if(iso===null){ txt.setCustomValidity(kind==="time"?"Heure au format hh:mm":"Date au format jj/mm/aaaa"); txt.reportValidity(); return; }
+    if(iso&&((inp.min&&iso<inp.min)||(inp.max&&iso>inp.max))){ txt.setCustomValidity(`Choisissez une date entre ${dtShow(kind,inp.min)||"…"} et ${dtShow(kind,inp.max)||"…"}`); txt.reportValidity(); return; }
+    if(iso!==DT_VAL.get.call(inp)){ DT_VAL.set.call(inp,iso); inp.dispatchEvent(new Event("input",{bubbles:true})); inp.dispatchEvent(new Event("change",{bubbles:true})); }
+    txt.value=dtShow(kind,iso); txt.setCustomValidity(""); });
+  sync();
+}
+function dtScan(root){ if(root.nodeType!==1) return; if(root.matches?.('input[type="date"],input[type="time"]')) dtEnhance(root); root.querySelectorAll?.('input[type="date"],input[type="time"]').forEach(dtEnhance); }
+new MutationObserver(ms=>{ for(const m of ms) m.addedNodes.forEach(dtScan); }).observe(document.documentElement,{subtree:true,childList:true});
 let trObs=null;
 function applyLang(l){
   L=I18N[l]||l==="fr"?l:"fr"; LOC=LOCALES[L];
@@ -2146,7 +2190,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261120a";
+const APP_VERSION="20261120b";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
