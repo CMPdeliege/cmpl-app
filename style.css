@@ -2325,3 +2325,8 @@ span.medit{font-style:italic}
 .dtwrap .dttxt{font:inherit;color:var(--ink);background:var(--surface);border:1.5px solid var(--line);border-radius:10px;padding:7px 10px;width:100%}
 .form .fld .dtwrap .dttxt{padding:10px 12px}
 .dtbtn{background:var(--surface);border:1.5px solid var(--line);border-radius:10px}
+/* Liste des fiches patients sur téléphone : actions sous le nom (la ligne est une grille) */
+@media (max-width:700px){
+  .medrow.recrow{grid-template-columns:auto minmax(0,1fr)}
+  .medrow.recrow .recacts{grid-column:1 / -1;max-width:none;justify-content:flex-start;padding-left:44px}
+}
