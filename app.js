@@ -2190,7 +2190,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261123a";
+const APP_VERSION="20261123b";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -5594,7 +5594,7 @@ function patientsHTML(){
    <section>
     <input id="rc-q" class="pcq" type="search" placeholder="Rechercher un patient (nom, prénom, téléphone)" value="${esc(S.recQ||"")}" aria-label="Rechercher une fiche" style="margin-bottom:10px">
     <div id="rc-acc"></div>
-    ${q.length?`<p class="srg">Fiches sans compte</p>`:""}
+    <p class="srg">Fiches sans compte</p>
     <div class="list">${list.length?list.map(r=>`<div class="medrow recrow"><div class="ic">${IC.user}</div><div><b>${esc(r.first_name+" "+r.last_name)}</b>
       <small>Né(e) le ${fmtDate(r.birth_date)} · Tél. ${esc(r.phone||"—")}${r.email?` · ${esc(r.email)}`:""}</small>
       <small>Fiche créée par ${esc(teamName(r.created_by))} ${fmt(r.created_at)}${open(r.id)?` · <b>${open(r.id)} tâche${open(r.id)>1?"s":""} en cours</b>`:""}${r.invited_at?` · invité(e) ${fmt(r.invited_at)}`:""}</small></div>
@@ -5606,9 +5606,23 @@ function bindPatients(){
   const D=S.recDraft; const f={first:"#rc-first",last:"#rc-last",birth:"#rc-birth",phone:"#rc-phone",email:"#rc-email"};
   Object.entries(f).forEach(([k,sel])=>{ const el=$(sel); el.oninput=el.onchange=()=>{ D[k]=el.value; }; });
   const qq=norm(S.recQ||"").split(/\s+/).filter(Boolean);
+  const accRow=x=>`<button type="button" class="medrow recrow pfaccrow" data-pfopen="${x.child?"c":"p"}:${x.id}"><div class="ic">${IC.user}</div><div><b>${esc(`${x.first_name||""} ${x.last_name||""}`)}</b><small>Né(e) le ${fmtDate(x.birth_date)}${x.child?" · enfant":""}${x.phone?` · Tél. ${esc(x.phone)}`:""}</small></div><span class="linkbtn">Ouvrir la page ›</span></button>`;
+  const keep=ps=>ps.forEach(x=>{ if(x.child) S.children[x.id]={...(S.children[x.id]||{}),...x}; else S.profiles[x.id]={...(S.profiles[x.id]||{}),...x}; });
   if(qq.length&&qq.join("").length>=2) searchPatients(qq).then(ps=>{ const box=$("#rc-acc"); if(!box||!ps||!ps.length) return;
-    box.innerHTML=`<p class="srg">Patients avec compte dans l'app</p><div class="list">${ps.map(x=>`<button type="button" class="medrow recrow pfaccrow" data-pfopen="${x.child?"c":"p"}:${x.id}"><div class="ic">${IC.user}</div><div><b>${esc(`${x.first_name||""} ${x.last_name||""}`)}</b><small>Né(e) le ${fmtDate(x.birth_date)}${x.child?" · enfant":""}${x.phone?` · Tél. ${esc(x.phone)}`:""}</small></div><span class="linkbtn">Ouvrir la page ›</span></button>`).join("")}</div>`;
-    ps.forEach(x=>{ if(x.child) S.children[x.id]={...(S.children[x.id]||{}),...x}; else S.profiles[x.id]={...(S.profiles[x.id]||{}),...x}; }); });
+    box.innerHTML=`<p class="srg">Patients avec compte dans l'app</p><div class="list">${ps.map(accRow).join("")}</div>`;
+    keep(ps); });
+  else if(!qq.length){
+    // sans recherche : tous les patients dont le compte est validé, par ordre alphabétique
+    const lim=S.accLimit||30;
+    sb.from("profiles").select("id,first_name,last_name,birth_date,phone",{count:"exact"}).eq("role","patient").eq("status","active")
+      .order("last_name").order("first_name").range(0,lim-1).then(({data,count,error})=>{
+        const box=$("#rc-acc"); if(!box||error) return; const ps=data||[];
+        box.innerHTML=`<p class="srg">Patients avec compte dans l'app${count!=null?` (${count})`:""}</p>`+(ps.length?`<div class="list">${ps.map(accRow).join("")}</div>`:`<div class="empty">Aucun compte patient validé pour l'instant.</div>`)
+          +(count>ps.length?`<div class="btnrow"><button type="button" class="btn ghost" id="rc-more">Afficher plus (${count-ps.length} restants)</button></div>`:"");
+        keep(ps);
+        const mo=$("#rc-more"); if(mo) mo.onclick=()=>{ S.accLimit=lim+50; render(); };
+      });
+  }
   const qi=$("#rc-q"); let tm; qi.oninput=()=>{ clearTimeout(tm); tm=setTimeout(()=>{ S.recQ=qi.value; render(); const n=$("#rc-q"); n.focus(); n.setSelectionRange(n.value.length,n.value.length); },250); };
   const done=()=>{ S.recDraft=null; S.recEdit=null; };
   const cancel=$("#rc-cancel"); if(cancel) cancel.onclick=()=>{ done(); if(S.recBack){ S.cscreen=S.recBack; S.recBack=null; } render(); };
