@@ -302,6 +302,7 @@ const FLOWS={
   {id:"examen",kind:"choice",q:"Quel examen avez-vous fait ?",options:["Prise de sang","Analyse d'urine ou de selles","Radio, échographie ou scanner","Autre"]},
   {id:"quand",kind:"choice",q:"Quand l'avez-vous fait ?",options:["Cette semaine","Il y a 1 à 2 semaines","Il y a plus d'un mois"]},
   {id:"demandeur",kind:"choice",q:"Qui l'a demandé ?",options:()=>[...P.phys().map(P.label),"Un médecin hors du centre (spécialiste, hôpital)"]},
+  {id:"medecin",kind:"choice",q:"Quel médecin du centre doit vous contacter pour ce résultat ?",options:()=>[...P.phys().map(P.label),"Je ne sais pas, le secrétariat s'en occupe"],when:a=>/^Un médecin hors du centre/.test(a.demandeur||"")&&P.phys().length>0},
   {id:"contact",kind:"choice",q:"Comment préférez-vous qu'on vous informe ?",options:["Message dans l'application","Appel téléphonique","Rendez-vous pour en parler"]},
   {kind:"note",q:"Vous avez déjà le résultat en main ? Utilisez plutôt « Envoyer un document ». Le centre vous contacte dès qu'ils sont analysés."}
  ]
@@ -2074,6 +2075,8 @@ function bindSummary(){
     // prestataire choisi (ou seul prestataire de la spécialité)
     let prov = ans.medecin ? P.fromLabel(ans.medecin) : null;
     if(!prov && ans.specialite && P.of(ans.specialite).length===1) prov=P.of(ans.specialite)[0];
+    // résultats : le médecin du centre qui a demandé l'examen reçoit la demande
+    if(!prov && S.flow==="resultats" && ans.demandeur) prov=P.fromLabel(ans.demandeur);
     if(prov) ans.provider_id=prov.id;
     if(S.flow==="prescription") ans.medicaments=S.drug.basket.map(l=>({label:l,boites:boxes(l)}));
     const kid=kidFromPour(ans.pour);
@@ -2190,7 +2193,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261123b";
+const APP_VERSION="20261124a";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
