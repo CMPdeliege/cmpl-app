@@ -2193,7 +2193,7 @@ function patientReq(a){
    ===================================================================== */
 // Agenda Rosa des professionnels : chacun s'y connecte avec son propre compte Rosa
 const ROSA_PRO_URL="https://hp-calendar.rosa.be/";
-const APP_VERSION="20261124a";
+const APP_VERSION="20261127a";
 const versionHTML = () => `<p class="hint appver" translate="no">Version ${APP_VERSION}</p>`;
 const ROLE_LABEL={secretariat:"Secrétariat",provider:"Prestataire",admin:"Administrateur",gestion:"Administration",patient:"Patient"};
 const isDesk = () => S.me.role==="secretariat"||S.me.role==="admin";
@@ -4743,8 +4743,8 @@ function detailHTML(){
    ${msgsOf(r).length||(r.request_updates||[]).length||r.purged_at||!open?chatHTML(r,"centre"):""}
    ${open?`${isRx?`<div class="rx"><p class="hint" style="margin:0">Décision par médicament</p>${todo.map(it=>`<div class="rxrow"><span>${esc(it.label)}<b class="qty">${qtyText(it.quantity||1)}</b></span><div class="decs"><button class="dec ok" aria-pressed="${dec[it.id]==="accorde"}" data-dec="${it.id}:accorde">Accorder</button><button class="dec no" aria-pressed="${dec[it.id]==="refuse"}" data-dec="${it.id}:refuse">Refuser</button></div></div>`).join("")}</div>`:""}
    ${composerHTML("s"+r.id)}
-   ${guidedReq(r)?`<div class="gstaff"><label class="chk2"><input type="checkbox" id="g-allow" ${S.drafts["ga"+r.id]?"checked":""}> Le patient peut répondre à ce message</label>
-    <span class="hint">${r.patient_can_reply?"✍️ Le patient peut actuellement écrire (jusqu'à votre prochain message). <button type=\"button\" class=\"linkbtn\" id=\"g-revoke\">Retirer</button>":"🔒 Réponses guidées : le patient ne peut pas écrire. Sans la case, il lit votre réponse sans pouvoir répondre."}</span></div>`:""}
+   ${guidedReq(r)?`<div class="gstaff"><label class="chk2"><input type="checkbox" id="g-allow" ${S.drafts["ga"+r.id]!==false?"checked":""}> Le patient peut répondre à ce message</label>
+    <span class="hint">${r.patient_can_reply?"✍️ Le patient peut actuellement écrire (jusqu'à votre prochain message). <button type=\"button\" class=\"linkbtn\" id=\"g-revoke\">Retirer</button>":"🔒 Réponses guidées : le patient ne peut pas écrire. Décochez la case si vous ne voulez pas qu'il réponde."}</span></div>`:""}
    <div class="btnrow"><button class="btn" id="close" ${canClose?"":"disabled"}>${closeBtn}</button></div>
    <p class="hint">Le message écrit ci-dessus est envoyé avec la clôture ; sans message, la demande est simplement classée. <b>Avant de classer, reportez dans CareConnect ce qui doit rester au dossier</b> : la conversation et ses pièces jointes sont effacées ${PURGE_DAYS} jours après la clôture.</p>
    <div class="transfer">${r.status==="nouveau"?'<button class="linkbtn" id="take">Je m\'en occupe</button>':""}<label class="hint" for="tr">Transférer à</label><select id="tr">${transferOpts}</select><button class="linkbtn" id="dotr">Transférer</button>
